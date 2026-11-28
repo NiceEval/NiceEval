@@ -2,7 +2,7 @@ import type { ExpPrepareEvent } from "../experiment/host/cli/output-protocol.ts"
 import { beforeCacheReplacementWarnings, type BeforeCachePosition } from "./before-cache-collisions.ts";
 import { randomUUID } from "node:crypto";
 import { Cause, Deferred, Effect, Exit, Result, Option, Semaphore, Scope } from "effect";
-import type { JsonValue, ScopedFeedback } from "../shared/types.ts";
+import type { DiagnosticCause, JsonValue, ScopedFeedback } from "../shared/types.ts";
 import {
   mergeSandboxActionState,
   sandboxActionStateCovers,
@@ -47,6 +47,7 @@ export interface PreparedBeforeCacheUse {
           readonly owner: string;
           readonly reason: string;
           readonly detail: string;
+          readonly causes?: readonly DiagnosticCause[];
         }[];
       }
     | undefined;
@@ -63,6 +64,7 @@ export interface BeforeCachePreparationDiagnostic {
   readonly key: string;
   readonly message: string;
   readonly experimentIds: readonly string[];
+  readonly causes?: readonly DiagnosticCause[];
 }
 
 export interface BeforeCachePreparationSummary {
@@ -149,7 +151,14 @@ interface PreparationTarget {
 type PreparationWorkResult =
   | { readonly outcome: "hit" | "prepared"; readonly artifact: BeforeCacheArtifact }
   | { readonly outcome: "continued"; readonly artifact: BeforeCacheArtifact | undefined }
-  | { readonly outcome: "degraded"; readonly reason: string; readonly detail: string; readonly operationId: string };
+  | {
+      readonly outcome: "degraded";
+      readonly reason: string;
+      readonly detail: string;
+      readonly operationId: string;
+      readonly causes?: readonly DiagnosticCause[];
+      readonly failedRestore?: true;
+    };
 
 function asError(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(String(cause));
@@ -315,6 +324,7 @@ function materializePreparationNode(
               reason: created.reason,
               detail: created.detail,
               operationId: `before-cache-${randomUUID()}`,
+              ...(created.causes === undefined ? {} : { causes: created.causes, failedRestore: true as const }),
             };
           const owned = created.sandbox;
           onSandbox?.(owned);
@@ -329,6 +339,8 @@ function materializePreparationNode(
                 `Staging fell back to Base without its parent prefix; restore stage ${stage}; ${created.start.reason}` +
                 (artifactId === undefined ? "" : `; selected artifact ${artifactId}`),
               operationId: `before-cache-${randomUUID()}`,
+              failedRestore: true as const,
+              ...(created.start.causes === undefined ? {} : { causes: created.start.causes }),
             };
           }
           const commandTarget = createSandboxCommandTarget(owned.sandbox);
@@ -785,6 +797,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
                 reason: "parent-unavailable",
                 detail: "Parent before-cache node is unavailable",
                 operationId: parentResult.success.operationId,
+                ...(parentResult.success.causes === undefined ? {} : { causes: parentResult.success.causes }),
               }),
             );
           }
@@ -847,7 +860,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
         return Effect.forkScoped(work).pipe(Effect.andThen(Deferred.await(completion)));
       });
 
-    const ledgerDiagnostics = new Map<string, { key: string; message: string; experimentIds: string[] }>();
+    const diagnostics = new Map<string, BeforeCachePreparationDiagnostic & { experimentIds: string[] }>();
     const settleTarget = Effect.fnUntraced(function* (target: PreparationTarget) {
       const result = terminal.get(target.finalKey)!;
       if (Result.isFailure(result)) {
@@ -885,12 +898,14 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
           const planned = cursor.planned;
           if (ancestor.success.reason === "ledger-unavailable")
             diagnosticKey = `before-cache-ledger:${JSON.stringify([cursor.context.providerId, cursor.executionDomainId ?? cursor.key])}`;
+          else if (ancestor.success.failedRestore) diagnosticKey = ancestor.success.operationId;
           degradedNodes.push({
             key: cursor.key,
             actionId: "entry" in planned ? planned.entry.id : "niceeval.agent-install",
             owner: "entry" in planned ? `${planned.entry.owner.kind}:${planned.entry.owner.id}` : "agent",
             reason: ancestor.success.reason,
             detail: ancestor.success.detail,
+            ...(ancestor.success.causes === undefined ? {} : { causes: ancestor.success.causes }),
           });
         }
         cursor = cursor.parentKey === undefined ? undefined : nodes.get(cursor.parentKey);
@@ -928,18 +943,22 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
       if (
         Result.isFailure(result) ||
         result.success.outcome !== "degraded" ||
-        result.success.reason !== "ledger-unavailable"
+        (result.success.reason !== "ledger-unavailable" && !result.success.failedRestore)
       )
         continue;
-      const key = `before-cache-ledger:${JSON.stringify([node.context.providerId, node.executionDomainId ?? node.key])}`;
-      let diagnostic = ledgerDiagnostics.get(key);
+      const key =
+        result.success.reason === "ledger-unavailable"
+          ? `before-cache-ledger:${JSON.stringify([node.context.providerId, node.executionDomainId ?? node.key])}`
+          : result.success.operationId;
+      let diagnostic = diagnostics.get(key);
       if (diagnostic === undefined) {
         diagnostic = {
           key,
-          message: `Before cache degraded: ledger-unavailable; ${result.success.detail}`,
+          message: `Before cache degraded: ${result.success.reason}; ${result.success.detail}`,
+          ...(result.success.causes === undefined ? {} : { causes: result.success.causes }),
           experimentIds: [],
         };
-        ledgerDiagnostics.set(key, diagnostic);
+        diagnostics.set(key, diagnostic);
       }
       for (const consumer of dependents.get(node.key)!.values()) {
         if (!diagnostic.experimentIds.includes(consumer.experimentId))
@@ -950,7 +969,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
       preparedByPair,
       failuresByPair,
       summary: summary(),
-      diagnostics: [...ledgerDiagnostics.values()],
+      diagnostics: [...diagnostics.values()],
     };
   });
   // Successful preparation holds remain owned by the Run through dispatch.

@@ -24,6 +24,16 @@ type RunEntityMinter = (
   kind: "diagnostic",
 ) => Effect.Effect<ObservabilityEntityIdForKind<"diagnostic">, RunnerObservabilityProducerError>;
 
+function retainCauses(causes: DiagnosticRecord["causes"], limitations: RunnerCollectionLimitations) {
+  return (causes ?? []).flatMap((cause) => {
+    const code = makeSafeIdentifier(cause.code);
+    const summary = makeSafeText(cause.summary);
+    if (code !== undefined && summary !== undefined) return [{ code, summary }];
+    limitations.addUnsupported("diagnostic");
+    return [];
+  });
+}
+
 function attemptDiagnosticPhase(origin: TimingOrigin | undefined): AttemptDiagnostic["phase"] {
   if (origin === undefined || origin.scope !== "attempt") return "collection";
   switch (origin.phase) {
@@ -73,7 +83,7 @@ export function normalizeAttemptDiagnostics(input: {
       readonly code: string;
       readonly detail: string;
       readonly kind: AttemptDiagnostic["kind"];
-      readonly reason: string | undefined;
+      readonly causes: DiagnosticRecord["causes"];
       readonly origin: DiagnosticRecord["origin"] | undefined;
     }): Effect.Effect<void, RunnerObservabilityProducerError> => {
       const code = makeSafeIdentifier(value.code);
@@ -91,9 +101,8 @@ export function normalizeAttemptDiagnostics(input: {
           kind: value.kind,
           code,
           phase: attemptDiagnosticPhase(value.origin),
-          // The result's one-line detail is already Runner-redacted. Causes,
-          // stacks, paths, and arbitrary context remain outside this durable
-          // family. Unsafe detail falls back to a generic summary and partial coverage.
+          // Runner redacts the detail before sealing. Unsafe detail falls back
+          // to a generic summary with partial coverage.
           summary:
             retainedSummary ??
             makeSafeText(
@@ -101,15 +110,7 @@ export function normalizeAttemptDiagnostics(input: {
                 ? "Runner recorded an execution error."
                 : "Runner recorded an advisory diagnostic.",
             )!,
-          causes:
-            value.reason === undefined
-              ? []
-              : [
-                  {
-                    code: makeSafeIdentifier(value.reason)!,
-                    summary: makeSafeText(value.reason)!,
-                  },
-                ],
+          causes: retainCauses(value.causes, limitations),
           context: [],
           redaction: { state: "none" as const },
           sourceFrame: null,
@@ -119,12 +120,13 @@ export function normalizeAttemptDiagnostics(input: {
     };
 
     if (input.result.error !== undefined) {
+      const reason = input.result.error.code.startsWith("simulated-user-") ? input.result.error.cause?.code : undefined;
       yield* append({
         code: input.result.error.code,
         detail: input.result.error.message,
         kind: "execution-error" as const,
         origin: input.result.error.origin,
-        reason: input.result.error.code.startsWith("simulated-user-") ? input.result.error.cause?.code : undefined,
+        causes: reason === undefined ? undefined : [{ code: reason, summary: reason }],
       });
     }
     for (const diagnostic of input.result.diagnostics ?? []) {
@@ -133,7 +135,7 @@ export function normalizeAttemptDiagnostics(input: {
         detail: diagnostic.detail,
         kind: diagnostic.level === "error" ? ("execution-error" as const) : ("advisory" as const),
         origin: diagnostic.origin,
-        reason: undefined,
+        causes: diagnostic.causes,
       });
     }
     return {
@@ -190,7 +192,7 @@ export function normalizeRunDiagnostics(input: {
               ? "Runner recorded an execution error."
               : "Runner recorded an advisory diagnostic.",
           )!,
-        causes: [],
+        causes: retainCauses(source.causes, limitations),
         context: [],
         redaction: { state: "none" as const },
         sourceFrame: null,

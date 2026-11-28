@@ -9,6 +9,7 @@ import type { AdapterFlagsParser, AdapterFlagsOutput, AdapterFlagsValue } from "
 
 import type { Effect } from "effect";
 import type {
+  DiagnosticCause,
   ExperimentFlags,
   FlagValue,
   JsonValue,
@@ -326,6 +327,7 @@ export interface DiagnosticRecord {
   origin?: TimingOrigin;
   /** 写入时观察到的原始有界描述;不包含修复动作或呈现文案。 */
   detail: string;
+  causes?: readonly DiagnosticCause[];
   /** 支撑 code 的结构化原始上下文。 */
   context?: Readonly<globalThis.Record<string, JsonValue>>;
   /** 相同 dedupeKey 折叠后的出现次数;省略等于 1。 */

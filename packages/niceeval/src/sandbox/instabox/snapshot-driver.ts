@@ -8,6 +8,7 @@ import { BeforeCacheSnapshotError, type BeforeCacheSnapshotDriver } from "../rem
 import { InstaboxApi, InstaboxApiError } from "./api.ts";
 import {
   INSTABOX_MACHINE_DELETE_TIMEOUT_MS,
+  InstaboxPreparationError,
   instaboxReadRequest,
   isRetryableInstaboxReadError,
 } from "./provisioning.ts";
@@ -78,9 +79,18 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxProviderP
   createFromSnapshot: (plan, snapshotId, context) =>
     boundary("restore", () => import("./materialize.ts")).pipe(
       Effect.flatMap((module) =>
-        module.materializeInstabox({ ...plan, source: { _tag: "Snapshot", id: snapshotId } }, context),
+        module.materializeInstabox({ ...plan, source: { _tag: "Snapshot", id: snapshotId } }, context, true).pipe(
+          Effect.mapError(({ cause }) => {
+            if (!(cause instanceof InstaboxPreparationError)) return fail("restore");
+            return new BeforeCacheSnapshotError({
+              operation: cause.phase,
+              reason: cause.detail.code ?? "instabox-restore-failed",
+              ...(cause.snapshotAbsent ? { snapshotAbsent: true as const } : {}),
+              causes: cause.diagnosticCauses,
+            });
+          }),
+        ),
       ),
-      Effect.mapError(() => fail("restore")),
     ),
   createSnapshot: Effect.fn("instaboxSnapshotDriver.createSnapshot")(function* (_plan, source, name) {
     const client = yield* Effect.try({ try: api, catch: () => fail("create") });

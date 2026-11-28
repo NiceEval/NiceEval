@@ -5,11 +5,17 @@ import fc from "fast-check";
 import { experimentHost } from "niceeval/experiment/host";
 import { runHost } from "niceeval/run/host";
 import { beforeAll, expect, test, vi } from "vitest";
+import { InstaboxBackend } from "../../packages/niceeval/src/sandbox/instabox/sandbox.ts";
 import { selectInspectionOperation, withOperational } from "./fixtures/adapter-trace-usage-harness/harness.ts";
 import { createLifecycleProject } from "./fixtures/lifecycle-sandbox/harness.ts";
 
 type Stage = "snapshot" | "allocate" | "poll" | "ready" | "grant";
-type Fault = "connect" | "timeout" | "503" | "429" | "403" | "lost" | "body";
+type Fault =
+  | "connect" | "timeout" | "400" | "403" | "404" | "409" | "429" | "503" | "lost" | "body"
+  | "locked" | "locked-default" | "operation-retry" | "operation-permanent" | "not-ready" | "not-ready-permanent"
+  | "retry-advice-over-cap" | "retry-advice" | "probe";
+const apiKey = "test-instabox-credential";
+const sshToken = "test-ssh-credential";
 function failure(fault: Fault) {
   if (fault === "timeout") throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
   if (fault === "connect")
@@ -31,6 +37,7 @@ function controlPlane(snapshotId: string, stage: Stage, fault: Fault, failures: 
   const machines = new Map<string, string>();
   const absent = new Set<string>();
   const deleting = new Set<string>();
+  const delays: number[] = [];
   let injected = 0;
   function inject(request: Stage) {
     return stage === request && injected++ < failures;
@@ -41,6 +48,10 @@ function controlPlane(snapshotId: string, stage: Stage, fault: Fault, failures: 
     const [, , resource, id, subresource] = url.pathname.split("/");
     if (resource === "snapshots") {
       events.push("snapshot");
+      if (fault === "locked" || fault === "locked-default")
+        return Response.json({ id, status: "ready", sizeLocked: true, defaultSpec: { vcpus: 2, memMiB: 4096 } });
+      if (fault === "404" && inject("snapshot"))
+        return Response.json({ error: { code: "not_found" } }, { status: 404 });
       if (inject("snapshot")) return failure(fault);
       return Response.json({ id, status: "ready" });
     }
@@ -50,14 +61,29 @@ function controlPlane(snapshotId: string, stage: Stage, fault: Fault, failures: 
       const machine = machines.get(key!) ?? `${snapshotId}.m${machines.size + 1}`;
       events.push(`allocate:${machine}`);
       const fail = inject("allocate");
-      if (fail && ["connect", "429", "403"].includes(fault)) return failure(fault);
+      if (fail && ["connect", "400", "403", "404", "409", "429"].includes(fault)) return failure(fault);
+      if (fail && (fault === "retry-advice-over-cap" || fault === "retry-advice"))
+        return Response.json({ error: {
+          code: "rate_limited", requestId: "req-429", reason: "starts_per_minute", retryable: true, retryAfterSeconds: 1,
+        } }, { status: 429, headers: { "Retry-After": fault === "retry-advice" ? "2" : "61" } });
+      if (fault === "locked-default") expect(JSON.parse(String(init.body))).toMatchObject({ vcpus: 4, memMiB: 8192 });
       machines.set(key!, machine);
       if (fail) return failure(fault);
       return Response.json({ id: machine, machineId: machine, state: "running", error: null });
     }
     if (resource === "operations") {
       events.push(`poll:${id}`);
-      if (inject("poll")) return failure(fault);
+      if (inject("poll")) {
+        if (fault === "operation-retry" || fault === "operation-permanent")
+          return Response.json({
+            id, machineId: id, state: "failed",
+            error: {
+              code: "no_capacity", message: `No capacity.\nAuthorization: Bearer ${apiKey}`, requestId: "req-operation",
+              retryable: fault === "operation-retry", stack: sshToken,
+            },
+          });
+        return failure(fault);
+      }
       return Response.json({ id, machineId: id, state: "succeeded", error: null });
     }
     if (resource !== "machines" || !id || ![...machines.values()].includes(id))
@@ -77,13 +103,25 @@ function controlPlane(snapshotId: string, stage: Stage, fault: Fault, failures: 
     if (subresource === "ssh-tokens") {
       events.push(`grant:${id}`);
       if (inject("grant")) return failure(fault);
+      if (fault === "probe" || ["operation-retry", "not-ready", "retry-advice"].includes(fault))
+        return Response.json({
+          id: "grant-fixture", machineId: id, token: sshToken,
+          host: "unused.fixture", port: 22, hostKeyFingerprint: "SHA256:AAAA",
+        });
       return Response.json({ error: { code: "end-of-fixture" } }, { status: 403 });
     }
     events.push(`ready:${id}`);
-    if (inject("ready")) return failure(fault);
+    if (inject("ready")) {
+      if (fault === "not-ready" || fault === "not-ready-permanent")
+        return Response.json({
+          id, state: "stopped", operationId: null, runtime: { ready: false },
+          lastError: { code: "host_unavailable", requestId: "req-readiness", retryable: fault === "not-ready" },
+        });
+      return failure(fault);
+    }
     return Response.json({ id, state: "running", operationId: null, runtime: { ready: true } });
   };
-  return { stage, snapshotId, fetch, events, machines, absent };
+  return { stage, snapshotId, fault, fetch, events, machines, absent, delays };
 }
 
 const allCases: ReturnType<typeof controlPlane>[] = [];
@@ -102,6 +140,7 @@ const singleFaults = [
   scenario("grant", "connect"),
   scenario("grant", "429"),
   scenario("allocate", "lost"),
+  scenario("allocate", "503"),
   ...fc
     .sample(
       fc.tuple(fc.constantFrom("snapshot", "poll", "ready"), fc.constantFrom("connect", "timeout", "503", "lost")),
@@ -117,6 +156,21 @@ const rebuilds = [
 const cleanup = scenario("grant", "timeout", 1, false);
 const allocation = scenario("allocate", "lost", 2);
 const denied = scenario("ready", "403");
+const locked = scenario("snapshot", "locked");
+const lockedDefault = scenario("snapshot", "locked-default", 0);
+const explicitRejections = [
+  scenario("allocate", "400"), scenario("allocate", "403"), scenario("snapshot", "404"), scenario("allocate", "409"),
+];
+const rebuildAfterReadyFault = [
+  scenario("poll", "operation-retry"), scenario("ready", "not-ready"),
+];
+const failedReadyFaults = [
+  scenario("poll", "operation-permanent"), scenario("ready", "not-ready-permanent"),
+];
+const waitAdvice = scenario("allocate", "retry-advice");
+const overCap = scenario("allocate", "retry-advice-over-cap");
+const probe = scenario("snapshot", "probe", 0);
+const successful = [waitAdvice, ...rebuildAfterReadyFault];
 const cancelled = controlPlane("sn_e0", "ready", "403", 0, true);
 const summaries = new Map<string, string[]>();
 
@@ -138,19 +192,39 @@ beforeAll(async () => {
       allCases.map(({ snapshotId }, i) =>
         writeFile(
           join(project.cwd, "evals", `e${i}.eval.ts`),
-          `import {defineEval} from "niceeval"; import {instaboxSandbox} from "niceeval/sandbox"; export default defineEval({sandbox:instaboxSandbox({snapshotId:${JSON.stringify(snapshotId)}}), async test(){ throw new Error("unexpected successful provisioning"); }});`,
+          `import {defineEval} from "niceeval"; import {instaboxSandbox} from "niceeval/sandbox"; export default defineEval({sandbox:instaboxSandbox({snapshotId:${JSON.stringify(snapshotId)}${snapshotId === locked.snapshotId ? ',spec:"instabox-medium"' : ""}}), async test(){ ${successful.some((entry) => entry.snapshotId === snapshotId) ? "" : 'throw new Error("unexpected successful provisioning");'} }});`,
         ),
       ),
     );
     const fixtures = new Map(allCases.map((fixture) => [fixture.snapshotId, fixture]));
+    let lastFixture: ReturnType<typeof controlPlane> | undefined;
     vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
       const id =
         new URL(String(input)).pathname.split("/")[3]?.split(".")[0] ?? JSON.parse(String(init?.body)).snapshotId;
       const fixture = fixtures.get(id);
       if (!fixture) throw new Error(`Unexpected request to ${String(input)}`);
+      lastFixture = fixture;
       return fixture.fetch(input, init);
     });
-    vi.stubEnv("INSTABOX_API_KEY", "fixture");
+    vi.stubEnv("INSTABOX_API_KEY", apiKey);
+    const runCommand = InstaboxBackend.prototype.runCommand;
+    vi.spyOn(InstaboxBackend.prototype, "runCommand").mockImplementation(async function (
+      this: InstaboxBackend,
+      command,
+      args,
+      options,
+    ) {
+      const fixture = fixtures.get(this.sandboxId.split(".")[0]!);
+      if (fixture === probe)
+        return { exitCode: 37, stdout: apiKey, stderr: sshToken };
+      if (fixture !== undefined && successful.includes(fixture))
+        return {
+          exitCode: 0,
+          stdout: command === "bash" && args?.[1]?.includes("uname -s") ? "Linux\nx86_64\nldd (GNU libc)\n" : "",
+          stderr: "",
+        };
+      return runCommand.call(this, command, args, options);
+    });
     const planned = await Effect.runPromise(
       experimentHost.invocation.plan({
         cwd: project.cwd,
@@ -171,14 +245,16 @@ beforeAll(async () => {
             currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
             monotonicTimeNanos: clock.monotonicTimeNanos,
             monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
-            sleep: (duration) =>
-              [125, 250, 500, 1000, 2000].includes(Duration.toMillis(duration)) ? Effect.void : clock.sleep(duration),
+            sleep: (duration) => {
+              const ms = Duration.toMillis(duration);
+              if (![125, 250, 500, 1000, 2000].includes(ms)) return clock.sleep(duration);
+              return Effect.sync(() => lastFixture?.delays.push(ms));
+            },
           }),
           Effect.provideService(Random.Random, { nextDoubleUnsafe: () => 0, nextIntUnsafe: () => 0 }),
         ),
       ),
     );
-    expect(result.summary.errored).toBe(allCases.length);
     const { run: record } = await Effect.runPromise(
       runHost.get({ cwd: project.cwd, runId: result.receipt.createdRunIds[0]! }),
     );
@@ -195,6 +271,8 @@ beforeAll(async () => {
         );
       }
     });
+    expect(result.summary.errored, JSON.stringify(successful.map((entry) => [entry.events, summaries.get(entry.snapshotId)]))).toBe(allCases.length - successful.length);
+    expect(result.summary.passed).toBe(successful.length);
     // Cancel a separate Invocation while the first operation GET is outstanding.
     const abort = new AbortController();
     const polling = Promise.withResolvers<void>();
@@ -227,6 +305,7 @@ beforeAll(async () => {
   } finally {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     await project.dispose();
   }
 });
@@ -282,4 +361,58 @@ test("unconfirmed cleanup, unknown allocation and deterministic request failure 
 test("cancelling an outstanding operation GET confirms cleanup without another allocation", () => {
   expect(cancelled.events).toEqual(["snapshot", "allocate:sn_e0.m1", "poll", "delete:sn_e0.m1", "confirm:sn_e0.m1"]);
   expect(cancelled.absent.size).toBe(1);
+});
+
+// @feature docs/feature/sandbox/README.md#preparation-failure
+test("an explicit size conflicting with a locked snapshot fails before allocating a Machine", () => {
+  expect(locked.events).toEqual(["snapshot"]);
+  expect(summaries.get(locked.snapshotId)?.join(" ")).toMatch(/snapshot_spec_mismatch.*4 vCPU and 8192 MiB.*2 vCPU and 4096 MiB/);
+  expect(calls(lockedDefault, 1, "allocate")).toBe(1);
+});
+
+// @feature docs/feature/sandbox/README.md#safe-resource-retries
+test("explicitly rejected and permanent provisioning faults settle without another allocation", () => {
+  for (const entry of explicitRejections) {
+    const allocation = entry !== explicitRejections[2];
+    expect(calls(entry, 1, allocation ? "allocate" : "snapshot")).toBe(1);
+    expect(entry.machines.size).toBe(0);
+    expect(summaries.get(entry.snapshotId)?.join(" ")).toContain(`HTTP ${entry.fault}`);
+  }
+  for (const entry of failedReadyFaults) {
+    expect(entry.machines.size).toBe(1);
+    expect(entry.absent.size).toBe(1);
+    expect(summaries.get(entry.snapshotId)?.join(" ")).toContain("retryable=false");
+  }
+  const operation = summaries.get(failedReadyFaults[0]!.snapshotId)?.join(" ");
+  expect(operation).toContain("startup wait failed: no_capacity, requestId=req-operation, retryable=false, No capacity.");
+  expect(operation).not.toContain("HTTP 200");
+  expect(operation).not.toContain(apiKey);
+  expect(operation).not.toContain(sshToken);
+  expect(calls(overCap, 1, "allocate")).toBe(1);
+  expect(overCap.delays).not.toContain(61_000);
+  expect(summaries.get(overCap.snapshotId)?.join(" ")).toMatch(/retryAfterSeconds=1, Retry-After=61s, reason=starts_per_minute/);
+});
+
+// @feature docs/feature/sandbox/README.md#safe-resource-retries
+test("retryable faults reach a successful Attempt after confirmed retirement or a bounded server delay", () => {
+  for (const entry of rebuildAfterReadyFault) {
+    const deleted = entry.events.indexOf(`confirm:${entry.snapshotId}.m1`);
+    expect(deleted).toBeGreaterThan(0);
+    expect(entry.events.indexOf(`allocate:${entry.snapshotId}.m2`)).toBeGreaterThan(deleted);
+    expect(entry.machines.size).toBe(2);
+    expect(entry.absent.size).toBe(2);
+  }
+  expect(waitAdvice.delays).toContain(2000);
+  expect(calls(waitAdvice, 1, "allocate")).toBe(2);
+  expect(waitAdvice.machines.size).toBe(1);
+  expect(successful.every((entry) => !summaries.get(entry.snapshotId)?.some((summary) => summary.includes("Before cache degraded")))).toBe(true);
+});
+
+// @feature docs/feature/sandbox/README.md#preparation-failure
+test("failed probes identify the stage and exit code without publishing either output stream", () => {
+  const detail = summaries.get(probe.snapshotId)?.join(" ");
+  expect(detail).toContain("Instabox probe failed: probe-failed");
+  expect(detail).toContain("code 37");
+  expect(detail).not.toContain(apiKey);
+  expect(detail).not.toContain(sshToken);
 });

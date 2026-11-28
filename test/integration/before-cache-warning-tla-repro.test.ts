@@ -2,8 +2,9 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { Effect, Option } from "effect";
+import { Effect, Option, Result, Schema } from "effect";
 import { decodeExpPlanDocument, decodeExpStartEvent, experimentHost } from "niceeval/experiment/host";
+import { runHost } from "niceeval/run/host";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createFeedbackCoordinator } from "../../packages/niceeval/src/runner/feedback/coordinator.ts";
@@ -11,6 +12,10 @@ import { createNodeFeedbackIO } from "../../packages/niceeval/src/runner/feedbac
 import type { AttemptBeforeCache, BeforeCacheStep } from "../../packages/niceeval/src/sandbox/backend.ts";
 import { makeDockerBeforeCacheCapability } from "../../packages/niceeval/src/sandbox/docker-before-cache.ts";
 import { remoteSnapshotPreparer } from "../../packages/niceeval/src/sandbox/remote-snapshot/preparer.ts";
+import { instaboxSnapshotDriver } from "../../packages/niceeval/src/sandbox/instabox/snapshot-driver.ts";
+import { InstaboxBackend } from "../../packages/niceeval/src/sandbox/instabox/sandbox.ts";
+import { makeRecordRoot, NodeRecordLive, recordHost, RunIdSchema } from "../../packages/niceeval/src/record/index.ts";
+import { NiceEvalRecordAttachments } from "../../packages/niceeval/src/record/family/current.ts";
 import {
   defineSandboxTemplate,
   planSandboxTemplate,
@@ -21,6 +26,7 @@ import {
   type BeforeCachePreparer,
 } from "../../packages/niceeval/src/sandbox/layer.ts";
 import { createLifecycleProject, runCli } from "./fixtures/lifecycle-sandbox/harness.ts";
+import { selectInspectionOperation, withOperational } from "./fixtures/adapter-trace-usage-harness/harness.ts";
 
 type Mode = "docker" | "remote";
 function providerFixture(
@@ -96,10 +102,20 @@ function providerFixture(
 }
 
 // @feature docs/feature/sandbox/README.md#preparation-failure
-describe("replaying after a selected snapshot cannot be restored", () => {
+describe.each(["consumer", "staging", "retry"] as const)("restoring a selected snapshot during %s", (scenario) => {
   const selectedId = "8a8e6848-440f-47af-b4bb-7020917ee1b0";
   const diagnostics: string[] = [];
+  const secret = "fixture-key-never-published";
+  const providerCalls: string[] = [];
+  let published: Awaited<ReturnType<typeof readPublishedDiagnostics>>;
+  let runDiagnostics: readonly { readonly code: string; readonly summary: string }[];
+  let stagingCauses: readonly { readonly code: string; readonly summary: string }[];
   let project: Awaited<ReturnType<typeof createLifecycleProject>>;
+  function readPublishedDiagnostics(cwd: string, locator: string) {
+    return withOperational(cwd, (facts) =>
+      selectInspectionOperation(facts, { kind: "attempt.get", locator }).attempt.diagnostics.items,
+    );
+  }
 
   beforeAll(async () => {
     project = await createLifecycleProject({
@@ -125,14 +141,38 @@ describe("replaying after a selected snapshot cannot be restored", () => {
         Effect.succeed(
           step?.positions.at(-1) === "root"
             ? { _tag: "Hit", artifact: { ...step.declaration, locator: { artifactId: selectedId, executionDomainId: "fixture" } } }
-            : { _tag: "Degraded", reason: "snapshot-uncertain", detail: "fixture publish failed" },
+            : scenario === "staging"
+              ? { _tag: "Miss" }
+              : { _tag: "Degraded", reason: "snapshot-uncertain", detail: "fixture publish failed" },
         ),
       materializeFrom: (_, context, purpose, source, runtime) => {
-        expect(purpose).toBe("consumer");
         expect(source).toMatchObject({ _tag: "Artifact", artifact: { locator: { artifactId: selectedId } } });
-        return context.materializeBase(runtime).pipe(
-          Effect.map((sandbox) => ({ _tag: "Materialized", sandbox, start: { _tag: "FellBackToBase", reason: "snapshot-gone" } })),
-        );
+        return Effect.gen(function* () {
+          if (scenario === "staging" && purpose === "consumer")
+            return { _tag: "Materialized", sandbox: yield* context.materializeBase(runtime), start: { _tag: "Restored" } };
+          const restored = yield* Effect.result(instaboxSnapshotDriver.createFromSnapshot({
+            source: { _tag: "Template", id: "minimal" },
+            pathPrepend: [],
+            resources: { vcpus: 4, memMiB: 8192 },
+            explicitSize: false,
+            lifetimeMs: undefined,
+          }, "sn_fixture", runtime));
+          if (Result.isSuccess(restored)) {
+            expect(scenario).toBe("retry");
+            return { _tag: "Materialized", sandbox: restored.success, start: { _tag: "Restored" } };
+          }
+          expect(scenario).not.toBe("retry");
+          const sandbox = yield* context.materializeBase(runtime);
+          return {
+            _tag: "Materialized",
+            sandbox,
+            start: {
+              _tag: "FellBackToBase",
+              reason: "snapshot-restore-failed",
+              ...(restored.failure.causes === undefined ? {} : { causes: restored.failure.causes }),
+            },
+          };
+        });
       },
       capture: () => Effect.die("fixture prefixes are settled by lookup"),
     };
@@ -170,7 +210,77 @@ export default defineEval({ async test() {} });`);
         if (event.type === "diagnostic" && event.code === "cache-degraded") diagnostics.push(event.message);
       },
     });
-    await Effect.runPromise(experimentHost.invocation.run({ plan: prepared.plan, feedback: { coordinator } }));
+    vi.stubEnv("INSTABOX_API_KEY", secret);
+    let allocations = 0;
+    const idempotencyKeys: string[] = [];
+    const probe = vi.spyOn(InstaboxBackend.prototype, "runCommand").mockImplementation(async (command, args) => ({
+      exitCode: 0,
+      stdout: command === "bash" && args?.[1]?.includes("uname -s") ? "Linux\nx86_64\nldd (GNU libc)\n" : "",
+      stderr: "",
+    }));
+    vi.stubGlobal("fetch", (async (input, init) => {
+      const url = new URL(String(input));
+      expect(url.origin).toBe("https://api.instabox.sh");
+      providerCalls.push(`${init?.method ?? "GET"} ${url.pathname}`);
+      if (url.pathname === "/v1/snapshots/sn_fixture") return Response.json({ id: "sn_fixture", status: "ready" });
+      if (scenario === "retry") {
+        if (url.pathname === "/v1/machines" && init?.method === "POST") {
+          expect(JSON.parse(String(init.body))).toMatchObject({ snapshotId: "sn_fixture", failFast: true });
+          const key = new Headers(init.headers).get("Idempotency-Key");
+          expect(key).toBeTruthy();
+          idempotencyKeys.push(key!);
+          if (allocations++ === 0)
+            return Response.json({ error: { code: "no_capacity", retryable: true } }, { status: 503 });
+          return Response.json({ id: "create", machineId: "fixture-machine", state: "succeeded", error: null }, { status: 202 });
+        }
+        if (url.pathname === "/v1/machines/fixture-machine/ssh-tokens")
+          return Response.json({ id: "grant", machineId: "fixture-machine", token: "mock", host: "unused.fixture", port: 22, hostKeyFingerprint: "SHA256:AAAA" });
+        if (url.pathname === "/v1/machines/fixture-machine") {
+          if (init?.method === "DELETE") return Response.json({ id: "delete", machineId: "fixture-machine", state: "succeeded", error: null });
+          return Response.json({ id: "fixture-machine", state: "running", operationId: null, runtime: { ready: true } });
+        }
+      }
+      if (url.pathname !== "/v1/machines" || init?.method !== "POST") throw new Error("Unexpected provider request");
+      return Response.json({ error: {
+        code: "permission_denied",
+        requestId: "req-denied",
+        retryable: false,
+        message: `Permission deni\u0007ed.\nAuthorization: Bearer ${secret}`,
+        stack: secret,
+      } }, { status: 403 });
+    }) satisfies typeof fetch);
+    try {
+      const result = await Effect.runPromise(experimentHost.invocation.run({ plan: prepared.plan, feedback: { coordinator } }));
+      expect(result.summary.passed).toBe(1);
+      const runId = Schema.decodeUnknownSync(RunIdSchema)(result.receipt.createdRunIds[0]);
+      const { run } = await Effect.runPromise(runHost.get({ cwd: project.cwd, runId }));
+      const slot = run.slots[0];
+      if (slot?.publication.state !== "published") throw new Error("Expected a published Attempt");
+      published = await readPublishedDiagnostics(project.cwd, slot.publication.attemptLocator);
+      runDiagnostics = await withOperational(project.cwd, (facts) =>
+        selectInspectionOperation(facts, { kind: "run.get", runId }).run.diagnostics,
+      );
+      if (scenario === "staging") {
+        const root = makeRecordRoot(join(project.cwd, ".niceeval"));
+        if (Result.isFailure(root)) throw new Error("The staging fixture has no Record root");
+        stagingCauses = await Effect.runPromise(
+          Effect.gen(function* () {
+            const reader = yield* recordHost.openRead({ root: root.success });
+            const selection = yield* reader.selectRuns({ runIds: [runId] });
+            const record = yield* reader.readRun(selection.runRefs[0]!);
+            if (record.state !== "available") throw new Error("The staging fixture has no published Run");
+            const diagnostics = yield* reader.read(record.value.owner, NiceEvalRecordAttachments.runnerDiagnostics.run);
+            if (diagnostics.state !== "available") throw new Error("The staging fixture has no published Run diagnostics");
+            return diagnostics.value.segments.flatMap((entry) => entry.code === "cache-degraded" ? entry.causes : []);
+          }).pipe(Effect.scoped, Effect.provide(NodeRecordLive)),
+        );
+      }
+      if (scenario === "retry") expect(new Set(idempotencyKeys).size).toBe(2);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+      probe.mockRestore();
+    }
   }, 15_000);
 
   afterAll(async () => {
@@ -180,9 +290,36 @@ export default defineEval({ async test() {} });`);
     }
   });
 
-  test("identifies the restored artifact and every action without hiding the publish failure", () => {
-    const recoveries = diagnostics.filter((message) => message.includes("snapshot-gone"));
+  test("publishes diagnostic causes for failed restores and uses the snapshot after a safe retry", () => {
+    const recoveries = diagnostics.filter((message) => message.includes("snapshot-restore-failed"));
+    const requestedAllocations = providerCalls.filter((request) => request === "POST /v1/machines");
+    if (scenario === "retry") {
+      expect(requestedAllocations).toHaveLength(2);
+      expect(recoveries).toHaveLength(0);
+      expect(published.every((item) => item.causes.length === 0)).toBe(true);
+      expect(project.events.filter((event) => event.event === "create")).toHaveLength(0);
+      return;
+    }
+    expect(requestedAllocations).toHaveLength(1);
+    const safeCause = {
+      code: "permission-denied",
+      summary: "Instabox allocation failed: HTTP 403, permission_denied, requestId=req-denied, retryable=false, Permission denied.",
+      summaryTruncated: false,
+    };
+    expect(JSON.stringify(published)).not.toContain(secret);
+    if (scenario === "staging") {
+      expect(recoveries).toEqual([expect.stringContaining("Staging fell back to Base")]);
+      expect(runDiagnostics.filter((item) => item.code === "cache-degraded")).toEqual([
+        expect.objectContaining({ summary: expect.stringContaining("Staging fell back to Base") }),
+      ]);
+      expect(published.filter((item) => item.summary.includes("Staging fell back to Base"))).toEqual([
+        expect.objectContaining({ causes: [safeCause] }),
+      ]);
+      expect(stagingCauses).toEqual([{ code: safeCause.code, summary: safeCause.summary }]);
+      return;
+    }
     expect(recoveries).toHaveLength(2);
+    expect(providerCalls).toEqual(["GET /v1/snapshots/sn_fixture", "POST /v1/machines"]);
     for (const action of ["root", "tail"]) {
       expect(recoveries).toContainEqual(expect.stringContaining(
         `restore stage create-instance; selected artifact ${selectedId}; Before experiment:lifecycle / ${action}`,
@@ -191,6 +328,13 @@ export default defineEval({ async test() {} });`);
     const publication = diagnostics.filter((message) => message.includes("snapshot-uncertain"));
     expect(publication).toEqual([expect.stringContaining("fixture publish failed")]);
     expect(publication[0]).not.toContain(selectedId);
+    const restored = published.filter((item) => item.summary.includes("snapshot-restore-failed"));
+    expect(restored).toHaveLength(2);
+    for (const item of restored) {
+      expect(item.summary).toContain("One restore failure affects 2 actions");
+      expect(item.causes).toEqual([safeCause]);
+    }
+    expect(published.find((item) => item.summary.includes("snapshot-uncertain"))?.causes).toEqual([]);
     const replays = project.events.filter((event) =>
       event.event === "command-start" && JSON.stringify(event.args).includes("replay-"),
     );

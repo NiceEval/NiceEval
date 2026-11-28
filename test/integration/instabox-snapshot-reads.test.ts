@@ -13,6 +13,7 @@ const plan: InstaboxProviderPlan = {
   source: { _tag: "Template", id: "minimal" },
   lifetimeMs: undefined,
   resources: { vcpus: 4, memMiB: 8192 },
+  explicitSize: false,
   pathPrepend: [],
 };
 // The HTTP fixture represents an already materialized staging Machine.

@@ -295,3 +295,65 @@ test.for(deletionCases)("a restored instance protects its snapshot until deletio
     { examples: [[confirmed]], seed: 92872, numRuns: 1 },
   );
 });
+
+// @feature docs/feature/sandbox/README.md#preparation-failure
+test.for([true, false])("a failed restore retains its cause through Base fallback (snapshot absent=%s)", async (absent) => {
+  await fc.assert(
+    fc.asyncProperty(fc.nat(1000), async (request) => {
+      const causes = absent
+        ? [{ code: "not-found", summary: `Snapshot lookup failed with HTTP 404. requestId=req-${request}` }]
+        : [{ code: "no-capacity", summary: `Startup wait failed with retryable=false. requestId=req-${request}` }];
+      const events: string[] = [];
+      await withLedger(
+        {
+          createSnapshot: () => Effect.succeed({ _tag: "Ready", snapshotId }),
+          findSnapshot: () => Effect.succeed({ _tag: "Absent" }),
+          deleteSnapshot: () => Effect.succeed("deleted"),
+          createFromSnapshot: (_, id) =>
+            Effect.gen(function* () {
+              expect(id).toBe(snapshotId);
+              events.push("restore");
+              if (!absent) yield* Effect.addFinalizer(() => Effect.sync(() => { events.push("retire"); }));
+              return yield* new BeforeCacheSnapshotError({
+                operation: absent ? "snapshot lookup" : "startup wait",
+                reason: causes[0]!.code,
+                causes,
+                ...(absent ? { snapshotAbsent: true as const } : {}),
+              });
+            }),
+        },
+        ({ preparer, capture, context, collectAgain }) =>
+          Effect.gen(function* () {
+            yield* Effect.scoped(
+              Effect.gen(function* () {
+                const published = yield* capture;
+                if (published._tag !== "Published") throw new Error(`Capture failed: ${published.reason}`);
+                const owner = {
+                  ...context,
+                  materializeBase: () => Effect.sync(() => { events.push("base"); return sandbox; }),
+                };
+                const source = { _tag: "Artifact", artifact: published.artifact } as const;
+                const restored = yield* preparer.materializeFrom(undefined, owner, "consumer", source, materialize);
+                expect(restored).toMatchObject({
+                  _tag: "Materialized",
+                  start: {
+                    _tag: "FellBackToBase",
+                    reason: absent ? "snapshot-gone" : "snapshot-restore-failed",
+                    causes,
+                  },
+                });
+                const next = yield* preparer.materializeFrom(undefined, owner, "consumer", source, materialize);
+                expect(next).toMatchObject({
+                  _tag: "Materialized",
+                  start: { _tag: "FellBackToBase", reason: "artifact-unavailable" },
+                });
+              }),
+            );
+            yield* collectAgain;
+          }),
+      );
+      expect(events).toEqual(absent ? ["restore", "base", "base"] : ["restore", "retire", "base", "base"]);
+    }),
+    { seed: 92873, numRuns: 1 },
+  );
+});

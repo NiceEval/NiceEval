@@ -10,12 +10,17 @@ import {
 } from "../runtime.ts";
 import { withProvisionRetry } from "../retry.ts";
 import { InstaboxApi, Snapshot } from "./api.ts";
-import { InstaboxPreparationError, preparationRequest } from "./provisioning.ts";
+import {
+  INSTABOX_PROVISION_RETRY_DELAY_LIMIT_MS,
+  InstaboxPreparationError,
+  instaboxRetryDelayMs,
+  preparationRequest,
+} from "./provisioning.ts";
 import { InstaboxBackend } from "./sandbox.ts";
 import { instaboxSnapshotSourceExpirations } from "./snapshot-driver.ts";
 
 export const materializeInstabox = Effect.fn("materializeInstabox")(
-  function* (plan: InstaboxProviderPlan, context: SandboxRuntimeMaterializeContext) {
+  function* (plan: InstaboxProviderPlan, context: SandboxRuntimeMaterializeContext, failFast = false) {
     if (context.admission._tag === "Bound") yield* context.admission.value.granted;
     const deadlineAt = context.deadline._tag === "Bounded" ? context.deadline.deadlineAt : undefined;
     if (
@@ -39,6 +44,10 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(
     const owner = yield* Effect.scope;
     const facts = plan.source._tag === "Snapshot" ? { snapshotId: plan.source.id } : { templateId: plan.source.id };
     const labels = sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId });
+    const now = Date.now();
+    const stopAt = Math.min(now + lifetimeMs, deadlineAt ?? Infinity);
+    const limit = stopAt - now;
+    if (limit <= 0) return yield* Effect.fail(new DOMException("Instabox creation timed out", "TimeoutError"));
     let cleanupUnconfirmed = false;
     const create = Effect.gen(function* () {
       if (plan.source._tag === "Snapshot") {
@@ -46,8 +55,25 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(
         const snapshot = yield* preparationRequest("snapshot lookup", (signal) =>
           api.json(Snapshot, `/snapshots/${encodeURIComponent(id)}`, { signal }),
         );
-        if (snapshot.id !== id || snapshot.status !== "ready")
-          return yield* Effect.fail(new Error("Instabox snapshot must match the configured ID and be ready"));
+        if (snapshot.id !== id)
+          return yield* Effect.fail(new InstaboxPreparationError("snapshot lookup", { code: "snapshot-mismatch" }));
+        if (snapshot.status !== "ready")
+          return yield* Effect.fail(
+            new InstaboxPreparationError("snapshot lookup", {
+              code: "snapshot-not-ready",
+              message: `Snapshot is ${snapshot.status}.`,
+            }),
+          );
+        const locked = snapshot.sizeLocked ? snapshot.defaultSpec : undefined;
+        const requested = plan.resources;
+        if (plan.explicitSize && locked && (requested.vcpus !== locked.vcpus || requested.memMiB !== locked.memMiB))
+          return yield* Effect.fail(
+            new InstaboxPreparationError("snapshot lookup", {
+              code: "snapshot_spec_mismatch",
+              retryable: false,
+              message: `Requested ${requested.vcpus} vCPU and ${requested.memMiB} MiB. Locked size is ${locked.vcpus} vCPU and ${locked.memMiB} MiB.`,
+            }),
+          );
       }
       // Use the allocation start so the budget includes provisioning and inherited staging time.
       const expiresAt = (yield* Clock.currentTimeMillis) + lifetimeMs;
@@ -56,6 +82,7 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(
           InstaboxBackend.create(
             api,
             { ...plan, lifetimeMs },
+            { failFast, deadlineAt: stopAt, signal: context.signal },
             deadlineAt,
             context.runId,
             context.feedback.diagnostic,
@@ -78,19 +105,21 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(
           Exit.isSuccess(exit)
             ? Effect.void
             : providerBoundaryEffect(() => backend.stop()).pipe(
-                Effect.catch((error) =>
+                Effect.catch(() =>
                   Effect.sync(() => {
                     cleanupUnconfirmed = true;
                     context.feedback.diagnostic({
                       code: "sandbox-provision-reconcile-failed",
                       level: "warning",
-                      message: `Instabox Machine cleanup could not be confirmed: ${error.message}; the declared deletion deadline bounds the Machine`,
+                      message:
+                        "Instabox Machine cleanup could not be confirmed. The declared deletion deadline bounds the Machine.",
                     });
                   }),
                 ),
               ),
       );
     });
+    const startedAt = yield* Clock.currentTimeMillis;
     const provision = withProvisionRetry(
       create,
       (cause) => (!cleanupUnconfirmed && cause instanceof InstaboxPreparationError ? cause.kind : "unknown"),
@@ -99,9 +128,12 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(
       // Failed initialization has already awaited deletion. An unresolved allocation
       // has no retryable preparation error and cannot acquire a second Machine.
       Effect.void,
+      {
+        deadlineAt: startedAt + limit,
+        maxServerDelayMs: INSTABOX_PROVISION_RETRY_DELAY_LIMIT_MS,
+        serverDelayMs: (cause) => (cause instanceof InstaboxPreparationError ? instaboxRetryDelayMs(cause.detail) : 0),
+      },
     );
-    const limit = Math.min(lifetimeMs, (deadlineAt ?? Infinity) - Date.now());
-    if (limit <= 0) return yield* Effect.fail(new DOMException("Instabox creation timed out", "TimeoutError"));
     const signal = AbortSignal.any([context.signal, AbortSignal.timeout(limit)]);
     const aborted = Effect.callback<never, Error>((resume) => {
       const stop = () =>

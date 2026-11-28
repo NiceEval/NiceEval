@@ -1211,6 +1211,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         code: string;
         level: "warning" | "error";
         message: string;
+        causes?: DiagnosticRecord["causes"];
         phase: LifecyclePhase;
         data: Readonly<globalThis.Record<string, JsonValue>> | undefined;
         command: string | undefined;
@@ -1243,6 +1244,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           code: input.code,
           level: input.level,
           detail: input.message,
+          ...(input.causes === undefined ? {} : { causes: input.causes }),
           origin: attemptOrigin(input.phase),
           ...(input.data !== undefined || input.command !== undefined
             ? {
@@ -3701,6 +3703,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             level: "warning",
             message: diagnostic.message,
             phase: "sandbox.prepare",
+            causes: diagnostic.causes,
             dedupeKey: diagnostic.key,
             data: undefined,
             command: undefined,

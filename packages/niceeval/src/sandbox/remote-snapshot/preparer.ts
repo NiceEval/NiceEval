@@ -16,6 +16,7 @@ import type {
   BeforeCachePreparationContext,
   BeforeCachePreparer,
   BeforeCacheSource,
+  BeforeCacheStart,
 } from "../layer.ts";
 import { SandboxRuntimeMaterializationError, type SandboxRuntimeMaterializeContext } from "../runtime.ts";
 import { type BeforeCacheSnapshotDriver, type BeforeCacheSnapshotTarget } from "./driver.ts";
@@ -513,19 +514,25 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       source: BeforeCacheSource,
       materialize: SandboxRuntimeMaterializeContext,
     ) {
-      const base = Effect.fn("remoteSnapshot.materializeBase")(function* (reason?: string) {
+      const base = Effect.fn("remoteSnapshot.materializeBase")(function* (
+        reason?: string,
+        causes?: Extract<BeforeCacheStart, { _tag: "FellBackToBase" }>["causes"],
+      ) {
         const sandbox = yield* context.materializeBase(materialize);
         // Proof failure disables capture, not an otherwise valid Base instance.
         if (purpose === "staging") yield* rememberStaging(plan, context, sandbox);
         const proof = stagingProofs.get(sandbox);
         if (purpose === "staging" && proof?._tag === "Rejected") {
           yield* io(() => sandbox.group.stop());
-          return degraded(proof.reason, proof.detail);
+          return { ...degraded(proof.reason, proof.detail), ...(causes === undefined ? {} : { causes }) };
         }
         return {
           _tag: "Materialized" as const,
           sandbox,
-          start: reason === undefined ? { _tag: "Restored" as const } : { _tag: "FellBackToBase" as const, reason },
+          start:
+            reason === undefined
+              ? { _tag: "Restored" as const }
+              : { _tag: "FellBackToBase" as const, reason, ...(causes === undefined ? {} : { causes }) },
         };
       });
       if (source._tag === "Base") return yield* base();
@@ -586,7 +593,10 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
               }),
           ),
         );
-        return yield* base("snapshot-gone");
+        return yield* base(
+          created.failure.snapshotAbsent === true ? "snapshot-gone" : "snapshot-restore-failed",
+          created.failure.causes,
+        );
       }
       sandbox = created.success;
       const bound = yield* Effect.result(

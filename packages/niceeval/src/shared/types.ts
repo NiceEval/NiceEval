@@ -74,6 +74,11 @@ export interface ProgressUpdate {
   total?: number | undefined;
 }
 
+export interface DiagnosticCause {
+  readonly code: string;
+  readonly summary: string;
+}
+
 /** `ScopedFeedback.diagnostic` 的入参:运行结束后仍应保留的问题(永久事件)。 */
 export interface DiagnosticInput {
   code: string;

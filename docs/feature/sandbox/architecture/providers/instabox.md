@@ -12,7 +12,9 @@ Instabox snapshot Provider 的实现。公开用法见 [Instabox](../../library/
 
 每个 Machine 的 Scope 拥有一次删除职责。失败、取消与正常退出均调用 DELETE，附带确认 ID 和稳定删除幂等键，等待 operation succeeded。已有 operation 冲突时等待其终态后再删除；404 表示资源已不存在。删除失败保持未回收状态并传播错误，不能先标记成功。Snapshot 不由 Attempt Scope 拥有。
 
-HTTPS API 返回值在边界通过 Schema 解码；错误只交付 HTTP 状态、服务错误 code，不转交可能回显凭据的响应正文。默认请求有有界传输超时，资源等待由 Attempt deadline 或显式 lifetime 限制。回收使用独立有界时限，不继承已取消的 Attempt signal。
+HTTPS 错误和 `operation.error` 共用白名单。可保留实际状态码、`code`、`requestId`、`retryable`、`retryAfterSeconds` 和已知限流 `reason`。operation 查询成功的 HTTP 200 不作为失败状态码。消息仅保留长度受限、去掉控制字符后可确认安全的首行。其余消息用固定的阶段和分类表示。诊断不带原始响应、请求头、凭据、stack 或命令输出。
+
+请求有有界传输超时，资源等待受 Attempt deadline 或显式 lifetime 限制。回收使用独立时限，已取消的 Attempt 仍会等待回收结算。
 
 SSH token 仅由已认证 HTTPS 获取，并以响应中的 SHA256 host key fingerprint 校验 SSH gateway。每台 Machine 只持有一条 SSH 连接，命令与受管进程各占其中一个 channel；连接启用 keepalive，禁用 PTY，stdin 与两个输出流保留原始字节。连接在第一次需要时建立，随 Machine 的 Scope 关闭。一条命令的固定开销是一次 channel 往返，不含握手：同一台 Machine 上连续 20 条 `true` 的总耗时不得超过单条耗时加 20 次往返，验收按这个关系断言，不写死毫秒数。
 
@@ -48,7 +50,8 @@ stdin 同样按偏移交付。supervisor 把已经写进目标进程管道的 st
 - **只读查询原地重试**：snapshot GET、创建 operation GET 与运行就绪 GET 都是幂等读取，在原 snapshot、operation 或 Machine 上做有界重试。瞬时判定与次数沿用[已创建 Sandbox 的文件 IO 重试](../README.md#已创建-sandbox-的文件-io-重试)的分类器与上限，退避受 create 截止时间约束，取消立即停止。重试只重复读取，不发起新的创建或签发。
 - **Machine 创建**：响应失联时只用相同幂等键重取受理结果，不发起第二次逻辑创建，见上节。
 - **首次 SSH grant**：服务端没有证明 grant 支持幂等重取，因此只有拒绝类失败（连接建立失败、限流）原地重试。歧义类失败（响应中途断开、请求超时、5xx）不重复签发，按 `create()` 失败处理：kill-on-failure 删除该 Machine 并等待删除确认，再抛出原始错误。
-- **整个 `create()` 重试**：对账通道是创建幂等键重取加删除确认。初始化失败的 Machine 确认删除之后，重试层才以新的幂等键重建，次数与退避和其它内置 Provider 相同。删除无法确认时对账失败，放弃重试并抛回原始错误，服务端 delete deadline 是最后上界。
+- **整个 `create()` 重试**：容量不足、host 不可用、限流和服务标为可重试的 operation 或运行就绪故障可进入退避。服务标为永久失败、规格冲突和权限错误会立即结束。只有明确拒绝或确认删除已创建的 Machine 后，下一次创建才使用新幂等键。原键重取一次仍无法确认受理结果时，终止创建。删除无法确认时保留初始故障，服务端 delete deadline 是最后上界。
+- **预算**：整个创建最多四次。退避至少达到 `Retry-After` 或 `retryAfterSeconds` 指定的等待。服务建议超过 60 秒或等待无法放进创建预算时，返回最后一次失败。取消停止后续重试。
 
 不在 HTTPS 客户端上加全局重试。同一客户端还承担文件传输、删除与 snapshot 创建，它们各有自己的重试或对账规则。
 
@@ -63,6 +66,7 @@ stdin 同样按偏移交付。supervisor 把已经写进目标进程管道的 st
 - **等待预算**：从发出保存请求起最多 20 分钟，并为源 Machine 的声明删除期限预留 3 分钟回收时间。连续推进沿用同一 Machine 的期限。Run 取消会中止轮询并归还 staging，Adapter cleanup 与 Machine 回收继续使用各自的预算。5 分钟只用于按名称查不到对象时的收账窗口。历史成功样本缺少上传时长，20 分钟为慢上传留出有界等待，服务尚无完成时限承诺。
 - **发布诊断**：失败时记录阶段与最后观测状态。诊断只使用分类值，省略服务响应正文。
 - **一致性**：Instabox 的 live snapshot 等同于断电时的磁盘内容；两个盘是否在同一时刻捕获没有服务端证据。quiesce 保证 snapshot 期间没有 NiceEval 发起的写入，因此 core 不依赖跨盘原子性。
-- **createFromSnapshot**：以 snapshot ID 创建 Machine，沿用现有创建、探测与删除契约；Vault 与 Org Secrets 自动注入保持关闭。
+- **createFromSnapshot**：以 snapshot ID 创建 Machine，并用 `failFast` 取得明确的容量预检拒绝。显式 CPU 或内存与 `sizeLocked` 快照的 `defaultSpec` 冲突时，POST 前报 `snapshot_spec_mismatch`，同时保留请求值与锁定值。未指定尺寸时继续发送 Provider 默认值。Vault 与 Org Secrets 自动注入保持关闭。
+- **恢复诊断**：保留 snapshot 查询、分配、启动等待、运行就绪、SSH 授权或探测阶段。只有 snapshot 查询明确返回 `404 not_found` 才报告快照不存在。
 - **findSnapshot**：driver 读取 `GET /v1/snapshots` 返回的完整组织列表，按 `name` 严格相等匹配。多于一个匹配是错误。列表读取沿用只读重试，精确命中的 `failed` 返回 `Failed` 和 ID，供 core 回收。
 - **deleteSnapshot**：`DELETE /snapshots/{id}`，404 返回 `absent`。

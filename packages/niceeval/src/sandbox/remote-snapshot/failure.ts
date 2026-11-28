@@ -18,12 +18,14 @@ export function snapshotRestoreDiagnostic(artifact: BeforeCacheArtifact | undefi
   const artifactId = Option.getOrUndefined(parseSnapshotLocator(artifact?.locator))?.artifactId;
   const stage =
     reason === "snapshot-gone"
-      ? "create-instance"
-      : reason === "marker-mismatch"
-        ? "verify-marker"
-        : reason === "hold-missing"
-          ? "acquire-hold"
-          : "resolve-artifact";
+      ? "snapshot-lookup"
+      : reason === "snapshot-restore-failed"
+        ? "create-instance"
+        : reason === "marker-mismatch"
+          ? "verify-marker"
+          : reason === "hold-missing"
+            ? "acquire-hold"
+            : "resolve-artifact";
   return { stage, artifactId };
 }
 

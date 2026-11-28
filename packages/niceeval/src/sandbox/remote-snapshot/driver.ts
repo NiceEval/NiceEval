@@ -11,6 +11,8 @@ export class BeforeCacheSnapshotError extends Schema.TaggedError<BeforeCacheSnap
   {
     operation: Schema.String,
     reason: Schema.String,
+    snapshotAbsent: Schema.optionalKey(Schema.Literal(true)),
+    causes: Schema.optionalKey(Schema.Array(Schema.Struct({ code: Schema.String, summary: Schema.String }))),
   },
 ) {}
 

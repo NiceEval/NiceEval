@@ -157,17 +157,21 @@ Runner 创建 staging 与 consumer 都经过 core 的 `materializeFrom`，Provid
 
 1. 在账本登记 `sandbox` hold，然后调用 `createFromSnapshot`。
 2. 实例 ready 后校验 artifact 标记与账本登记一致。
-3. snapshot 已不存在、实例不能 Ready 或标记不一致时，删除该实例、释放 hold，用 Provider 的 Base `materialize` 最多创建一次干净实例。标记不一致说明 artifact 已损坏，core 把它改为 `deleting`；只是取不到时不改登记，只在本 Run 内标记为不可用。
+3. snapshot 已不存在、实例创建或初始化失败、或标记不一致时，回收已创建的实例并释放 hold。用 Provider 的 Base `materialize` 最多创建一次干净实例。验证出标记不一致时把 artifact 改为 `deleting`；其余恢复失败只在本 Run 内标记该 artifact 为不可用。
 
 返回值携带这次恢复的结果：
 
 ```typescript
 type BeforeCacheStart =
   | { readonly _tag: "Restored" }
-  | { readonly _tag: "FellBackToBase"; readonly reason: string };
+  | {
+      readonly _tag: "FellBackToBase";
+      readonly reason: string;
+      readonly causes?: readonly { readonly code: string; readonly summary: string }[];
+    };
 ```
 
-- consumer 收到 `FellBackToBase` 后，Attempt 真实执行全部 before。每个 eligible action 的反馈为 `degraded`，并带 `cache-degraded` diagnostic。恢复诊断记录选中的 artifact ID、失败阶段和回放的 action，另保留已经产生的发布诊断。
+- consumer 收到 `FellBackToBase` 后，Attempt 真实执行全部 before。每个 eligible action 的反馈为 `degraded`，并带 `cache-degraded` diagnostic。诊断记录选中的 artifact、失败阶段与回放的 action。一次恢复失败影响多个 action 时，每条诊断携带相同的安全原因并注明受影响数。Attempt Show 保留这些原因和已产生的发布诊断。
 - `FellBackToBase.reason` 是具名原因，不能把几种情况合成一句。消费前的检查各有自己的原因：
 
 | 原因 | 说明 |
@@ -178,11 +182,12 @@ type BeforeCacheStart =
 | `hold-missing` | 共享准备没有持有该 artifact 的 `run` hold |
 | `domain-mismatch` | artifact 的 execution domain 与当前不同 |
 | `key-mismatch` | 账本行的 BeforeCacheKey 与要消费的不同 |
-| `snapshot-gone` | snapshot 已不存在或实例不能 Ready |
+| `snapshot-gone` | Provider 的 snapshot 查询证实快照不存在 |
+| `snapshot-restore-failed` | 创建或初始化失败，或未能验证快照可用 |
 | `marker-mismatch` | 实例上的 artifact 标记与账本不一致 |
 
 `hold-missing` 出现时说明准备与消费的归属不一致，是缺陷而不是正常降级。
-- 子节点的 staging 收到 `FellBackToBase` 时，干净实例缺少父前缀的结果，core 不执行当前 action、不发布，删除该 staging，节点结算为 `degraded`。
+- 子节点的 staging 收到 `FellBackToBase` 时，干净实例缺少父前缀的结果。core 停止当前节点并删除该 staging，节点结算为 `degraded`。Run 和受影响的 Attempt 诊断均保留安全原因。
 
 ## Run 级节点结算
 

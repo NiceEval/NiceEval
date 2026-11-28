@@ -620,7 +620,11 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
         providerName: adapter?.name ?? "niceeval",
         sensitiveValues,
       });
-      const recordDiagnostic = (input: DiagnosticInput, closingPhase?: LifecyclePhase) => {
+      const recordDiagnostic = (
+        input: DiagnosticInput,
+        closingPhase?: LifecyclePhase,
+        causes?: DiagnosticRecord["causes"],
+      ) => {
         const phase = closingPhase ?? (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
         if (input.dedupeKey !== undefined) {
           const existing = dedupeIndex.get(input.dedupeKey);
@@ -635,13 +639,21 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
           code: input.code,
           level: input.level,
           detail: message,
+          ...(causes === undefined
+            ? {}
+            : {
+                causes: causes.map((cause) => ({
+                  code: redactSensitiveText(cause.code, sensitiveValues),
+                  summary: redactSensitiveText(cause.summary, sensitiveValues),
+                })),
+              }),
           origin: attemptOrigin(phase),
           ...(context !== undefined ? { context } : {}),
         };
         if (input.dedupeKey !== undefined) dedupeIndex.set(input.dedupeKey, record);
         diagnostics.push(record);
-        // Preparation already reported this ledger failure once for its domain.
-        // Keep each node's durable evidence without repeating it in the Run stream.
+        // Run preparation reports shared failures once. Preserve the affected
+        // nodes in the Attempt receipt without repeating the Run stream warning.
         if (input.code === "cache-degraded" && typeof context?.beforeCacheDiagnosticKey === "string") return;
         // 同时进运行级永久事件流(human 撤下 dashboard 后追加、JSON stdout 追加 warning,去重按 key)。
         // `key` 只管折叠到多细(作者没给 dedupeKey 时折到「这一条 attempt 的这种诊断」,身份因此
@@ -1775,6 +1787,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       attemptTimeout,
                       deadlineAt,
                       feedback: scopedFeedback,
+                      recordBeforeCacheDiagnostic: (input, causes) => recordDiagnostic(input, undefined, causes),
                       diagnostics,
                       commands,
                       sensitiveValues,
@@ -2742,6 +2755,7 @@ interface AttemptResources {
   recorder: TimingRecorder;
   /** 作用域反馈句柄(归因随 runner 当前阶段);各生命周期入口共享同一实现。 */
   feedback: ScopedFeedback;
+  recordBeforeCacheDiagnostic: (input: DiagnosticInput, causes: DiagnosticRecord["causes"]) => void;
   /** attempt 级诊断累计(runAttemptEffect 持有,含 sandbox.create 期间的诊断)。 */
   diagnostics: DiagnosticRecord[];
   /**
@@ -3050,6 +3064,7 @@ async function runAttemptBody(
     setSendActive,
     recorder,
     feedback,
+    recordBeforeCacheDiagnostic,
     diagnostics,
     commands,
     sensitiveValues,
@@ -3295,7 +3310,8 @@ async function runAttemptBody(
   };
 
   const runBeforePlan = async (): Promise<void> => {
-    if (linked === undefined || linked.before.length === 0) return;
+    const agentDerived = preparedBeforeCache?.agentDerived === true;
+    if (linked === undefined || (linked.before.length === 0 && !agentDerived)) return;
     enterPhase("sandbox.prepare");
 
     const legacyBarrier = linked.setupHooks.length > 0 || linked.pluginLifecycles.length > 0;
@@ -3313,7 +3329,7 @@ async function runAttemptBody(
       await replayAllBefore(linked.before, "replay(bypass)");
       return;
     }
-    if (materializedCase === undefined || structurallyEligibleCount === 0) {
+    if (materializedCase === undefined || (structurallyEligibleCount === 0 && !agentDerived)) {
       await replayAllBefore(linked.before, "unsupported");
       return;
     }
@@ -3338,54 +3354,73 @@ async function runAttemptBody(
               owner: `${entry.owner.kind}:${entry.owner.id}`,
               reason: preparationFailure.reason,
               detail: preparationFailure.detail,
+              causes: undefined,
             }));
+        const restoreEffects = nodes.filter((node) => node.causes?.length).length;
         for (const node of nodes) {
           // Persist the named reason and node in the existing diagnostic summary:
           // arbitrary feedback data is intentionally not retained by this family.
-          feedback.diagnostic({
-            code: "cache-degraded",
-            level: "warning",
-            message:
-              `Before cache degraded: ${node.reason}` +
-              `; ${node.detail}` +
-              `; Before ${node.owner} / ${node.actionId}` +
-              ("key" in node ? `; node ${node.key}` : "") +
-              ". The remaining before actions will run on the usable sandbox state.",
-            data: {
-              operation:
-                node.reason === "snapshot-uncertain" || node.reason === "snapshot-rejected"
-                  ? "before-cache.publish"
-                  : "before-cache.prepare",
-              operationId: preparationFailure.operationId,
-              reason: node.reason,
-              actionId: node.actionId,
-              ...(preparationFailure.diagnosticKey !== undefined
-                ? { beforeCacheDiagnosticKey: preparationFailure.diagnosticKey }
-                : {}),
+          recordBeforeCacheDiagnostic(
+            {
+              code: "cache-degraded",
+              level: "warning",
+              message:
+                `Before cache degraded: ${node.reason}` +
+                `; ${node.detail}` +
+                `; Before ${node.owner} / ${node.actionId}` +
+                ("key" in node ? `; node ${node.key}` : "") +
+                "." +
+                (node.causes !== undefined && restoreEffects > 1
+                  ? ` One restore failure affects ${restoreEffects} actions.`
+                  : "") +
+                " The remaining before actions will run on the usable sandbox state.",
+              data: {
+                operation:
+                  node.reason === "snapshot-uncertain" || node.reason === "snapshot-rejected"
+                    ? "before-cache.publish"
+                    : "before-cache.prepare",
+                operationId: preparationFailure.operationId,
+                reason: node.reason,
+                actionId: node.actionId,
+                ...(preparationFailure.diagnosticKey !== undefined
+                  ? { beforeCacheDiagnosticKey: preparationFailure.diagnosticKey }
+                  : {}),
+              },
             },
-          });
+            node.causes,
+          );
         }
       }
       if (fallback !== undefined) {
         const operationId = `before-cache-${randomUUID()}`;
         const { artifactId, stage } = snapshotRestoreDiagnostic(preparedBeforeCache.artifact, fallback.reason);
-        for (const entry of linked.before.slice(0, structurallyEligibleCount)) {
-          feedback.diagnostic({
-            code: "cache-degraded",
-            level: "warning",
-            message:
-              `Before cache degraded: ${fallback.reason}; restore stage ${stage}` +
-              (artifactId === undefined ? "" : `; selected artifact ${artifactId}`) +
-              `; Before ${entry.owner.kind}:${entry.owner.id} / ${entry.id}. The action will run on Base.`,
-            data: {
-              operation: "before-cache.restore",
-              operationId,
-              reason: fallback.reason,
-              stage,
-              ...(artifactId === undefined ? {} : { artifactId }),
-              actionId: entry.id,
+        const summary =
+          `Before cache degraded: ${fallback.reason}; restore stage ${stage}` +
+          (artifactId === undefined ? "" : `; selected artifact ${artifactId}`);
+        const affected = linked.before.slice(0, structurallyEligibleCount);
+        for (const entry of affected.length === 0 ? [undefined] : affected) {
+          recordBeforeCacheDiagnostic(
+            {
+              code: "cache-degraded",
+              level: "warning",
+              message:
+                entry === undefined
+                  ? `${summary}. Agent installation will run on Base.`
+                  : summary +
+                    `; Before ${entry.owner.kind}:${entry.owner.id} / ${entry.id}.` +
+                    (affected.length > 1 ? ` One restore failure affects ${affected.length} actions.` : "") +
+                    " The action will run on Base.",
+              data: {
+                operation: "before-cache.restore",
+                operationId,
+                reason: fallback.reason,
+                stage,
+                ...(artifactId === undefined ? {} : { artifactId }),
+                ...(entry === undefined ? {} : { actionId: entry.id }),
+              },
             },
-          });
+            fallback.causes,
+          );
         }
       }
       const restoredCount = fallback === undefined ? satisfied : 0;

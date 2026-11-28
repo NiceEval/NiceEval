@@ -4,7 +4,7 @@
 // (见 docs/feature/sandbox/architecture/README.md「Provisioning 失败与重试」)中,这里承担
 // 「重试前对账」;kill-on-failure 在各 provider 的 create() 内部。
 
-import { Effect, Random } from "effect";
+import { Clock, Effect, Random } from "effect";
 
 import { isRejectedProvisionError, isRetryableProvisionError, type SandboxProvisionErrorKind } from "./errors.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
@@ -54,6 +54,11 @@ export function withProvisionRetry<T>(
    * (见 docs/feature/sandbox/architecture/README.md)。
    */
   reconcile?: Effect.Effect<void, unknown>,
+  advice?: {
+    readonly deadlineAt: number;
+    readonly maxServerDelayMs: number;
+    readonly serverDelayMs: (error: unknown) => number;
+  },
 ): Effect.Effect<T, unknown> {
   const retry = (attempt: number): Effect.Effect<T, unknown> =>
     Effect.gen(function* () {
@@ -65,13 +70,20 @@ export function withProvisionRetry<T>(
             // 歧义类:远端可能已有实例,没有对账通道就不能重试,第一次抛出。
             if (!isRejectedProvisionError(kind) && !reconcile) return yield* Effect.fail(error);
             const jitter = yield* Random.next;
-            const delayMs = delayFor(attempt, jitter);
+            const serverDelayMs = advice?.serverDelayMs(error) ?? 0;
+            const delayMs = Math.max(delayFor(attempt, jitter), serverDelayMs);
+            if (
+              advice &&
+              (serverDelayMs > advice.maxServerDelayMs ||
+                (yield* Clock.currentTimeMillis) + delayMs >= advice.deadlineAt)
+            )
+              return yield* Effect.fail(error);
             // 「activity」而非「diagnostic」—— 这是正常的退避进度,不是需要去重/永久留痕的
             // warning(与 docker.ts 的镜像拉取进度、vercel.ts 的 session rotate 通知同一个理由,
             // 见 sink.ts 的 reportActivity 说明)。让 human dashboard 的 active slot 在整个退避
             // 窗口里有可见更新,而不是冻结到重试成功或耗尽为止。
             const message =
-              `  · [sandbox] provisioning rate-limited, retrying in ${Math.round(delayMs)}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})...
+              `  · [sandbox] provisioning ${advice === undefined || kind === "rate_limit" ? "rate-limited" : "failed"}, retrying in ${Math.round(delayMs)}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})...
 `.trimEnd();
             // 严格顺序:release → 反馈 → sleep → reacquire → reconcile。
             yield* sleepWithReleasedSlot(
@@ -84,6 +96,7 @@ export function withProvisionRetry<T>(
                 Effect.sleep(delayMs),
               ),
             );
+            if (advice && (yield* Clock.currentTimeMillis) >= advice.deadlineAt) return yield* Effect.fail(error);
             if (reconcile) {
               const outcome = yield* reconcile.pipe(Effect.result);
               if (outcome._tag === "Failure") {

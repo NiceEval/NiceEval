@@ -54,6 +54,7 @@ export interface InstaboxProviderPlan {
     | { readonly _tag: "Template"; readonly id: InstaboxTemplateId };
   readonly lifetimeMs: number | undefined;
   readonly resources: { readonly vcpus: number; readonly memMiB: number };
+  readonly explicitSize: boolean;
   readonly pathPrepend: readonly string[];
 }
 
@@ -114,6 +115,7 @@ export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"
         : { _tag: "Template", id: parsed.templateId ?? parsed.template ?? "universal" },
     lifetimeMs: parsed.lifetimeMs,
     resources: { ...(parsed.resources ?? INSTABOX_MACHINE_SPECS[parsed.spec ?? "instabox-medium"]) },
+    explicitSize: parsed.resources !== undefined || parsed.spec !== undefined,
     pathPrepend: [...(parsed.pathPrepend ?? [])],
   };
   const identity: JsonValue = {

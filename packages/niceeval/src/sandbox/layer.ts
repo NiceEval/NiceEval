@@ -4,7 +4,7 @@
 import { isAbsolute, resolve } from "node:path";
 import { Data, Effect, Option, type Scope } from "effect";
 import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
-import type { JsonValue } from "../shared/types.ts";
+import type { DiagnosticCause, JsonValue } from "../shared/types.ts";
 import type { ScopedFeedback } from "../shared/types.ts";
 import type {
   AttemptCapturedSandboxCase,
@@ -442,7 +442,7 @@ export type SandboxBeforeCacheSupport<Plan> =
 
 export type BeforeCacheStart =
   | { readonly _tag: "Restored" }
-  | { readonly _tag: "FellBackToBase"; readonly reason: string };
+  | { readonly _tag: "FellBackToBase"; readonly reason: string; readonly causes?: readonly DiagnosticCause[] };
 
 export interface BeforeCacheArtifact {
   readonly locator: JsonValue;
@@ -473,7 +473,12 @@ export type BeforeCacheCapture =
 
 export type BeforeCacheMaterialized =
   | { readonly _tag: "Materialized"; readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart }
-  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
+  | {
+      readonly _tag: "Degraded";
+      readonly reason: BeforeCacheDegradedReason;
+      readonly detail: string;
+      readonly causes?: readonly DiagnosticCause[];
+    };
 
 export type BeforeCacheSource =
   | { readonly _tag: "Base" }

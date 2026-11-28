@@ -31,15 +31,24 @@ import type {
 import type { InstaboxProviderPlan } from "../instabox.ts";
 import {
   type InstaboxApi,
+  InstaboxApiError,
   instaboxRequestError,
   type InstaboxRequestError,
   Machine,
   Operation,
-  InstaboxOperationError,
   SSHToken,
 } from "./api.ts";
 import { startInstaboxProcess } from "./process.ts";
-import { INSTABOX_MACHINE_DELETE_TIMEOUT_MS, InstaboxPreparationError, preparationRequest } from "./provisioning.ts";
+import {
+  INSTABOX_MACHINE_DELETE_TIMEOUT_MS,
+  INSTABOX_PROVISION_RETRY_DELAY_LIMIT_MS,
+  InstaboxPreparationError,
+  instaboxRetryDelayMs,
+  preparationFailure,
+  preparationRequest,
+  provisionKind,
+  serviceRetryKind,
+} from "./provisioning.ts";
 import { InstaboxConnection } from "./connection.ts";
 
 function recoveryForRequest(cause: InstaboxRequestError): "not-found" | "operation-conflict" | "other" {
@@ -59,30 +68,11 @@ function recoveryForRequest(cause: InstaboxRequestError): "not-found" | "operati
       }
     }
     case "InstaboxProtocolError":
-    case "InstaboxOperationError":
     case "InstaboxTransportError":
       return "other";
     default:
       return cause satisfies never;
   }
-}
-
-function allocationRejected(cause: InstaboxRequestError): boolean {
-  switch (cause._tag) {
-    case "InstaboxApiError":
-      return cause.status < 500;
-    case "InstaboxProtocolError":
-    case "InstaboxOperationError":
-    case "InstaboxTransportError":
-      return false;
-    default:
-      return cause satisfies never;
-  }
-}
-
-function allocationFailureDetail(failure: InstaboxRequestError): string {
-  if (failure._tag !== "InstaboxTransportError") return failure.message;
-  return failure.name === "TimeoutError" ? "request timed out" : "transport failure";
 }
 
 export class InstaboxBackend implements SandboxProviderBackend {
@@ -133,6 +123,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
   static async create(
     api: InstaboxApi,
     options: InstaboxProviderPlan & { readonly lifetimeMs: number },
+    allocation: { readonly failFast: boolean; readonly deadlineAt: number; readonly signal: AbortSignal },
     deadlineAt?: number,
     runId?: string,
     diagnostic?: (input: DiagnosticInput) => void,
@@ -141,6 +132,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     const idempotencyKey = randomUUID();
     const body = JSON.stringify({
       ...(options.source._tag === "Snapshot" ? { snapshotId: options.source.id } : { templateId: options.source.id }),
+      ...(allocation.failFast ? { failFast: true } : {}),
       name: `niceeval-${idempotencyKey}`,
       ...options.resources,
       deleteAfterSeconds: Math.ceil(options.lifetimeMs / 1000),
@@ -150,22 +142,62 @@ export class InstaboxBackend implements SandboxProviderBackend {
       secrets: [],
       metadata: { ...sandboxCreationMetadata(runId), ...creationLabels, "niceeval.provision": idempotencyKey },
     });
-    const request = () =>
-      api.json(Operation, "/machines", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body });
+    const request = () => {
+      const remaining = allocation.deadlineAt - Date.now();
+      if (allocation.signal.aborted || remaining <= 0)
+        throw new InstaboxPreparationError("allocation", {
+          code: allocation.signal.aborted ? "request-cancelled" : "request-timeout",
+        });
+      return api.json(Operation, "/machines", {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body,
+        timeoutMs: Math.min(30_000, remaining),
+      });
+    };
     let operation: Operation;
     try {
       operation = await request();
     } catch (cause) {
-      const failure = instaboxRequestError(cause);
-      if (allocationRejected(failure)) throw new InstaboxPreparationError("allocation", failure);
+      if (cause instanceof InstaboxPreparationError) throw cause;
+      const kind = provisionKind(cause);
+      if (cause instanceof InstaboxApiError) {
+        if (cause.status < 500 || cause.detail.retryable === false) throw preparationFailure("allocation", cause, kind);
+        // failFast capacity rejections leave no Machine, operation, or idempotency record.
+        if (allocation.failFast && cause.status === 503 && cause.code === "no_capacity")
+          throw preparationFailure("allocation", cause, "rejected");
+      }
+      if (kind === "rejected") throw preparationFailure("allocation", cause, kind);
       // Replay only the same allocation identity, never allocate a second machine.
+      const unreconciled = (retryCause: unknown) => {
+        const failure = preparationFailure(
+          "allocation",
+          retryCause instanceof InstaboxApiError ? retryCause : cause,
+          "unknown",
+        );
+        return new InstaboxPreparationError("allocation", {
+          ...failure.detail,
+          message: [
+            failure.detail.message,
+            "Acceptance could not be reconciled. The declared deletion deadline bounds any allocated Machine.",
+          ]
+            .filter((part) => part !== undefined)
+            .join(" "),
+        });
+      };
+      const wait = cause instanceof InstaboxApiError ? instaboxRetryDelayMs(cause.detail) : 0;
+      if (
+        allocation.signal.aborted ||
+        wait > INSTABOX_PROVISION_RETRY_DELAY_LIMIT_MS ||
+        Date.now() + wait >= allocation.deadlineAt
+      )
+        throw unreconciled(cause);
       try {
+        if (wait > 0) await delay(wait, undefined, { signal: allocation.signal });
+        if (allocation.signal.aborted || Date.now() >= allocation.deadlineAt) throw unreconciled(cause);
         operation = await request();
       } catch (retryCause) {
-        const retryFailure = instaboxRequestError(retryCause);
-        throw new Error(
-          `Instabox allocation could not be reconciled (initial: ${allocationFailureDetail(failure)}, replay: ${allocationFailureDetail(retryFailure)}); the declared deletion deadline bounds any allocated Machine`,
-        );
+        throw unreconciled(retryCause);
       }
     }
     const backend = new InstaboxBackend(api, options, operation, deadlineAt, diagnostic);
@@ -180,16 +212,28 @@ export class InstaboxBackend implements SandboxProviderBackend {
         current = yield* preparationRequest("startup wait", (signal) =>
           this.api.json(Operation, `/operations/${encodeURIComponent(this.operation.id)}?wait=25s`, { signal }),
         );
+        if (current.id !== this.operation.id || current.machineId !== this.sandboxId)
+          return yield* Effect.fail(new InstaboxPreparationError("startup wait", { code: "operation-mismatch" }));
       }
       if (current.state !== "succeeded") {
-        const cause = new InstaboxOperationError(current.error?.code);
-        return yield* Effect.fail(new Error(`Instabox startup wait failed: ${cause.message}`, { cause }));
+        const detail = this.api.errorDetail(current.error);
+        return yield* Effect.fail(
+          new InstaboxPreparationError(
+            "startup wait",
+            { code: "operation-failed", ...detail },
+            serviceRetryKind(detail),
+          ),
+        );
       }
-      const machine = yield* preparationRequest("machine readiness check", (signal) =>
-        this.api.json(Machine, this.path, { signal }),
-      );
-      if (machine.id !== this.sandboxId || machine.state !== "running" || !machine.runtime.ready)
-        return yield* Effect.fail(new Error("Instabox Machine is not ready"));
+      const machine = yield* preparationRequest("readiness", (signal) => this.api.json(Machine, this.path, { signal }));
+      if (machine.id !== this.sandboxId)
+        return yield* Effect.fail(new InstaboxPreparationError("readiness", { code: "machine-mismatch" }));
+      if (machine.state !== "running" || !machine.runtime.ready) {
+        const detail = this.api.errorDetail(machine.lastError);
+        const code = detail.code ?? (machine.runtime.hostUnreachable ? "host_unavailable" : "runtime_not_ready");
+        const failure = { ...detail, code };
+        return yield* Effect.fail(new InstaboxPreparationError("readiness", failure, serviceRetryKind(failure)));
+      }
       const requestToken = (signal: AbortSignal) =>
         this.api.json(SSHToken, `${this.path}/ssh-tokens`, {
           method: "POST",
@@ -198,19 +242,20 @@ export class InstaboxBackend implements SandboxProviderBackend {
         });
       this.token = yield* preparationRequest("SSH grant", requestToken);
       if (this.token.machineId !== this.sandboxId)
-        return yield* Effect.fail(new Error("Instabox SSH grant belongs to another Machine"));
+        return yield* Effect.fail(new InstaboxPreparationError("SSH grant", { code: "machine-mismatch" }));
       this.connection = new InstaboxConnection(this.token, requestToken);
       const probe = yield* providerBoundaryEffect((signal) =>
         this.runShell(
           'test "$(uname -sm)" = "Linux x86_64" && getconf GNU_LIBC_VERSION && test "$(id -u)" != 0 && sudo -n true && git --version && mkdir -p /data/home/workspace',
           { cwd: "/data/home", signal },
         ),
-      ).pipe(Effect.mapError((cause) => new Error(`Instabox workspace probe failed: ${cause.message}`, { cause })));
+      ).pipe(Effect.mapError(() => new InstaboxPreparationError("probe", { code: "probe-failed" })));
       if (probe.exitCode !== 0)
         return yield* Effect.fail(
-          new Error(
-            `Instabox snapshot requires Linux x64 GNU, Node.js 22+, Bash, Git and a non-root user with passwordless sudo; exitCode: ${probe.exitCode}; stdout: ${probe.stdout}; stderr: ${probe.stderr}`,
-          ),
+          new InstaboxPreparationError("probe", {
+            code: "probe-failed",
+            message: `Workspace requirements check exited with code ${probe.exitCode}. Expected Linux x64 GNU, Bash, Git, and a non-root user with passwordless sudo.`,
+          }),
         );
     });
   }
@@ -568,7 +613,9 @@ export class InstaboxBackend implements SandboxProviderBackend {
           }
           if (operation?.state === "succeeded" && deletionAccepted) return;
           if (operation?.state === "failed" && deletionAccepted)
-            throw new Error(`Instabox deletion operation failed (${operation.error?.code ?? "unknown"})`);
+            throw new Error(
+              `Instabox deletion operation failed (${this.api.errorDetail(operation.error).code ?? "unknown"})`,
+            );
           if (operation?.state === "succeeded" || operation?.state === "failed") {
             operation = undefined;
             shouldDelete = machineState !== "deleting";
