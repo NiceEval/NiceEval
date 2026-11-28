@@ -22,7 +22,7 @@ export function AttemptDialog({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="niceeval-view-dialog-overlay" inert={interactionLocked ? true : undefined} />
+        <div className="niceeval-view-dialog-overlay" aria-hidden="true" inert={interactionLocked ? true : undefined} />
         <Dialog.Content
           className="niceeval-view-dialog"
           inert={interactionLocked ? true : undefined}

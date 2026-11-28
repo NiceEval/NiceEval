@@ -3018,6 +3018,7 @@ table.niceeval-report,
 html.niceeval-view-document {
   box-sizing: border-box;
   min-width: 320px;
+  scrollbar-gutter: stable;
   color-scheme: dark;
   background: var(--niceeval-color-page, #050505);
   color: var(--niceeval-color-text, #ededed);
@@ -3258,10 +3259,16 @@ html.niceeval-view-document body {
 /* View shell owns only the modal chrome. The report body inside the dialog
    keeps the same closed product markup and the same stylesheet as its direct
    route; the runtime injects no second CSS owner. */
+html.niceeval-view-document:has(.niceeval-view-dialog) {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
 .niceeval-view-dialog-overlay {
   position: fixed;
   inset: 0;
   z-index: 20;
+  pointer-events: auto;
   background: rgb(0 0 0 / 50%);
 }
 

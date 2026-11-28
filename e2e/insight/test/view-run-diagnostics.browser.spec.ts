@@ -5,10 +5,24 @@ import { join } from "node:path";
 import { expectLoopbackReadyUrl, insightCaseArtifacts, insightE2E, waitForViewReady } from "./support.ts";
 
 test.describe.configure({ mode: "parallel" });
+test.use({
+  viewport: { width: 1024, height: 300 },
+  launchOptions: {
+    executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
+    ignoreDefaultArgs: ["--hide-scrollbars"],
+    args: ["--disable-smooth-scrolling"],
+  },
+});
 
 // @use-case docs/feature/insight/use-case/insight-review-run-adoption.md
 // @regression memory/pre-dispatch-run-diagnostics.md
 test("reader sees why a Run failed before its Attempts started", async ({ page }) => {
+  const blockedStyles: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().includes("Content Security Policy directive 'style-src-elem")) {
+      blockedStyles.push(message.text());
+    }
+  });
   await insightE2E.case(
     "view-run-diagnostics",
     { artifacts: insightCaseArtifacts() },
@@ -38,6 +52,7 @@ export default defineExperiment({
         const runLink = page.getByRole("link", { name: "Open a historical Run", exact: true });
         await expect(runLink).toBeVisible();
         await expect(runLink).toHaveAttribute("href", new RegExp(runId));
+        await runLink.evaluate((element) => element.scrollIntoView({ block: "center" }));
         await runLink.click();
         await expect(
           page.getByRole("heading", {
@@ -47,6 +62,11 @@ export default defineExperiment({
         ).toBeVisible();
         const errors = page.getByRole("region", { name: "Run errors", exact: true });
         await expect(errors).toBeVisible();
+        const backgroundScroll = await page.evaluate(() => window.scrollY);
+        expect(backgroundScroll).toBeGreaterThan(0);
+        await page.keyboard.press("Home");
+        await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        expect(await page.evaluate(() => window.scrollY)).toBe(backgroundScroll);
         await expect(errors).toContainText("Experiment before failed: request req_before_view_123");
         await expect(errors).toContainText("Attempts not started: 2");
         await expect(errors).toContainText("classic/recall-name");
@@ -57,6 +77,7 @@ export default defineExperiment({
         await expect(translated).toBeVisible();
         await expect(translated).toContainText("未启动的尝试：2");
         await expect(translated).toContainText("req_before_view_123");
+        expect(blockedStyles).toEqual([]);
       } finally {
         try {
           if (!page.isClosed()) await page.close();
