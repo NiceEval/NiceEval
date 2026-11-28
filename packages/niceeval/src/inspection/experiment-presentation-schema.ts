@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 export const InspectionRunSummarySchema = Schema.Struct({
   runId: Schema.String,

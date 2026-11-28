@@ -6,6 +6,7 @@ import { AttemptNotesSchema, AttemptNoteSchema } from "../record/family/attempt-
 import { AgentInstallFactsSchema } from "../record/family/agent-install/schema.ts";
 import { SimulatedUserCostSummarySchema } from "../record/family/attempt-cost/schema.ts";
 import { CacheReadReportSchema } from "../o11y/cache-read.ts";
+import * as BigDecimal from "effect/BigDecimal";
 import * as Schema from "effect/Schema";
 import {
   PlannedAttemptSchema,
@@ -26,7 +27,6 @@ import {
   validateJudgeUsageAttachment,
 } from "../record/family/judge-usage/schema.ts";
 import { compareAdapterModelGroups, compareJudgeUsageCalls } from "../o11y/usage-contract.ts";
-import { compareCanonicalDecimal } from "../o11y/adapter-usage-projection.ts";
 import {
   INSPECTION_ATTEMPT_PAGE_SIZE,
   INSPECTION_USAGE_GROUP_PAGE_SIZE,
@@ -1247,7 +1247,11 @@ const EstimatedCostRangeSchema = Schema.Struct({
   currency: Schema.Literal("USD"),
   lower: UsageDecimalSchema,
   upper: UsageDecimalSchema,
-}).check(Schema.makeFilter(({ lower, upper }) => compareCanonicalDecimal(lower, upper) <= 0));
+}).check(
+  Schema.makeFilter(({ lower, upper }) =>
+    BigDecimal.isLessThanOrEqualTo(BigDecimal.fromStringUnsafe(lower), BigDecimal.fromStringUnsafe(upper)),
+  ),
+);
 export type EstimatedCostRange = Schema.Schema.Type<typeof EstimatedCostRangeSchema>;
 const TotalUsageCostsSchema = Schema.Struct({
   // Inspection JSON observes key presence and cannot encode an explicit undefined value.

@@ -19,6 +19,7 @@ test("reader sees why a Run failed before its Attempts started", async ({ page }
 import { defineExperiment } from "niceeval";
 import { deterministicAgent, deterministicSandbox } from "../agents/deterministic.ts";
 export default defineExperiment({
+  displayName: "Failing preparation",
   adapter: deterministicAgent(), sandbox: deterministicSandbox,
   evals: ["classic/recall-name"], attempts: 2,
   before: () => { throw new Error("Experiment before failed: request req_before_view_123"); },
@@ -38,7 +39,12 @@ export default defineExperiment({
         await expect(runLink).toBeVisible();
         await expect(runLink).toHaveAttribute("href", new RegExp(runId));
         await runLink.click();
-        await expect(page.getByRole("heading", { name: `Run membership · ${runId}`, exact: true })).toBeVisible();
+        await expect(
+          page.getByRole("heading", {
+            name: `Run membership · Failing preparation [run-before-error] · ${runId}`,
+            exact: true,
+          }),
+        ).toBeVisible();
         const errors = page.getByRole("region", { name: "Run errors", exact: true });
         await expect(errors).toBeVisible();
         await expect(errors).toContainText("Experiment before failed: request req_before_view_123");

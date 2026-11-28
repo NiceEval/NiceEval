@@ -529,11 +529,12 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const runPage = await page.context().newPage();
         try {
           await runPage.goto(new URL(`#${inspectionRunRoute}`, page.url()).href);
+          const inspectionRunTitle = `Run membership · main · ${inspectionRunId}`;
           const inspectionRunHeading = runPage.locator("main h2.niceeval-section-title").filter({
-            hasText: `Run membership · ${inspectionRunId}`,
+            hasText: inspectionRunTitle,
           });
           await expect(inspectionRunHeading).toHaveCount(1);
-          await expect(inspectionRunHeading).toHaveText(`Run membership · ${inspectionRunId}`);
+          await expect(inspectionRunHeading).toHaveText(inspectionRunTitle);
           await expect(inspectionRunHeading).toBeVisible();
           const inspectionRunAttempt = runPage.getByRole("link", { name: inspectionLocator, exact: true });
           await expect(inspectionRunAttempt).toBeVisible();
@@ -605,13 +606,13 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const absenceDetail = absenceAssertion.locator("xpath=..").locator(":scope > .niceeval-source-line-detail");
         const absenceMatch = absenceDetail.getByLabel('notCalledTool(toolMatch("forbidden_state_tool")): matched');
         await absenceMatch.click();
-        const structuredObserved = absenceDetail
-          .getByRole("heading", { name: "Observed", exact: true })
-          .locator("xpath=..");
-        await expect(structuredObserved).toBeVisible();
-        await expect(structuredObserved.locator("dt")).toHaveText(["kind", "outcome"]);
-        await expect(structuredObserved).toContainText("boolean");
-        await expect(structuredObserved).toContainText("matched");
+        const absenceFilter = absenceDetail.getByRole("region", { name: "Tool call filter", exact: true });
+        await expect(
+          absenceFilter.getByText('none × toolMatch("forbidden_state_tool")', { exact: true }),
+        ).toBeVisible();
+        await expect(absenceFilter.getByText("0 matched · 1 not matched · 0 unknown", { exact: true })).toBeVisible();
+        await expect(absenceFilter.getByText("1/1 rows", { exact: true })).toBeVisible();
+        await expect(absenceFilter.locator("dt").filter({ hasText: /^(kind|outcome)$/u })).toHaveCount(0);
         await expect(absenceDetail).not.toContainText("fields: label:");
 
         const toolAssertion = dialog.locator("details.niceeval-source-line > summary").filter({
