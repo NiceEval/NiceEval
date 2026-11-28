@@ -6,6 +6,12 @@ on:
       package-smoke:
         type: boolean
         default: true
+      deterministic:
+        type: boolean
+        default: true
+      live-providers:
+        type: boolean
+        default: true
     secrets:
       GEMINI_API_KEY:
         required: false
@@ -15,7 +21,7 @@ permissions:
 
 jobs:
   package-smoke:
-    if: inputs.package-smoke
+    if: inputs.deterministic && inputs.package-smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -35,6 +41,7 @@ jobs:
 
   unit:
     name: Unit tests
+    if: inputs.deterministic
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -64,10 +71,12 @@ jobs:
         run: pnpm test
 
   docker-image-check:
+    if: inputs.deterministic
     uses: ./.github/workflows/docker-image-check.yml
 
   vitest:
     name: Vitest (${{ matrix.project }} ${{ matrix.shard }})
+    if: inputs.deterministic
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -97,6 +106,7 @@ jobs:
 
   live:
     name: Live Provider properties
+    if: inputs.live-providers
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -113,6 +123,7 @@ jobs:
 
   bombadil:
     name: Bombadil (${{ matrix.surface }})
+    if: inputs.deterministic
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

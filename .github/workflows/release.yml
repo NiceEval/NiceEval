@@ -62,6 +62,42 @@ jobs:
       contents: read
     with:
       package-smoke: false
+      live-providers: ${{ !contains(needs.prepare-release.outputs.version, '-') }}
+    secrets:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+  live-e2e-suite:
+    name: Live E2E
+    needs: prepare-release
+    if: contains(needs.prepare-release.outputs.version, '-')
+    uses: ./.github/workflows/e2e-suite.yml
+    permissions:
+      actions: read
+      contents: read
+    with:
+      lane: release
+      live-providers: true
+      live-only: true
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_BASE_URL: ${{ secrets.DEEPSEEK_BASE_URL }}
+      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+      INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
+      TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+
+  live-property-suite:
+    name: Live properties
+    needs: prepare-release
+    if: contains(needs.prepare-release.outputs.version, '-')
+    uses: ./.github/workflows/property-suite.yml
+    permissions:
+      contents: read
+    with:
+      deterministic: false
     secrets:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 

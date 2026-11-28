@@ -73,6 +73,9 @@ jobs:
     outputs:
       url: ${{ steps.dispatch.outputs.url }}
       conclusion: ${{ steps.wait.outputs.conclusion }}
+      publish: ${{ steps.wait.outputs.publish }}
+      live-e2e: ${{ steps.wait.outputs.live-e2e }}
+      live-properties: ${{ steps.wait.outputs.live-properties }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -102,11 +105,21 @@ jobs:
             if [ "$(jq -r '.status' <<< "$result")" = completed ]; then
               conclusion="$(jq -er '.conclusion' <<< "$result")"
               echo "conclusion=$conclusion" >> "$GITHUB_OUTPUT"
-              test "$conclusion" = success
               break
             fi
             sleep 30
           done
+          jobs="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID/jobs?filter=latest&per_page=100")"
+          job_result() {
+            jq -r --arg name "$1" 'first(.[].jobs[] | select(.name == $name) | .conclusion) // "unknown"' <<< "$jobs"
+          }
+          publish="$(job_result 'Publish exact tarball to npm')"
+          {
+            echo "publish=$publish"
+            echo "live-e2e=$(job_result 'Live E2E / e2e gate')"
+            echo "live-properties=$(job_result 'Live properties / Live Provider properties')"
+          } >> "$GITHUB_OUTPUT"
+          test "$publish" = success
 
   report:
     needs: [prepare, release]
@@ -122,20 +135,24 @@ jobs:
       - name: Update Nightly release issue
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_RESULT: ${{ needs.release.result }}
+          PUBLISH_RESULT: ${{ needs.release.outputs.publish || (needs.release.result == 'skipped' && 'skipped' || 'unknown') }}
+          LIVE_E2E_RESULT: ${{ needs.release.outputs.live-e2e || 'unknown' }}
+          LIVE_PROPERTIES_RESULT: ${{ needs.release.outputs.live-properties || 'unknown' }}
           RELEASE_URL: ${{ needs.release.outputs.url }}
         run: |
           set -euo pipefail
           title='Nightly release failing'
           run_url="${RELEASE_URL:-$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID}"
+          body="$(printf '%s\n' "- npm publish: $PUBLISH_RESULT" "- Live E2E: $LIVE_E2E_RESULT" "- Live Provider properties: $LIVE_PROPERTIES_RESULT" '' "[Workflow run]($run_url)")"
+          printf '%s\n' "$body" >> "$GITHUB_STEP_SUMMARY"
           issue="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100" \
             | jq -s -r --arg title "$title" 'add | first(.[] | select(.title == $title and (has("pull_request") | not))).number // empty')"
-          if [ "$RELEASE_RESULT" = success ]; then
+          if [ "$PUBLISH_RESULT" = success ] && [ "$LIVE_E2E_RESULT" = success ] && [ "$LIVE_PROPERTIES_RESULT" = success ]; then
             if [ -n "$issue" ]; then
-              gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --comment "Nightly release passed. $run_url"
+              gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --comment "$body"
             fi
           elif [ -n "$issue" ]; then
-            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "Nightly release failed. $run_url"
+            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body"
           else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "Nightly release failed. $run_url"
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
           fi
