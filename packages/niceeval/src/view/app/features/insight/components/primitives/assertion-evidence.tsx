@@ -86,8 +86,14 @@ function valueText(value: ClosedAssertionFactValue): string {
   }
 }
 
+/** Assertion snapshots encode an absent value as `{ $niceeval: "undefined" }`; it is not a reader-facing value. */
+function absentMarker(value: ClosedAssertionFactValue): boolean {
+  return value.kind === "fields" && value.fields.length === 1 && value.fields[0]?.label === "$niceeval";
+}
+
 function field(value: ClosedAssertionFactValue | undefined, name: string): ClosedAssertionFactValue | undefined {
-  return value?.kind === "fields" ? value.fields.find((entry) => entry.label === name)?.value : undefined;
+  const found = value?.kind === "fields" ? value.fields.find((entry) => entry.label === name)?.value : undefined;
+  return found === undefined || absentMarker(found) ? undefined : found;
 }
 
 function stringValue(value: ClosedAssertionFactValue | undefined): string | undefined {
@@ -397,6 +403,7 @@ function Value({ value, locale }: { readonly value: ClosedAssertionFactValue; re
         </dl>
       );
     case "list":
+      if (value.items.length === 0) return <code>Array(0)</code>;
       return (
         <details className="niceeval-assertion-evidence-collection">
           <summary>
@@ -540,24 +547,37 @@ function CommandEvidence({
   );
 }
 
+const ROUTING_FIELDS: ReadonlySet<string> = new Set(["kind", "outcome", "expected"]);
+
+/** Boolean result routing (`kind`, `outcome`, `expected.kind`) restates the sealed state and stays in raw data. */
+function readerValue(value: ClosedAssertionFactValue | undefined): ClosedAssertionFactValue | undefined {
+  if (value?.kind === "fields" && value.fields.every((entry) => ROUTING_FIELDS.has(entry.label))) return undefined;
+  return value;
+}
+
 function ToolEvidence({
   observed,
   diagnostic,
   locale,
+  countsOwnedByDebugger,
 }: {
   readonly observed: ClosedAssertionFactValue;
   readonly diagnostic: MatchDiagnosticView | undefined;
   readonly locale: string;
-}): ReactElement {
+  readonly countsOwnedByDebugger: boolean;
+}): ReactElement | null {
   const receipt = field(observed, "receipt");
-  const examined = numberValue(field(receipt, "examined"));
+  const examined = countsOwnedByDebugger ? undefined : numberValue(field(receipt, "examined"));
+  const received = readerValue(diagnostic?.received);
+  const expected = readerValue(diagnostic?.expected);
+  if (received === undefined && expected === undefined && examined === undefined) return null;
   return (
     <div className="niceeval-match-evidence-grid">
-      {diagnostic?.received === undefined ? null : (
-        <Section heading={label(locale, "Observed", "实际结果")} value={diagnostic.received} locale={locale} />
+      {received === undefined ? null : (
+        <Section heading={label(locale, "Observed", "实际结果")} value={received} locale={locale} />
       )}
-      {diagnostic?.expected === undefined ? null : (
-        <Section heading={label(locale, "Expected", "预期结果")} value={diagnostic.expected} locale={locale} />
+      {expected === undefined ? null : (
+        <Section heading={label(locale, "Expected", "预期结果")} value={expected} locale={locale} />
       )}
       {examined === undefined ? null : (
         <section className="niceeval-assertion-evidence-section">
@@ -930,6 +950,9 @@ function toolFieldLabel(value: string, locale: string): string {
   if (value === "output") return "输出";
   if (value === "command") return "命令";
   if (value === "status") return "状态";
+  if (value === "role") return "角色";
+  if (value === "text") return "文本";
+  if (value === "tool") return "工具";
   return value;
 }
 
@@ -979,6 +1002,8 @@ function MatchNode({
   root = false,
   toolCandidateIndex,
   toolField = false,
+  fieldChildren = false,
+  open = false,
   children,
 }: {
   readonly label: string;
@@ -988,6 +1013,9 @@ function MatchNode({
   readonly root: boolean;
   readonly toolCandidateIndex: number | undefined;
   readonly toolField: boolean;
+  /** Direct children are fields of one tool or event occurrence and use interface labels. */
+  readonly fieldChildren?: boolean;
+  readonly open?: boolean;
   readonly children: ReactElement | undefined;
 }): ReactElement {
   function nodeDisplayLabel(): string {
@@ -1032,7 +1060,7 @@ function MatchNode({
                 diagnostic={child.diagnostic}
                 locale={locale}
                 toolCandidateIndex={childrenAreToolCandidates ? child.index : undefined}
-                toolField={toolCandidateIndex !== undefined}
+                toolField={toolCandidateIndex !== undefined || fieldChildren}
                 root={false}
                 children={undefined}
               />
@@ -1052,10 +1080,57 @@ function MatchNode({
       </div>
     );
   return (
-    <details className={`niceeval-match-node${root ? " niceeval-match-node--root" : ""}`}>
+    <details className={`niceeval-match-node${root ? " niceeval-match-node--root" : ""}`} open={open}>
       <summary aria-label={accessibleLabel}>{summary}</summary>
       {body}
     </details>
+  );
+}
+
+/** Technical locators repeat the ledger row's own identity; the row already offers exact navigation. */
+function withoutLocators(view: MatchDiagnosticView): MatchDiagnosticView {
+  return {
+    ...view,
+    locator: undefined,
+    children: view.children.map((child) => ({
+      ...child,
+      diagnostic: child.diagnostic === undefined ? undefined : withoutLocators(child.diagnostic),
+    })),
+  };
+}
+
+function RowComparison({
+  difference,
+  locale,
+}: {
+  readonly difference: ClosedAssertionFactValue;
+  readonly locale: string;
+}): ReactElement | null {
+  const state = matchState(field(difference, "state"));
+  const evidence = diagnosticView(field(difference, "evidence"));
+  const reason = stringValue(field(difference, "reason"));
+  const diagnostic =
+    evidence === undefined
+      ? reason === undefined
+        ? undefined
+        : { code: undefined, expected: undefined, received: undefined, reason, locator: undefined, children: [] }
+      : withoutLocators(reason === undefined || evidence.children.length > 0 ? evidence : { ...evidence, reason });
+  if (state === undefined || diagnostic === undefined) return null;
+  const query = field(difference, "query");
+  const matcher = inlineValue(field(query, "matcher")) ?? inlineValue(query) ?? label(locale, "Filter", "筛选");
+  return (
+    <MatchNode
+      label={matcher}
+      state={state}
+      diagnostic={diagnostic}
+      locale={locale}
+      root={false}
+      toolCandidateIndex={undefined}
+      toolField={false}
+      fieldChildren
+      open
+      children={undefined}
+    />
   );
 }
 
@@ -1070,12 +1145,19 @@ function web(
   const input = field(content.source, "input") ?? content.source;
   const code = diagnostic?.code;
   const numeric = numericComparisonView(content.check, content.source);
-  function primaryEvidence(): ReactElement {
+  function primaryEvidence(): ReactElement | null {
     if (numeric !== undefined) return <NumericEvidence view={numeric} state={state} locale={locale} />;
     if (code === "command-succeeded" || code === "command-failed")
       return <CommandEvidence input={input} diagnostic={diagnostic} locale={locale} />;
     if (isToolCriterion(content.check))
-      return <ToolEvidence observed={content.observed} diagnostic={diagnostic} locale={locale} />;
+      return (
+        <ToolEvidence
+          observed={content.observed}
+          diagnostic={diagnostic}
+          locale={locale}
+          countsOwnedByDebugger={content.matcherDebugger !== undefined}
+        />
+      );
     return <GenericEvidence content={content} input={input} diagnostic={diagnostic} locale={locale} />;
   }
   const primary = primaryEvidence();
@@ -1097,7 +1179,11 @@ function web(
           ) : (
             <>
               {primary}
-              <MatcherFilterDebugger content={content.matcherDebugger} locale={locale} />
+              <MatcherFilterDebugger
+                content={content.matcherDebugger}
+                locale={locale}
+                renderComparison={(difference) => <RowComparison difference={difference} locale={locale} />}
+              />
             </>
           )}
           <CoverageNotice source={content.source} locale={locale} />

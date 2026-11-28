@@ -1,6 +1,12 @@
 import type { ReactElement } from "react";
 
-import { resolveLocalizedText, type ClosedJsonValue, type LocalizedText, type ReportLocale } from "./shared.ts";
+import {
+  resolveLocalizedText,
+  type ClosedAssertionFactValue,
+  type ClosedJsonValue,
+  type LocalizedText,
+  type ReportLocale,
+} from "./shared.ts";
 
 export type MatcherFilterRowState =
   | "matched"
@@ -23,7 +29,8 @@ export interface MatcherFilterRowContent {
   readonly summary: string;
   readonly state: MatcherFilterRowState;
   readonly fields: readonly MatcherFilterFieldContent[];
-  readonly difference: readonly MatcherFilterFieldContent[] | undefined;
+  /** Retained per-row comparison, kept structured so the matcher tree renders with its own states. */
+  readonly difference: ClosedAssertionFactValue | undefined;
   readonly conversationTarget:
     | {
         readonly anchor: string;
@@ -124,11 +131,64 @@ function rowStateLabel(state: MatcherFilterRowState, locale: ReportLocale): stri
     case "not-evaluated":
       return text(locale, "Not evaluated", "未参与判断");
     case "not-retained":
-      return text(locale, "Checked", "已检查");
+      return text(locale, "Row result not retained", "逐行结果未保留");
     case "outside-snapshot":
       return text(locale, "After evaluation", "评估后出现");
     case "legacy":
       return text(locale, "Recorded", "已记录");
+  }
+}
+
+/** Renders one retained row comparison; supplied by the owner of matcher diagnostic presentation. */
+export type MatcherComparisonRenderer = (
+  difference: ClosedAssertionFactValue,
+  row: MatcherFilterRowContent,
+) => ReactElement | null;
+
+/** Human ledger number: tools use Tn and events En in canonical source order; numbering never changes. */
+export function matcherRowNumber(row: Pick<MatcherFilterRowContent, "kind" | "number">): string {
+  if (row.kind === "tool") return `T${row.number}`;
+  if (row.kind === "event") return `E${row.number}`;
+  return row.number;
+}
+
+function ledgerFieldLabel(label: string, locale: ReportLocale): string {
+  if (locale !== "zh-CN") return label;
+  switch (label) {
+    case "name":
+      return "名称";
+    case "input":
+      return "输入";
+    case "output":
+      return "输出";
+    case "status":
+      return "状态";
+    case "command":
+      return "命令";
+    case "homeTurn":
+      return "发起 Turn";
+    case "finishTurn":
+      return "结束 Turn";
+    case "role":
+      return "角色";
+    case "text":
+      return "文本";
+    case "tool":
+      return "工具";
+    case "state":
+      return "状态";
+    case "summary":
+      return "摘要";
+    case "prompt":
+      return "提问";
+    case "response":
+      return "回复";
+    case "code":
+      return "代码";
+    case "type":
+      return "类型";
+    default:
+      return label;
   }
 }
 
@@ -145,6 +205,7 @@ function rowKindLabel(kind: MatcherFilterRowContent["kind"], locale: ReportLocal
 
 function Fields({
   fields,
+  locale,
 }: {
   readonly fields: readonly MatcherFilterFieldContent[];
   readonly locale: ReportLocale;
@@ -155,7 +216,7 @@ function Fields({
       {fields.map((field, index) => {
         return (
           <div key={`${field.label}:${index}`}>
-            <dt>{field.label}</dt>
+            <dt>{ledgerFieldLabel(field.label, locale)}</dt>
             <dd>
               <pre>{field.value}</pre>
             </dd>
@@ -191,9 +252,18 @@ function ConversationTarget({
   );
 }
 
-function Row({ row, locale }: { readonly row: MatcherFilterRowContent; readonly locale: ReportLocale }): ReactElement {
-  const title = `${rowKindLabel(row.kind, locale)} ${row.number}`;
-  const body = row.fields.length > 0 || (row.difference?.length ?? 0) > 0 || row.conversationTarget !== undefined;
+function Row({
+  row,
+  locale,
+  renderComparison,
+}: {
+  readonly row: MatcherFilterRowContent;
+  readonly locale: ReportLocale;
+  readonly renderComparison: MatcherComparisonRenderer;
+}): ReactElement {
+  const title = `${rowKindLabel(row.kind, locale)} ${matcherRowNumber(row)}`;
+  const comparison = row.difference === undefined ? null : renderComparison(row.difference, row);
+  const body = row.fields.length > 0 || comparison !== null || row.conversationTarget !== undefined;
   const summary = (
     <span className="niceeval-filter-row-summary">
       <span className="niceeval-filter-row-number">{title}</span>
@@ -214,10 +284,10 @@ function Row({ row, locale }: { readonly row: MatcherFilterRowContent; readonly 
     <details className="niceeval-filter-row" data-state={row.state}>
       <summary>{summary}</summary>
       <div className="niceeval-filter-row-detail">
-        {row.difference === undefined || row.difference.length === 0 ? null : (
-          <section>
+        {comparison === null ? null : (
+          <section className="niceeval-filter-comparison">
             <h6>{text(locale, "Filter comparison", "Filter 对比")}</h6>
-            <Fields fields={row.difference} locale={locale} />
+            {comparison}
           </section>
         )}
         {row.fields.length === 0 ? null : (
@@ -281,7 +351,19 @@ function subjectPlural(subject: MatcherFilterDebuggerContent["subject"], locale:
   return text(locale, "records", "记录");
 }
 
-function noticeText(notice: MatcherFilterNotice, locale: ReportLocale): string {
+interface OverlayRetention {
+  readonly retained: number;
+  readonly examined: number;
+}
+
+function overlayRetention(rows: readonly MatcherFilterRowContent[]): OverlayRetention {
+  const retained = rows.filter(
+    (row) => row.state === "matched" || row.state === "mismatched" || row.state === "unavailable",
+  ).length;
+  return { retained, examined: retained + rows.filter((row) => row.state === "not-retained").length };
+}
+
+function noticeText(notice: MatcherFilterNotice, locale: ReportLocale, retention: OverlayRetention): string {
   switch (notice) {
     case "historical-not-recorded":
       return text(
@@ -306,8 +388,8 @@ function noticeText(notice: MatcherFilterNotice, locale: ReportLocale): string {
     case "overlay-partial":
       return text(
         locale,
-        "Only bounded representative comparisons were retained; other examined rows are marked as checked.",
-        "只保留了有界的代表性对比；其余参与评估的记录标记为“已检查”。",
+        `Only bounded representative comparisons were retained (retained ${retention.retained} / examined ${retention.examined}); other examined rows show “Row result not retained”.`,
+        `只保留了有界的代表性对比（已保留 ${retention.retained} / 已检查 ${retention.examined}）；其余参与评估的记录显示“逐行结果未保留”。`,
       );
   }
 }
@@ -335,12 +417,15 @@ function ledgerSummary(content: MatcherFilterDebuggerContent, subjects: string, 
 export function MatcherFilterDebugger({
   content,
   locale,
+  renderComparison,
 }: {
   readonly content: MatcherFilterDebuggerContent;
   readonly locale: ReportLocale;
+  readonly renderComparison: MatcherComparisonRenderer;
 }): ReactElement {
   const subjects = subjectPlural(content.subject, locale);
   const historical = content.state === "legacy";
+  const retention = overlayRetention(content.atEvaluation.rows);
   return (
     <section
       className="niceeval-filter-debugger"
@@ -369,11 +454,11 @@ export function MatcherFilterDebugger({
       <Steps steps={content.steps} locale={locale} />
 
       {content.relationNotice === undefined ? null : (
-        <p className="niceeval-filter-notice">{noticeText(content.relationNotice, locale)}</p>
+        <p className="niceeval-filter-notice">{noticeText(content.relationNotice, locale, retention)}</p>
       )}
       {content.atEvaluation.notices.map((notice) => (
         <p key={notice} className="niceeval-filter-notice">
-          {noticeText(notice, locale)}
+          {noticeText(notice, locale, retention)}
         </p>
       ))}
 
@@ -397,7 +482,7 @@ export function MatcherFilterDebugger({
           {content.atEvaluation.rows.length === 0 ? null : (
             <div className="niceeval-filter-rows">
               {content.atEvaluation.rows.map((row) => (
-                <Row key={row.key} row={row} locale={locale} />
+                <Row key={row.key} row={row} locale={locale} renderComparison={renderComparison} />
               ))}
             </div>
           )}
@@ -426,7 +511,7 @@ export function MatcherFilterDebugger({
           </p>
           <div className="niceeval-filter-rows">
             {content.afterEvaluation.map((row) => (
-              <Row key={row.key} row={row} locale={locale} />
+              <Row key={row.key} row={row} locale={locale} renderComparison={renderComparison} />
             ))}
           </div>
         </details>
@@ -447,7 +532,7 @@ export function matcherFilterDebuggerText(content: MatcherFilterDebuggerContent)
     );
   }
   for (const row of [...content.atEvaluation.rows, ...content.afterEvaluation]) {
-    lines.push(`${row.kind} ${row.number}: ${row.summary} [${row.state}]`);
+    lines.push(`${row.kind} ${matcherRowNumber(row)}: ${row.summary} [${row.state}]`);
   }
   return lines.join("\n");
 }

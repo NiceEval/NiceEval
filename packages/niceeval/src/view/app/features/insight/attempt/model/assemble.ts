@@ -576,9 +576,7 @@ function closeMatcherFilterRow(row: JsonRecord): ClosedMatcherFilterRow {
   const evaluation = recordField(row, "evaluation");
   const result = matcherRowState(evaluation.result);
   const difference =
-    evaluation.difference === undefined
-      ? undefined
-      : matcherFilterFields(closeRecordedAssertionFact(evaluation.difference));
+    evaluation.difference === undefined ? undefined : closeRecordedAssertionFact(evaluation.difference);
   const conversationTarget = optionalRecord(row.conversationTarget);
   return {
     phase: matcherRowPhase(row.phase),
