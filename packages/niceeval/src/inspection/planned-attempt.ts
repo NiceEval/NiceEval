@@ -15,7 +15,13 @@ import {
 // Inspection names are independent of the immutable Record and identity encoding.
 const { slotId: plannedAttemptId, ...positionFields } = RecordSlotIdentitySchema.fields;
 export const PlannedAttemptSchema = Schema.Struct({ plannedAttemptId, ...positionFields });
-const { slotId: attemptPosition, ...attemptFields } = AttemptDocumentSchema.fields;
+const {
+  slotId: attemptPosition,
+  terminal: _terminal,
+  explicitSkipReason: _explicitSkipReason,
+  skipReasonTruncated: _skipReasonTruncated,
+  ...attemptFields
+} = AttemptDocumentSchema.fields;
 export const InspectionAttemptCoreSchema = Schema.Struct({ plannedAttemptId: attemptPosition, ...attemptFields }).check(
   Schema.makeFilter(({ plannedAttemptId, ...attempt }) =>
     Schema.is(AttemptDocumentSchema)({ ...attempt, slotId: plannedAttemptId }),
@@ -68,7 +74,13 @@ export function projectPlannedAttempt({
 }) {
   return Schema.decodeUnknownSync(PlannedAttemptSchema)({ ...position, plannedAttemptId: slotId });
 }
-export function projectAttemptCore({ slotId, ...attempt }: AttemptDocument) {
+export function projectAttemptCore({
+  slotId,
+  terminal: _terminal,
+  explicitSkipReason: _explicitSkipReason,
+  skipReasonTruncated: _skipReasonTruncated,
+  ...attempt
+}: AttemptDocument) {
   return { ...attempt, plannedAttemptId: slotId };
 }
 export function projectRunCore({ expectedSlots, ...run }: RunDocument) {

@@ -182,6 +182,7 @@ function projectAssertionValue(
         entryId: entry.entryId,
         display: entry.display,
         decision: entry.decision,
+        ...evaluatorFailureFields(entry),
         contribution: entry.contribution,
         evaluation: { observed: entry.evaluation.observed },
         explanationRetention: entry.explanationRetention,
@@ -380,6 +381,15 @@ function projectReferenceValue(reference: { readonly value: unknown }): Inspecti
   return closeJson(reference.value);
 }
 
+function evaluatorFailureFields(entry: AssertionEntry) {
+  if (entry.decision.reason !== "evaluator-failed") return {};
+  return {
+    evaluatorFailure: entry.evaluatorFailure === undefined
+      ? { state: "not-recorded" as const }
+      : { state: "recorded" as const, ...entry.evaluatorFailure },
+  };
+}
+
 function projectEntry(
   source: InspectionFactSource,
   entry: AssertionEntry,
@@ -387,12 +397,13 @@ function projectEntry(
   entries: readonly AssertionEntry[],
   paged: boolean,
 ): unknown {
+  const projectedEntry = { ...entry, ...evaluatorFailureFields(entry) };
   const currentAgentJudge =
     entry.criterion.state === "available" &&
     entry.criterion.value.kind === "builtin" &&
     entry.criterion.value.id === "agent-judge-measurement";
   if (currentAgentJudge) {
-    const projected = projectSealedValue(source, entry, contentMetadata, true) as Readonly<
+    const projected = projectSealedValue(source, projectedEntry, contentMetadata, true) as Readonly<
       Record<string, InspectionJson>
     >;
     try {
@@ -474,7 +485,7 @@ function projectEntry(
     const hasImages = entry.materials.evidence.some(
       (material) => material.kind === "content" && material.encoding === "binary",
     );
-    const projected = projectSealedValue(source, entry, contentMetadata, hasImages, paged) as Readonly<
+    const projected = projectSealedValue(source, projectedEntry, contentMetadata, hasImages, paged) as Readonly<
       Record<string, InspectionJson>
     >;
     try {
@@ -521,8 +532,8 @@ function projectEntry(
       return { ...projected, scoreMatchAudit: { state: "invalid" as const } };
     }
   }
-  if (!currentJudge) return projectSealedValue(source, entry, contentMetadata, false, paged);
-  const projected = projectSealedValue(source, entry, contentMetadata, false, paged) as Readonly<
+  if (!currentJudge) return projectSealedValue(source, projectedEntry, contentMetadata, false, paged);
+  const projected = projectSealedValue(source, projectedEntry, contentMetadata, false, paged) as Readonly<
     Record<string, InspectionJson>
   >;
   try {

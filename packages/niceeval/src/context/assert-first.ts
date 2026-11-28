@@ -160,6 +160,7 @@ export interface AssertFirstContextState {
   readonly closeSimulatedUsers: () => Promise<void>;
   readonly notes: AttemptNotesCollector;
   readonly assertions: AssertionsRuntime<"pass" | "score">;
+  readonly skipReason: string | undefined;
   readonly manager: SessionManager;
   readonly late: AssertFirstLateResult;
 }
@@ -2032,6 +2033,9 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
     closeSimulatedUsers,
     notes: core.state.notes,
     assertions: runtime,
+    get skipReason() {
+      return core.state.skipReason;
+    },
     manager,
     late: { diff: { state: "pending" as const }, scripts: {} },
   };

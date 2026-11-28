@@ -1,6 +1,8 @@
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { isRecordContentHandle } from "../../record/attachment/content.ts";
+import { boundedSafeTextSchema } from "../../record/family/source-receipt/codec.ts";
+import { MAX_DIAGNOSTIC_SUMMARY_BYTES } from "../../record/family/source-receipt/limits.ts";
 import { isCanonicalWorkspaceRelativePath } from "../diff.ts";
 import { NUMERIC_COMPARATORS } from "../match.ts";
 import {
@@ -1040,6 +1042,17 @@ export const SealedAssertionResultSchema: Schema.Schema<SealedAssertionResult> =
  * exact material declaration so current content and migration-private
  * historical material never share a physical union.
  */
+const EvaluatorFailureTextSchema = boundedSafeTextSchema(MAX_DIAGNOSTIC_SUMMARY_BYTES).check(
+  Schema.makeFilter((text) => !/[\n\u2028\u2029]/u.test(text), {
+    description: "a single line of diagnostic text",
+  }),
+);
+export const EvaluatorFailureSchema = Schema.Struct({
+  name: EvaluatorFailureTextSchema,
+  message: EvaluatorFailureTextSchema,
+  truncated: Schema.Boolean,
+});
+
 export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
   material: Schema.Codec<Material, MaterialEncoded>,
 ) {
@@ -1101,6 +1114,7 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     materials,
     evaluation,
     decision,
+    evaluatorFailure: Schema.optionalKey(Schema.toType(EvaluatorFailureSchema)),
     policy: Schema.toType(AssertionDecisionPolicySchema),
     control: Schema.Union([
       Schema.Struct({ state: Schema.Literal("available"), value: Schema.Literals(["none", "continued", "stopped"]) }),
@@ -1141,6 +1155,7 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     materials,
     evaluation,
     decision,
+    evaluatorFailure: Schema.optionalKey(Schema.toType(EvaluatorFailureSchema)),
     policy: Schema.toType(AssertionDecisionPolicySchema),
     control: Schema.Union([
       Schema.Struct({ state: Schema.Literal("available"), value: Schema.Literals(["none", "continued", "stopped"]) }),

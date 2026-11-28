@@ -1,4 +1,5 @@
 import { foldRecordedAttemptVerdict, type VerdictState } from "../eval/record/verdict.ts";
+import { recordedAttemptExecutionFailed } from "../eval/record/sealed-assertion.ts";
 import type { InspectionJson } from "./codec.ts";
 import { readInspectionAssertions, type ResolvedInspectionAttempt } from "./facts.ts";
 
@@ -8,14 +9,14 @@ export function attemptVerdict(
 ): VerdictState | undefined {
   if (assertions.state === "available") {
     return foldRecordedAttemptVerdict({
-      outcome: resolved.attempt.outcome,
+      ...resolved.attempt,
       assertions: assertions.value,
     });
   }
   if (assertions.state !== "failed" || assertions.attachment === undefined) {
     return undefined;
   }
-  if (resolved.attempt.outcome === "errored" || resolved.attempt.outcome === "interrupted") return "errored";
+  if (recordedAttemptExecutionFailed(resolved.attempt)) return "errored";
   if (containsRequiredAssertionError(assertions.attachment.value)) return "errored";
   return containsFailedDecision(assertions.attachment.value) ? "failed" : undefined;
 }

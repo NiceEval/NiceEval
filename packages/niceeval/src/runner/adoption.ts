@@ -835,8 +835,8 @@ export function readAdoptionAttemptFacts(
       );
     }
     const outcome = attempt.value.document.outcome;
-    const verdict = foldRecordedAttemptVerdict({ outcome, assertions: assertions.value });
-    const score = foldRecordedAttemptScore({ outcome, assertions: assertions.value });
+    const verdict = foldRecordedAttemptVerdict({ ...attempt.value.document, assertions: assertions.value });
+    const score = foldRecordedAttemptScore({ ...attempt.value.document, assertions: assertions.value });
     return {
       outcome,
       verdict,

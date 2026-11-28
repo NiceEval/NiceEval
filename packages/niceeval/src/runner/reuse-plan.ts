@@ -37,6 +37,7 @@ import {
   type RecordedAttemptClaim,
 } from "../eval/record/membership-provenance.ts";
 import { foldRecordedAttemptVerdict, type VerdictState } from "../eval/record/verdict.ts";
+import type { RecordedAttemptFoldInput } from "../eval/record/sealed-assertion.ts";
 import type {
   RecordReadSession,
   ReadableAttempt,
@@ -56,7 +57,6 @@ import {
   type UtcMillis,
 } from "../record/model/identifiers.ts";
 import type {
-  AttemptOutcome,
   AttemptDocument,
   MemberDocument,
   RunDocument,
@@ -384,10 +384,7 @@ export interface ProjectTargetReusePlanInvalid {
  * and its fixed Assertions facts. This is a projection, not a second durable
  * Verdict family.
  */
-export function recordedAttemptVerdict(input: {
-  readonly outcome: AttemptOutcome;
-  readonly assertions: AssertionsAttachment;
-}): AssertionsVerdict {
+export function recordedAttemptVerdict(input: RecordedAttemptFoldInput): AssertionsVerdict {
   return foldRecordedAttemptVerdict(input);
 }
 
@@ -925,7 +922,7 @@ export function assessCurrentTargetSlot<
       });
     }
     const verdict = recordedAttemptVerdict({
-      outcome: readAttempt.value.document.outcome,
+      ...readAttempt.value.document,
       assertions: assertions.value,
     });
     if (readAttempt.value.document.outcome !== "completed") {
@@ -950,7 +947,7 @@ export function assessCurrentTargetSlot<
     }
     if (input.target.evaluationKind === "score") {
       const score = foldRecordedAttemptScore({
-        outcome: readAttempt.value.document.outcome,
+        ...readAttempt.value.document,
         assertions: assertions.value,
       });
       if (Result.isFailure(score) || score.success.state !== "complete")

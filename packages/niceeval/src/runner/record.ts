@@ -64,7 +64,7 @@ import {
   createRunArtifactsAttachment,
   createRunnerAssertionsAttachment,
   createRunObservabilityAttachments,
-  recordAttemptOutcome,
+  recordAttemptCompletion,
 } from "./record/attachments.ts";
 import { adapterUsageForResult } from "./adapter-usage.ts";
 import { adapterAttachmentsForResult, releaseAdapterAttachments } from "./adapter-attachments.ts";
@@ -875,7 +875,7 @@ export function openRunnerRecordCoordinator<E>(input: {
           // reservation before interruption can send it to the discard path.
           return yield* Effect.uninterruptible(
             Effect.gen(function* () {
-              yield* active.session.complete(recordAttemptOutcome(result));
+              yield* active.session.complete(recordAttemptCompletion(result));
               const closureBytes = new TextEncoder().encode(
                 JSON.stringify(
                   attemptPublicationClosure({

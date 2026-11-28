@@ -79,6 +79,7 @@ import {
   createAssertFirstCoreContext,
   createAssertFirstEvalContext,
   type AssertFirstContextState,
+  type AssertFirstCoreContextState,
 } from "../context/assert-first.ts";
 import { AssertionAuthoringClosedError } from "../assertions/api.ts";
 import { createAssertionsRuntime, attachAssertionsAgentJudgeSandbox } from "../assertions/runtime.ts";
@@ -528,6 +529,7 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
       let liveNotes: AttemptNotesCollector | undefined;
       let liveAssertions: AssertionsRuntime<"pass" | "score"> | undefined;
       let liveAssertionState: AssertFirstContextState | undefined;
+      let liveSkipState: Pick<AssertFirstCoreContextState, "skipReason"> | undefined;
       let adapterResources: AdapterAttemptResources | undefined;
       let adapterUsage: AdapterUsageCollector | undefined;
       let adapterUsageSnapshot: ReturnType<AdapterUsageCollector["close"]> | undefined;
@@ -1164,6 +1166,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       throw new Error("Attempt tried to register a second Assertions runtime");
                     }
                     liveAssertions = runtime;
+                    liveSkipState = state;
                   },
                   closeAuthoring,
                   markAssertionsSealed: (sealed) => {
@@ -1812,6 +1815,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         }
                         liveAssertions = runtime;
                         liveAssertionState = state;
+                        liveSkipState = state;
                       },
                       prepareCoordinator: opts.artifactPrepare,
                     },
@@ -2104,8 +2108,12 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   sources: timeoutSources ?? [],
                 }
               : withSandbox;
+            const skipReason =
+              completed.skipReason === undefined && (completed.verdict === "errored" || completed.verdict === "failed")
+                ? liveSkipState?.skipReason
+                : undefined;
             const finalResult = retainRunnerAttemptSourceCapture(
-              redactEvalResultEvidence(completed, sensitiveValues),
+              redactEvalResultEvidence(skipReason === undefined ? completed : { ...completed, skipReason }, sensitiveValues),
               sourceCapture.snapshot(),
             );
             const capture = timedOut ? (timeoutFileChangesCapture ?? fileChangesCapture) : fileChangesCapture;
@@ -4023,7 +4031,7 @@ async function runAttemptBody(
       declareFailure("eval.run", state.simulatedUserFailure);
       error = errorFromThrown(state.simulatedUserFailure, "eval.run");
     }
-    if (skipReason) log(`skip: ${skipReason}`);
+    if (skipReason) log(`skip: ${redactSensitiveText(skipReason, sensitiveValues)}`);
 
     // 采 agent 归因增量(workspace.diff 阶段:从分类账折叠逐窗口 delta)。Direct Agent 没有 workspace。
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");

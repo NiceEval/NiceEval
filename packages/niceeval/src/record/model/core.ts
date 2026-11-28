@@ -12,6 +12,7 @@ import type {
 } from "./identifiers.ts";
 import type { RunContext } from "./run-context.ts";
 import type { RunAbsenceReason } from "../../run/protocol.ts";
+import type { SafeText } from "../family/source-receipt/model.ts";
 
 /** The root identity; format admission belongs to the enclosing storage. */
 export interface RecordDocument {
@@ -27,6 +28,19 @@ export interface RecordAttemptRef {
 /** The terminal execution fact required to interpret an origin Attempt. */
 export const ATTEMPT_OUTCOMES = ["completed", "errored", "cancelled", "interrupted"] as const;
 export type AttemptOutcome = (typeof ATTEMPT_OUTCOMES)[number];
+
+type ExplicitSkip = { readonly kind: "explicit-skip"; readonly reason: SafeText };
+type Cancellation = { readonly kind: "cancelled" };
+
+/** A new Attempt always distinguishes explicit skip from actual cancellation. */
+export type AttemptCompletion =
+  | { readonly outcome: "cancelled"; readonly terminal: ExplicitSkip; readonly skipReasonTruncated?: true }
+  | { readonly outcome: "cancelled"; readonly terminal: Cancellation }
+  | {
+      readonly outcome: Exclude<AttemptOutcome, "cancelled">;
+      readonly explicitSkipReason?: SafeText;
+      readonly skipReasonTruncated?: true;
+    };
 
 /** The immutable final action for one planned denominator Slot. */
 export const MEMBERSHIP_ACTIONS = ["executed", "carried", "accepted", "not-dispatched", "interrupted"] as const;
@@ -76,6 +90,9 @@ export interface AttemptDocument {
   readonly evalId: EvalId;
   readonly executionIdentityDigest: ExecutionIdentityDigest;
   readonly outcome: AttemptOutcome;
+  readonly terminal?: ExplicitSkip | Cancellation | undefined;
+  readonly explicitSkipReason?: SafeText;
+  readonly skipReasonTruncated?: true;
 }
 
 export interface RecordAttachmentBytePointer {

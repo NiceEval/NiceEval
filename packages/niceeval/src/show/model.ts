@@ -160,6 +160,7 @@ export interface AttemptView {
   readonly evalId: string;
   readonly plannedAttemptId: string;
   readonly outcome: AttemptOutcome;
+  readonly terminal: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["terminal"];
   readonly originRunId: string;
   readonly experimentId: string;
   readonly score: ScoredValue;
@@ -389,6 +390,7 @@ export function projectAttempt(
     evalId: value.core.evalId,
     plannedAttemptId: value.core.plannedAttemptId,
     outcome: value.core.outcome,
+    terminal: value.terminal,
     originRunId: value.core.originRunId,
     experimentId: value.originRun.experimentId,
     score: value.score,

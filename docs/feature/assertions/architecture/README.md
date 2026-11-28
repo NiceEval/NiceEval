@@ -82,6 +82,11 @@ type AssertionEntry = {
     readonly receipt?: AssertionCollectionReceipt;
   };
   readonly decision: AssertionDecision;
+  readonly evaluatorFailure?: {
+    readonly name: SafeText;
+    readonly message: SafeText;
+    readonly truncated: boolean;
+  };
   readonly policy: AssertionDecisionPolicy;
   readonly control: AssertionControl;
   readonly contribution: ScoreContribution;
@@ -302,6 +307,9 @@ evaluation/source coverage（语义）、persisted explanation retention（有�
 ## Evaluation、decision、policy 与 score contribution
 
 每个 entry 的 evaluation 一次封口。`observed` 无损区分 boolean outcome、measurement、direct score 与 Judge 的结构化 measurement；它不复制 diagnostic。
+
+evaluator 抛出的失败以 `evaluatorFailure` 封存。name 与 message 首行按 Attempt 已登记的敏感值脱敏，各用 256 UTF-8 字节的诊断文本预算。任一字段裁剪时 `truncated` 为 `true`。
+该字段属于现有 Assertion JSON。历史 `evaluator-failed` 条目缺字段时，读侧将原因标为 `not-recorded`。
 
 Judge 实际返回的 rationale、evidence、detail、citations 才能以 available 事实进入有界 explanation/material，未返回分别是 unavailable/not-recorded。输入材料只属于 materials，不能冒充 Judge returned evidence。Agent-as-Judge trace 暂不持久化。
 

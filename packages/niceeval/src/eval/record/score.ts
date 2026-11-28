@@ -8,9 +8,7 @@ import {
   FiniteNonNegativeNumberSchema,
   type FiniteNonNegativeNumber,
 } from "./attachment.ts";
-import { EvaluationAttemptFactsSchema, recordedAttemptFacts, type EvaluationAttemptFacts } from "./sealed-assertion.ts";
-import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
-import type { AttemptOutcome } from "../../record/model/core.ts";
+import { EvaluationAttemptFactsSchema, recordedAttemptFacts, type EvaluationAttemptFacts, type RecordedAttemptFoldInput } from "./sealed-assertion.ts";
 
 /** Score is an Analysis calculation, not an independently persisted family. */
 export const ScoreStateSchema = Schema.Literals(["complete", "partial", "unavailable"]);
@@ -154,10 +152,7 @@ export function buildScorePayload(input: ScoreFoldInput): Result.Result<ScorePay
 // @concord-code
 // @concord-implements docs/feature/assertions/library/score-points.md
 // @concord-implements docs/feature/eval/use-case/rubric-points.md
-export function foldRecordedAttemptScore(input: {
-  readonly outcome: AttemptOutcome;
-  readonly assertions: AssertionsAttachment;
-}): Result.Result<ScorePayload, ScorePayloadBuildError> {
+export function foldRecordedAttemptScore(input: RecordedAttemptFoldInput): Result.Result<ScorePayload, ScorePayloadBuildError> {
   return buildScorePayload(recordedAttemptFacts(input));
 }
 

@@ -8,6 +8,7 @@ import type {
   RecordAttachmentSessionBuilder,
 } from "../writer/current-attachment.ts";
 import type {
+  AttemptCompletion,
   AttemptDocument,
   MemberDocument,
   RecordAttachmentOwner,
@@ -262,7 +263,7 @@ export interface AttemptWriteSession {
   readonly attemptId: AttemptId;
   readonly slotId: SlotId;
   readonly [attemptWriteSessionBrand]: () => void;
-  readonly complete: (outcome: AttemptDocument["outcome"]) => Effect.Effect<void, RecordWriteError>;
+  readonly complete: (completion: AttemptCompletion) => Effect.Effect<void, RecordWriteError>;
   readonly attach: OwnerAttachmentWriter<"attempt">;
   readonly record: AttemptRecordWriter;
   readonly records: AttemptRecordsWriter;

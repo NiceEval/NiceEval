@@ -410,6 +410,7 @@ export interface SealedAssertionEntry {
   readonly coverage: AssertionCoverage;
   readonly limitations: readonly AssertionLimitation[];
   readonly result: AssertionResult;
+  readonly evaluatorFailure?: import("./record/model.ts").EvaluatorFailure;
   readonly policy: AssertionPolicy;
   readonly control: import("./record/model.ts").AssertionControl;
   readonly observed: AssertionObserved;

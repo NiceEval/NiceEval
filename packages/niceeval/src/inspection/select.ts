@@ -1347,11 +1347,13 @@ function traceAttachments(resolved: ResolvedInspectionAttempt): AttemptTraceAtta
 
 function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptResult {
   const assertions = readInspectionAssertions(resolved);
+  const terminal = attemptTerminal(resolved.attempt);
   const detail = {
     sandboxState: resolved.origin.source.readAttemptState?.(resolved.attempt.attemptId, resolved.origin.run.runId) ?? {
       status: "unavailable" as const,
     },
     core: projectAttemptCore(resolved.attempt),
+    ...(terminal === undefined ? {} : { terminal }),
     locator: resolved.locator,
     originRun: projectRunCore(resolved.origin.run),
     targets: resolved.targets.map(({ run, member }) => ({ runId: run.run.runId, member: projectMember(member) })),
@@ -1379,6 +1381,17 @@ function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptRe
     limitations: attemptLimitations(resolved, assertions.state === "available" ? assertions.value.entries : []),
   };
   return detail;
+}
+
+function attemptTerminal(attempt: ResolvedInspectionAttempt["attempt"]): InspectionAttemptResult["terminal"] {
+  const reason = attempt.terminal?.kind === "explicit-skip" ? attempt.terminal.reason : attempt.explicitSkipReason;
+  if (reason !== undefined) {
+    return { kind: "explicit-skip", reason, truncated: attempt.skipReasonTruncated === true };
+  }
+  if (attempt.outcome !== "cancelled") return undefined;
+  return attempt.terminal?.kind === "cancelled"
+    ? { kind: "cancelled" }
+    : { kind: "historical-cancelled", reason: "not-recorded" };
 }
 
 function assertionIndex(

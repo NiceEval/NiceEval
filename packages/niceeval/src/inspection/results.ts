@@ -433,6 +433,11 @@ export const InspectionAttemptResultSchema = Schema.Struct({
   sandboxState: AttemptStateResultSchema,
   notes: AttemptNotesSchema,
   verdictCauses: Schema.optional(VerdictCausesSchema),
+  terminal: Schema.optionalKey(Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("explicit-skip"), reason: Schema.String, truncated: Schema.Boolean }),
+    Schema.Struct({ kind: Schema.Literal("cancelled") }),
+    Schema.Struct({ kind: Schema.Literal("historical-cancelled"), reason: Schema.Literal("not-recorded") }),
+  ])),
   diagnostics: Schema.suspend(() => TraceDiagnosticsSchema),
   stoppedAt: Schema.Union([
     Schema.Struct({

@@ -1074,6 +1074,13 @@ export function renderAttempt(
   },
   record?: string,
 ): string {
+  const terminalFact = value.terminal;
+  const outcome = value.outcome === "cancelled" && terminalFact?.kind === "explicit-skip"
+    ? "explicit skip"
+    : terminalFact?.kind === "historical-cancelled" ? "cancelled (historical)" : value.outcome;
+  const skipReason = terminalFact?.kind === "explicit-skip"
+    ? `${terminalFact.reason}${terminalFact.truncated ? " [truncated]" : ""}`
+    : terminalFact?.kind === "historical-cancelled" ? "not recorded (historical)" : undefined;
   return terminal([
     {
       footerCommand: undefined,
@@ -1092,8 +1099,9 @@ export function renderAttempt(
             { key: "Run", value: value.originRunId },
             { key: "Attempt", value: value.attemptId },
             { key: "Planned attempt", value: value.plannedAttemptId },
-            { key: "Outcome", value: value.outcome },
+            { key: "Outcome", value: outcome },
             { key: "Verdict", value: value.verdict ?? "not available" },
+            ...(skipReason === undefined ? [] : [{ key: "Skip reason", value: skipReason }]),
             ...(state?.execution.bindings.map(({ lineage, origin }) => ({
               key: "State",
               value: `${lineage.name} cohort ${lineage.cohort} · ${origin.kind === "fresh" ? "fresh" : `from ${origin.checkpoint.digest}`} · ${state.context.earlierAttempts} earlier attempts in this sandbox · save ${state.execution.save.status}`,
@@ -3165,10 +3173,17 @@ export function renderAssertions(
     const reasons = assertionReasons(entry.evaluation.observed);
     if (entry.explanationRetention.state === "retained")
       reasons.push(...assertionReasons(entry.explanationRetention.value));
+    const failure = options.full ? entry.evaluatorFailure : undefined;
     blocks.push({
       kind: "keyValue",
       entries: [
         ...(entry.decision.reason === null ? [] : [{ key: "Reason", value: factPhrase(entry.decision.reason) }]),
+        ...(failure === undefined ? [] : [{
+          key: "Evaluator failure",
+          value: failure.state === "recorded"
+            ? `${failure.name}: ${failure.message}${failure.truncated ? " [truncated]" : ""}`
+            : "not recorded",
+        }]),
         ...[...new Set(reasons)].map((value) => ({ key: "Rationale", value })),
         ...commandAssertionFields(entry.evaluation.observed),
       ],

@@ -181,7 +181,7 @@ function detailsFor(input: {
         ? {
             state: "available" as const,
             value: foldRecordedAttemptVerdict({
-              outcome: input.attempt.document.outcome,
+              ...input.attempt.document,
               assertions: assertions.value,
             }) as Verdict,
           }
@@ -211,7 +211,7 @@ function detailsFor(input: {
     let scoreAttachment: CurrentRecordRead<ScorePayload>;
     if (assertions.state === "available") {
       const folded = foldRecordedAttemptScore({
-        outcome: input.attempt.document.outcome,
+        ...input.attempt.document,
         assertions: assertions.value,
       });
       if (Result.isFailure(folded)) return yield* Effect.fail(invalid(folded.failure.code));

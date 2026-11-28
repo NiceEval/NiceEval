@@ -79,6 +79,7 @@ import {
   type RecordWriteCommand,
 } from "../authoring.ts";
 import type {
+  AttemptCompletion,
   AttemptDocument,
   MemberDocument,
   RecordAttachmentOwner,
@@ -346,7 +347,7 @@ interface AttemptRuntime {
   readonly attemptId: AttemptId;
   readonly slotId: SlotId;
   state: "open" | "completing" | "completed" | "failed";
-  outcome: AttemptDocument["outcome"] | undefined;
+  completion: AttemptCompletion | undefined;
   readonly families: Set<string>;
   readonly collections: Map<string, CollectionState>;
   pendingAppends: number;
@@ -1507,7 +1508,7 @@ function finishCollections(attempt: AttemptRuntime): Effect.Effect<void, RecordW
 }
 function completeAttempt(
   attempt: AttemptRuntime,
-  outcome: AttemptDocument["outcome"],
+  completion: AttemptCompletion,
 ): Effect.Effect<void, RecordWriteError> {
   return Effect.gen(function* () {
     yield* attempt.run.lock.withPermits(1)(
@@ -1525,7 +1526,7 @@ function completeAttempt(
     yield* finishCollections(attempt);
     const slot = attempt.run.expectedBySlot.get(attempt.slotId);
     if (slot === undefined) return yield* Effect.fail(coreInvalid());
-    attempt.outcome = outcome;
+    attempt.completion = completion;
     attempt.run.members.set(attempt.slotId, {
       slotId: attempt.slotId,
       action: "executed",
@@ -1598,8 +1599,8 @@ function makeAttemptSession(attempt: AttemptRuntime): AttemptWriteSession {
     attemptId: attempt.attemptId,
     slotId: attempt.slotId,
     [attemptWriteSessionBrand]: () => undefined,
-    complete: (outcome: AttemptDocument["outcome"]) =>
-      attemptSessions.get(session) === attempt ? completeAttempt(attempt, outcome) : Effect.fail(recordWriterClosed()),
+    complete: (completion: AttemptCompletion) =>
+      attemptSessions.get(session) === attempt ? completeAttempt(attempt, completion) : Effect.fail(recordWriterClosed()),
     attach: writeDefinition as AttemptWriteSession["attach"],
     record,
     records,
@@ -1639,7 +1640,7 @@ function createAttempt(run: RunRuntime, slotId: SlotId): Effect.Effect<AttemptWr
         collections: new Map(),
         pendingAppends: 0,
         appendAcks,
-        outcome: undefined,
+        completion: undefined,
         handle: undefined,
       };
       run.attempts.set(attemptId, attempt);
@@ -1721,7 +1722,7 @@ function buildRunMetadata(run: RunRuntime, completedAt: RunDocument["completedAt
         slotId: attempt.slotId,
         evalId: slot.evalId,
         executionIdentityDigest: slot.executionIdentityDigest,
-        outcome: attempt.outcome!,
+        ...attempt.completion!,
       });
       if (Result.isFailure(encoded)) throw new Error("invalid attempt");
       const core = encodeCore(encoded.success)!;

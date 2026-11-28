@@ -8,6 +8,7 @@ import type {
   AssertionMaterials,
   AssertionEvaluation,
   AssertionDecision,
+  EvaluatorFailure,
   AssertionDecisionPolicy,
   ScoreContribution,
   ExplanationRetention,
@@ -20,6 +21,7 @@ export interface AssertionEntryInput<Content> {
   readonly materials: AssertionMaterials<Content>;
   readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
+  readonly evaluatorFailure?: EvaluatorFailure;
   readonly policy: AssertionDecisionPolicy;
   readonly control: import("./model.ts").AssertionControl;
   readonly contribution: ScoreContribution;

@@ -20,6 +20,8 @@ import {
   validateRunDocument,
 } from "./validation.ts";
 import type { RecordIssue } from "../errors/record-errors.ts";
+import { boundedSafeTextSchema } from "../family/source-receipt/codec.ts";
+import { MAX_DIAGNOSTIC_SUMMARY_BYTES } from "../family/source-receipt/limits.ts";
 
 /** Full durable-document budget; Host separately caps each read at 1 MiB. */
 export const RecordCoreDocumentLimits: RecordSchemaLimits = Object.freeze({
@@ -157,6 +159,7 @@ export const MemberDocumentDefinition = defineRecordCore({
 
 export const MemberDocumentSchema = MemberDocumentDefinition.schema;
 
+const SkipReasonSchema = boundedSafeTextSchema(MAX_DIAGNOSTIC_SUMMARY_BYTES);
 const AttemptDocumentCurrentSchema = Schema.Struct({
   attemptId: AttemptIdSchema,
   originRunId: RunIdSchema,
@@ -164,11 +167,23 @@ const AttemptDocumentCurrentSchema = Schema.Struct({
   evalId: EvalIdSchema,
   executionIdentityDigest: ExecutionIdentityDigestSchema,
   outcome: AttemptOutcomeSchema,
+  terminal: Schema.optional(Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("explicit-skip"), reason: SkipReasonSchema }),
+    Schema.Struct({ kind: Schema.Literal("cancelled") }),
+  ])),
+  explicitSkipReason: Schema.optionalKey(SkipReasonSchema),
+  skipReasonTruncated: Schema.optionalKey(Schema.Literal(true)),
 }).pipe(
   Schema.check(
     Schema.makeFilter((value) => schemaFilterIssues(validateAttemptDocument(value)), {
       identifier: "RecordAttemptDocumentInvariant",
       description: "an Attempt document satisfying its local invariant",
+    }),
+    Schema.makeFilter((value) =>
+      (value.outcome === "cancelled" ? value.explicitSkipReason === undefined : value.terminal === undefined) &&
+      (value.skipReasonTruncated === undefined || value.terminal?.kind === "explicit-skip" || value.explicitSkipReason !== undefined), {
+      identifier: "RecordAttemptTerminalInvariant",
+      description: "terminal facts paired with their outcome and truncation status",
     }),
   ),
 );

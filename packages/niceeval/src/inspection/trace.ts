@@ -13,6 +13,7 @@ import { projectJudgeUsage, projectTotalUsageCosts } from "../o11y/judge-usage-p
 import { recordedCostGaps, type RecordedTotalUsageCosts } from "../o11y/cost-gaps.ts";
 import type { ModelRolesWire } from "../model-roles.ts";
 import { boundedErrorText } from "../shared/bounded-error-text.ts";
+import { MAX_DIAGNOSTIC_SUMMARY_BYTES } from "../record/family/source-receipt/limits.ts";
 
 import { Result, Schema } from "effect";
 
@@ -71,7 +72,6 @@ const MAX_DIAGNOSTICS = 16;
 const MAX_DIAGNOSTIC_CAUSES = 4;
 const MAX_CONVERSATION_TEXT_BYTES = 1_024;
 const MAX_COVERAGE_REASON_BYTES = 256;
-const MAX_DIAGNOSTIC_SUMMARY_BYTES = 256;
 const MAX_DIAGNOSTIC_CAUSE_BYTES = 128;
 
 export interface TraceAttachmentInput {

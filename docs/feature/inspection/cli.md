@@ -549,6 +549,10 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   它回答“这个 Attempt 为什么是这个结果”，读者不必再调用 `attempt.trace`；文本视图的 Failure diagnostics 只渲染这个字段，`--json` 因此给出同一批诊断。
   `kind` 为 `advisory` 的诊断保留原 Verdict，不是结果的原因：文本视图把它们列在 `Advisories` 标题下，Failure diagnostics 只列其余诊断。
 
+  显式 skip 的原因紧随 Verdict 显示，与 `Advisories` 分开。`Outcome` 分别显示 `explicit skip`、`cancelled` 或 `cancelled (historical)`。
+  更高优先级的失败决定 Verdict 时，`Outcome` 显示 Core outcome，`Skip reason` 仍保留已发生的 skip。
+  `attempt.get` 的 `terminal` 交付 `explicit-skip` 的 `reason` 与 `truncated`、实际 `cancelled` 或 `historical-cancelled` 的 `not-recorded` 原因。
+
   Verdict 为 `errored` 且原因包含 required Assertion `unavailable` 或 `errored` 时，`attempt.get` 的 result 带 `verdictCauses`。
   每项给出 entryId、label、result（`unavailable | errored`）、decision reason 与已留存的失败细节代码（例如 `judge-call-failed`）；同一 reason 与细节代码的条目聚合计数，列表有界。
   文本视图在 Verdict 下写 `Errored because <N> required assertions are <result>: <原因短语> ×<count>`，末尾优先给出第一条的 `niceeval show @<locator> ae_<id> --full`。
@@ -569,11 +573,11 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   `@<locator> <trace 稳定 ID>` 按持久事件、证据、`itemId`、`toolOccurrenceId` 或 `commandId`
   直接调用 `attempt.trace.detail`。目标可以位于默认摘要之外。导入 key、原生 source eventId、
   `t<N>.c<M>`、`cmd<N>` 或数组位置不能替代持久身份；找不到时返回 selection error，不猜测相邻项。
+  已知导入 key 时先用 `@<locator> execution keys --trace <trace-id> --key <key>` 查到 `eventId`，见[按导入 key 查找](#按导入-key-查找)。
   命令 outline 的 Outcome 写出退出码或终止原因；末尾 `Next` 优先给出失败命令的
   `niceeval show @<locator> <commandId>`，其余入口合并为 `+N more`；展开后显示该命令完整保留的 stdout 与 stderr。
   错误摘要里的命令输出只是截断后的尾部，读者不必猜完整输出在哪（[T-31](../../taste.md#t-31)）。
 - `@<locator> timing` 调用 `attempt.timing`，显示 activity 层级、phase、offset、duration、outcome、limitations 与 omitted count。
-  已知导入 key 时先用 `@<locator> execution keys --trace <trace-id> --key <key>` 查到 `eventId`，见[按导入 key 查找](#按导入-key-查找)。
   activity 超过单页上限时，result 带 `continuation`，`niceeval show @<locator> timing --continuation <token>` 读下一页，规则与 `execution` 的分页相同；不能只报 omitted count 而不给翻页入口。人读输出的 `Next` 给出下一页命令。各层 activity 的 label 由 owner 定义，Judge 的区间见 [Judge · Timing 区间](../judge/architecture.md#timing-区间)。
 - `@<locator> usage` 调用 `attempt.usage`，首先显示该局 totalCosts，再显示应用用途、实际模型和 Judge 明细。全账本费用完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 和 Missing sources，不把已知小计称为整局价格。实验中的每个 origin Attempt 复用同一总费用投影，不累加分页预览。
   input/output token、request 与 cost typed totals 均保留各自 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
@@ -663,13 +667,13 @@ Events 的全部人读字符串按码点去掉控制字符与双向格式控制�
 | flag | 只与 |
 | --- | --- |
 | `--actor`、`--type` | `execution`，分别交给 `actorId` 与 `eventType` |
+| `--trace <trace-id>` | `execution` 与 `execution keys`，交给 `traceId`；`execution keys` 必填 |
+| `--from <eventId>` | `execution`，交给 `fromEventId`，必须同时给 `--trace` |
+| `--key <key>` | `execution keys`，可重复，交给 `keys` |
 | `--reprice <file>` | `usage` |
 | `--eval <prefix>` | `exp:` 的 `assertions` |
 | `--full` | 单条断言 `ae_<id>` |
 | `--output <file>` | 断言图片 `image <image-id>` |
-| `--trace <trace-id>` | `execution` 与 `execution keys`，交给 `traceId`；`execution keys` 必填 |
-| `--from <eventId>` | `execution`，交给 `fromEventId`，必须同时给 `--trace` |
-| `--key <key>` | `execution keys`，可重复，交给 `keys` |
 | `--continuation <token>` | 任何带 `next-page` link 的输出，原样交给 operation |
 | `--reference` | 省略对象的当前结果 |
 | `--all` | 省略对象的当前结果，且不与 `--json` 同用 |
@@ -925,9 +929,12 @@ Next
 列表调用一次 `projection: "compact"` 的 `attempt.assertions`，`--json` 恰好写一行 document，`assertions` 按 Attempt 的条目顺序排列。
 Attempt 没有任何条目（例如在 Eval 运行阶段就 errored）时，`assertions` 为 `[]`，进程照常以零状态退出；文本视图写 `No Assertion entries recorded`，并在 `Next` 给出 `niceeval show @<locator> execution`。
 空列表不等于“全部通过”，Verdict 与原因仍由 `attempt.get` 交付。
-compact 的读取成本与材料大小无关：只读取条目的判定、分值、display、gate、target 与 rationale。
+compact 的读取成本与材料大小无关。它读取判定、分值、display、gate、target、rationale 与已封存的 evaluator 失败原因。
 材料正文、collection 的 retained rows、`debugger`、source content 与裁判审计都不加载，只在 `ae_<id> --full` 中交付。
 读取期限按单个条目计时，不在整个列表上累计。条目再多、材料再大，可读的列表也不会读到一半失败。
+
+`assertions --json` 与 `ae_<id> --full --json` 的条目通过 `evaluatorFailure` 交付异常名、消息首行与裁剪状态。历史 `evaluator-failed` 条目交付 `not-recorded`。
+人读 `ae_<id> --full` 显示同一原因及裁剪提示。
 
 `equals` 失败时，`--full` 显示 `Actual` 与 `Expected`，JSON 的 `explanationRetention` 提供对应的 `received` 与 `expected` 文本。
 预览按封存时已登记的敏感值脱敏，再按预算截断并标记 `[truncated]`。同一规则也用于封存的实际值源材料。

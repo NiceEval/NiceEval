@@ -108,6 +108,7 @@ export interface AssertionsAttachmentEntryInput<E, R> {
   };
   readonly evaluation: AssertionEntryInput<AssertionsProvisionalContent>["evaluation"];
   readonly decision: AssertionEntryInput<AssertionsProvisionalContent>["decision"];
+  readonly evaluatorFailure?: NonNullable<AssertionEntryInput<AssertionsProvisionalContent>["evaluatorFailure"]>;
   readonly policy: AssertionEntryInput<AssertionsProvisionalContent>["policy"];
   readonly control: AssertionEntryInput<AssertionsProvisionalContent>["control"];
   readonly contribution: AssertionEntryInput<AssertionsProvisionalContent>["contribution"];
@@ -576,6 +577,7 @@ export function encodeSealedAssertionEntry(entry: SealedAssertionEntry): Asserti
       reason: "reason" in result ? result.reason : null,
       gate: result.gate,
     },
+    ...(entry.evaluatorFailure === undefined ? {} : { evaluatorFailure: entry.evaluatorFailure }),
     policy: {
       requirement: { state: "available" as const, value: entry.policy.requirement },
       condition: { state: "available" as const, value: entry.policy.condition },
@@ -653,6 +655,7 @@ function provisionalEntry<E, R>(
     },
     evaluation: entry.evaluation,
     decision: entry.decision,
+    ...(entry.evaluatorFailure === undefined ? {} : { evaluatorFailure: entry.evaluatorFailure }),
     policy: entry.policy,
     control: entry.control,
     contribution: entry.contribution,
@@ -747,6 +750,7 @@ function materializeDocument<E, R>(
       },
       evaluation: sealed.evaluation,
       decision: sealed.decision,
+      ...(sealed.evaluatorFailure === undefined ? {} : { evaluatorFailure: sealed.evaluatorFailure }),
       policy: sealed.policy,
       control: sealed.control,
       contribution: sealed.contribution,

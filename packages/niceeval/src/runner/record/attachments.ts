@@ -14,6 +14,8 @@ import {
 import { createFileChangesCaptureAttachment, type FileChangesAttachmentBuild } from "../../assertions/record/diff.ts";
 import type { AssertionsProducerError } from "../../assertions/record/producer.ts";
 import type { AssertionEntryId } from "../../assertions/identity.ts";
+import type { AttemptCompletion } from "../../record/model/core.ts";
+import { boundedSafeDiagnosticText } from "../../shared/bounded-error-text.ts";
 import { RecordExactParseOptions } from "../../record/codec/core.ts";
 import { ArtifactsAttachmentSchema, type ArtifactsAttachment } from "../../record/family/artifacts.ts";
 import type { AssertionSourceSite } from "../../record/family/assertions/definition.ts";
@@ -377,14 +379,14 @@ export function createAttemptFileChangesAttachment(result: EvalResult): FileChan
   return capture === undefined ? undefined : createFileChangesCaptureAttachment(capture);
 }
 
-export function recordAttemptOutcome(result: EvalResult): "completed" | "errored" | "cancelled" {
-  switch (result.verdict) {
-    case "passed":
-    case "failed":
-      return "completed";
-    case "errored":
-      return "errored";
-    case "skipped":
-      return "cancelled";
+export function recordAttemptCompletion(result: EvalResult): AttemptCompletion {
+  const skip = result.skipReason === undefined ? undefined : boundedSafeDiagnosticText(result.skipReason);
+  const truncation = skip?.truncated ? { skipReasonTruncated: true as const } : {};
+  if (result.verdict === "skipped") {
+    return skip === undefined
+      ? { outcome: "cancelled", terminal: { kind: "cancelled" } }
+      : { outcome: "cancelled", terminal: { kind: "explicit-skip", reason: skip.text }, ...truncation };
   }
+  const outcome = result.verdict === "errored" ? "errored" : "completed";
+  return skip === undefined ? { outcome } : { outcome, explicitSkipReason: skip.text, ...truncation };
 }

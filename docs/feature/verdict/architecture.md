@@ -4,11 +4,11 @@ Verdict 是 read-side 对一个 Attempt 的 Core `outcome`、sealed Assertions �
 
 ## 四态折叠
 
-Pass Eval 与 Score Eval 的每个 Attempt 都按同一优先级写入一个 Verdict：
+Pass Eval 与 Score Eval 的每个 Attempt 都按同一优先级折叠：
 
 | 优先级 | 条件 | Verdict |
 |---|---|---|
-| 1 | execution error，或 required Assertion unavailable / errored | `errored` |
+| 1 | execution error、实际取消，或 required Assertion unavailable / errored | `errored` |
 | 2 | 任一 gate 的 sealed condition 不满足；Pass Boolean 默认 gate，Score 只认显式 gate | `failed` |
 | 3 | 显式 `t.skip(reason)`，且没有更高优先级条件 | `skipped` |
 | 4 | 其余情形 | `passed` |
@@ -16,6 +16,12 @@ Pass Eval 与 Score Eval 的每个 Attempt 都按同一优先级写入一个 Ver
 Verdict 不从最后一个 Turn、当前源码或 score 值猜测。`errored` 表示无法完成 execution 或必要材料；`failed` 表示已经取得不满足 gate 的事实。页面必须保留相应 Assertion 或 diagnostic，不能只显示四态词。
 
 作者只能在 Assertion handle 上显式建立 gate。Boolean 使用 `.gate()`，measurement 使用 `.gate(minimum)`；没有全局 strict 或读取时提升。gate 不改变 sealed evaluation、points 或 score state，也不自动停止作者控制流。
+
+## Core 终态的读取
+
+Core `cancelled` 携带 `terminal.kind: "explicit-skip"` 时，读侧使用已保存的原因折叠显式 skip。`terminal.kind: "cancelled"` 表示实际取消，按 execution error 折叠。
+历史 `cancelled` 缺少 `terminal` 时，沿用 `skipped` 的折叠规则，并把原因标为历史未记录，即 `not-recorded`。
+其他 outcome 通过 `explicitSkipReason` 保留已发生的显式 skip。较高优先级的条件仍决定 Verdict。
 
 ## Score Eval 的 Assertion score facts
 

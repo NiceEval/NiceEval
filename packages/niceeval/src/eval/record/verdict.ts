@@ -3,8 +3,6 @@
 // @concord-implements docs/feature/verdict/architecture.md
 // @concord-implements docs/feature/verdict/use-case/strict-quality-gate.md
 import { Schema } from "effect";
-import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
-import type { AttemptOutcome } from "../../record/model/core.ts";
 import { VERDICTS, type Verdict } from "../../shared/types.ts";
 import {
   EvaluationAttemptFactsSchema,
@@ -12,6 +10,7 @@ import {
   isRequiredAssertionUnavailableOrErrored,
   recordedAttemptFacts,
   type EvaluationAttemptFacts,
+  type RecordedAttemptFoldInput,
 } from "./sealed-assertion.ts";
 
 /**
@@ -48,10 +47,7 @@ export function foldVerdict(input: VerdictFoldInput): VerdictState {
  * Assertions payload.  This is the one adapter from Record's terminal Core
  * state into the verdict fold; consumers must not reproduce these rules.
  */
-export function foldRecordedAttemptVerdict(input: {
-  readonly outcome: AttemptOutcome;
-  readonly assertions: AssertionsAttachment;
-}): VerdictState {
+export function foldRecordedAttemptVerdict(input: RecordedAttemptFoldInput): VerdictState {
   return foldVerdict(recordedAttemptFacts(input));
 }
 

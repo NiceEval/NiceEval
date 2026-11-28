@@ -13,7 +13,7 @@ import type {
 } from "../../assertions/record/model.ts";
 import { sealedAssertionResult } from "../../assertions/record/model.ts";
 import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
-import type { AttemptOutcome } from "../../record/model/core.ts";
+import type { AttemptDocument } from "../../record/model/core.ts";
 
 /**
  * Eval folds consume the Assertions owner's sealed-result contract directly.
@@ -52,15 +52,20 @@ export const EvaluationAttemptFactsSchema = Schema.Struct({
 
 export type EvaluationAttemptFacts = Schema.toType<typeof EvaluationAttemptFactsSchema>["Type"];
 
-/** The sole Record/Core adapter shared by the canonical Verdict and Score folds. */
-export function recordedAttemptFacts(input: {
-  readonly outcome: AttemptOutcome;
+export type RecordedAttemptFoldInput = Pick<AttemptDocument, "outcome" | "terminal" | "explicitSkipReason"> & {
   readonly assertions: AssertionsAttachment;
-}): EvaluationAttemptFacts {
+};
+
+export function recordedAttemptExecutionFailed(input: Pick<RecordedAttemptFoldInput, "outcome" | "terminal">): boolean {
+  return input.outcome === "errored" || input.outcome === "interrupted" || input.terminal?.kind === "cancelled";
+}
+
+/** The sole Record/Core adapter shared by the canonical Verdict and Score folds. */
+export function recordedAttemptFacts(input: RecordedAttemptFoldInput): EvaluationAttemptFacts {
   return {
-    execution:
-      input.outcome === "errored" || input.outcome === "interrupted" ? ("errored" as const) : ("completed" as const),
-    explicitlySkipped: input.outcome === "cancelled",
+    execution: recordedAttemptExecutionFailed(input) ? "errored" : "completed",
+    explicitlySkipped: input.explicitSkipReason !== undefined ||
+      (input.outcome === "cancelled" && input.terminal?.kind !== "cancelled"),
     assertions: input.assertions.entries.map((entry) => ({
       required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
       result: sealedAssertionResult(entry),

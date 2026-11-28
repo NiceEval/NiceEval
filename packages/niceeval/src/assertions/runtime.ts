@@ -90,6 +90,7 @@ import { numericBooleanRegistration } from "./numeric.ts";
 import { isQuantity, type Unit } from "./quantity.ts";
 import { transferFullAssertionContent } from "./full-content.ts";
 import { omitUndefined } from "../shared/omit-undefined.ts";
+import { boundedSafeDiagnosticText } from "../shared/bounded-error-text.ts";
 
 const unitRatio = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
 const weightedScoreInput = Schema.Struct({
@@ -187,8 +188,30 @@ type EntrySettlement =
       readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
     } & SettlementDiagnostic)
   | ({ readonly state: "not-applicable" } & SettlementDiagnostic)
-  | ({ readonly state: "errored" } & SettlementDiagnostic)
+  | ({ readonly state: "errored"; readonly failure?: { readonly cause: unknown } } & SettlementDiagnostic)
   | ({ readonly state: "interrupted" } & SettlementDiagnostic);
+
+function evaluatorFailureSummary(cause: unknown, redact: RedactEvidenceText | undefined) {
+  let name = "Error";
+  let message = "An unexpected value was thrown.";
+  try {
+    if (cause instanceof Error) {
+      if (typeof cause.name === "string" && cause.name !== "") name = cause.name;
+      if (typeof cause.message === "string") message = cause.message;
+    } else if (typeof cause === "string") {
+      message = cause;
+    }
+  } catch {
+    // A thrown object may have throwing getters. Keep the safe fallback.
+  }
+  const summarize = (value: string) => {
+    const redacted = redact?.(value) ?? value;
+    return boundedSafeDiagnosticText(redacted.split(/[\r\n\u2028\u2029]/u, 1)[0] ?? "");
+  };
+  const safeName = summarize(name);
+  const safeMessage = summarize(message);
+  return { name: safeName.text, message: safeMessage.text, truncated: safeName.truncated || safeMessage.truncated };
+}
 
 interface AssertionEntry {
   readonly index: number;
@@ -1794,7 +1817,7 @@ class AssertionsRuntimeImplementation {
   ): Effect.Effect<EntrySettlement> {
     return Effect.tryPromise({
       try: () => evaluateBooleanMatch(match, value),
-      catch: () => undefined,
+      catch: (cause) => cause,
     }).pipe(
       Effect.map(
         (evaluation): EntrySettlement =>
@@ -1843,6 +1866,7 @@ class AssertionsRuntimeImplementation {
             ? Effect.interrupt
             : Effect.succeed<EntrySettlement>({
                 state: "errored" as const,
+                failure: { cause: Cause.squash(cause) },
                 evidence: {
                   kind: "matcher",
                   diagnostic: undefined,
@@ -2006,6 +2030,7 @@ class AssertionsRuntimeImplementation {
                   ? Effect.interrupt
                   : Effect.succeed({
                       state: "errored" as const,
+                      failure: { cause: Cause.squash(cause) },
                       receipt: undefined,
                       evidence: { kind: "none" as const },
                     }),
@@ -2101,6 +2126,9 @@ class AssertionsRuntimeImplementation {
   ): SealedAssertionEntry {
     if (entry.evaluation.state !== "settled") throw new Error("Attempted to seal an unsettled Assertion entry");
     const settlement = entry.evaluation.value;
+    const evaluatorFailure = settlement.state === "errored" && settlement.failure !== undefined
+      ? evaluatorFailureSummary(settlement.failure.cause, this.redactEvidenceText ?? redactOperandText)
+      : undefined;
     const display: AssertionDisplay = {
       label: entry.display.label,
       groupPath: entry.display.groupPath,
@@ -2148,6 +2176,7 @@ class AssertionsRuntimeImplementation {
       coverage: material.coverage,
       limitations: material.limitations,
       result: this.resultFor(entry, settlement, redactOperandText ?? ((value) => value)),
+      ...(evaluatorFailure === undefined ? {} : { evaluatorFailure }),
       policy: {
         requirement: this.isRequired(entry) ? ("required" as const) : ("optional" as const),
         condition: this.conditionFor(entry),

@@ -48,6 +48,18 @@ Run Context 的 `execution.experimentHooks` 保存 producer 在 Plugin compositi
 Run Core 只保存声明；Experiment policy 决定它是否足以支持[改名采用](../../experiments/cli/rename.md)。
 声明不进入既有 fingerprint 或 configHash，不改写历史 identity 字节。
 
+## Attempt 终态事实
+
+Attempt Core 的 `outcome` 为 `completed`、`errored`、`cancelled` 或 `interrupted`。新写入的 `cancelled` 同时保存 `terminal`。
+作者调用 `t.skip(reason)` 时保存 `{ kind: "explicit-skip", reason: SafeText }`。实际取消保存 `{ kind: "cancelled" }`。
+信号中断沿用 `errored` 或 `interrupted`，终态依照相应的封存路径确定。
+
+更高优先级的执行错误或 gate 决定终态时，Core 用 `explicitSkipReason?: SafeText` 单独保存已经发生的 skip。`terminal` 仅用于 `cancelled`。
+两个位置的原因都在 Attempt 封存时按已登记的敏感值脱敏，使用 256 UTF-8 字节的诊断文本预算。裁剪时保存 `skipReasonTruncated: true`。
+
+这些可选字段属于现有 Core JSON。历史 payload 保留原始字节，读取规则见 [Verdict 架构](../../verdict/architecture.md#core-终态的读取)。
+SQLite 布局、Record 格式标记、`executionIdentityDigest`、`slotId` 与 locator 沿用原规则。
+
 ## Attempt publication
 
 origin publication 是一个短事务。它必须同时：

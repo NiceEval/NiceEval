@@ -1,4 +1,5 @@
 import type { AssertionEntryId } from "../identity.ts";
+import type { SafeText } from "../../record/family/source-receipt/model.ts";
 
 /**
  * `entryId` is only stable inside one Assertions Attachment. It is not an
@@ -20,6 +21,12 @@ export type BoundedJsonValue = BoundedJsonPrimitive | readonly BoundedJsonValue[
 export interface AssertionDisplay {
   readonly label?: string;
   readonly groupPath: readonly string[];
+}
+
+export interface EvaluatorFailure {
+  readonly name: SafeText;
+  readonly message: SafeText;
+  readonly truncated: boolean;
 }
 
 export type AssertionFactValue =
@@ -585,6 +592,7 @@ export interface AssertionEntry<Content> {
   readonly materials: AssertionMaterials<Content>;
   readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
+  readonly evaluatorFailure?: EvaluatorFailure;
   readonly policy: AssertionDecisionPolicy;
   readonly control: AssertionControl;
   readonly contribution: ScoreContribution;
@@ -603,6 +611,7 @@ export interface AssertionEntryOuter<Content> {
   readonly materials: AssertionMaterials<Content>;
   readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
+  readonly evaluatorFailure?: EvaluatorFailure;
   readonly policy: AssertionDecisionPolicy;
   readonly control: AssertionControl;
   readonly contribution: ScoreContribution;
