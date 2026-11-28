@@ -43,7 +43,7 @@ jobs:
       contents: read
     with:
       lane: release
-      live-providers: true
+      live-providers: ${{ !contains(needs.prepare-release.outputs.version, '-') }}
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}

@@ -24,8 +24,8 @@
 | 本地 | 改动对应的 Vitest 文件（`vitest --changed` 或点名文件）；改了界面时，对相关 Bombadil spec 跑一次短时 `test` |
 | pre-push | 在待推送的提交快照中运行 `pnpm lint` 与 `pnpm test`（Vitest 的快速 project） |
 | PR 和默认分支 push | 类型检查、Lint、文档校验和快速 `unit` 项目 |
-| Nightly | 每天 00:00 UTC 检查默认分支。提交有变化时发布 Canary，沿用显式发布的完整测试。可手动触发同一入口。 |
-| 显式发布 | 发布正式版或预发布 npm 包，以及手动发布镜像前，在发布 ref 运行完整 E2E、属性测试、live Provider、Docker 镜像自检和 Bombadil。npm 发布对待发布的 tarball 跑 smoke。 |
+| Nightly | 每天 00:00 UTC 检查默认分支。提交有变化时按预发布规则发布 Canary。可手动触发同一入口。 |
+| 显式发布 | 在发布 ref 运行 E2E、属性测试、Docker 镜像自检和 Bombadil。正式版 npm 包和手动发布的镜像要求完整 E2E。带 `-` 的预发布版本只以无需外部网络的 E2E 场景作为门禁，避免外部 Provider 不可用时推迟预发布。npm 发布对待发布的 tarball 跑 smoke。 |
 | 手动检查 | E2E 和属性套件各有手动入口。 |
 
 运行条件（需要 Docker、Linux 内核语义、外部网络与密钥）用 Vitest `projects` 与 CI 矩阵表达，不写自研的计划器或预检。本地默认只跑不需要这些条件的 project。
