@@ -1,19 +1,17 @@
+import { randomInt } from "node:crypto";
 import { copyFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Effect } from "effect";
 import fc from "fast-check";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { experimentHost } from "niceeval/experiment/host";
 import { withInspectionQuery } from "niceeval/inspection/host";
-import {
-  createFixtureProject,
-  readJson,
-  runSingleAttempt,
-  writeJson,
-  type FixtureProject,
-} from "./fixtures/adapter-trace-usage-harness/harness.ts";
+import { runHost } from "niceeval/run/host";
+import { afterAll, beforeAll, expect, test } from "vitest";
+import { createFixtureProject, readJson } from "./fixtures/adapter-trace-usage-harness/harness.ts";
 
 const ADAPTER = `
 import { defineAdapter } from "niceeval/adapter";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 const file = (name) => new URL("../" + name, import.meta.url);
 const pending = () => new Promise(() => {});
 const complete = { state: "complete", limitations: [] };
@@ -41,8 +39,8 @@ export const adapter = defineAdapter({
   behaviorRevision: "1",
   cleanupTimeoutMs: 40,
   create(ctx) {
-    const play = async () => {
-      const input = JSON.parse(readFileSync(file("input.json"), "utf8"));
+    const play = async (id, input) => {
+      const outcomes = file(id + "-outcomes.json");
       const stream = (traceId, factory, signal) => ctx.recordTrace({
         ...header(traceId), archive, events: { stream: factory }, ...(signal ? { signal } : {}),
       });
@@ -149,7 +147,7 @@ export const adapter = defineAdapter({
           };
         });
         void finished.then((receipt) => {
-          writeFileSync(file("outcomes.json"), JSON.stringify({ receipt, managedAbort, returnCalled }));
+          writeFileSync(outcomes, JSON.stringify({ receipt, managedAbort, returnCalled }));
         });
         await entered.promise;
         return true;
@@ -197,7 +195,7 @@ export const adapter = defineAdapter({
         sample(input.count);
         receipts.samples = samples;
       }
-      writeFileSync(file("outcomes.json"), JSON.stringify(receipts));
+      writeFileSync(outcomes, JSON.stringify(receipts));
       return true;
     };
     return { play };
@@ -205,43 +203,105 @@ export const adapter = defineAdapter({
 });
 `;
 
-const FILES = {
-  "adapters/stream.ts": ADAPTER,
-  "evals/stream.eval.ts": `
-import { equals } from "niceeval/expect";
-import { adapter } from "../adapters/stream.ts";
-export default adapter.defineEval({ async test(t) { t.check(await t.play(), equals(true)); } });
-`,
-  "experiments/stream.ts": `
-import { defineExperiment } from "niceeval";
-import { adapter } from "../adapters/stream.ts";
-export default defineExperiment({ adapter, evals: ["stream"] });
-`,
-};
+type TraceInput =
+  | { readonly kind: "basic"; readonly key: string }
+  | { readonly kind: "capacity" | "admission" | "scopes" | "content" }
+  | { readonly kind: "large"; readonly count: number };
 
-let project: FixtureProject;
-let portableBasic: { readonly path: string; readonly locator: string };
-let scopedReceipts: Record<string, unknown>;
+const traceKey = fc.string({ minLength: 1 });
+const propertyOptions = {
+  seed: randomInt(-(2 ** 31), 2 ** 31),
+  numRuns: Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 1),
+  examples: [["a"]] satisfies [string][],
+};
+const basicCases = fc.sample(fc.tuple(traceKey), propertyOptions).map(([key], index) => ({
+  id: `basic-${index}`,
+  key,
+}));
+
+async function runTraceCases(cases: Readonly<Record<string, TraceInput>>) {
+  const evalFiles = Object.fromEntries(
+    Object.entries(cases).map(([id, input]) => [
+      `evals/${id}.eval.ts`,
+      `import { equals } from "niceeval/expect";
+import { adapter } from "../adapters/stream.ts";
+export default adapter.defineEval({ async test(t) {
+  t.check(await t.play(${JSON.stringify(id)}, ${JSON.stringify(input)}), equals(true));
+} });`,
+    ]),
+  );
+  const project = await createFixtureProject("niceeval-trace-stream", {
+    ...evalFiles,
+    "adapters/stream.ts": ADAPTER,
+    "experiments/stream.ts": `import { defineExperiment } from "niceeval";
+import { adapter } from "../adapters/stream.ts";
+export default defineExperiment({ adapter, evals: ${JSON.stringify(Object.keys(cases))} });`,
+  });
+  const { cwd } = project;
+  try {
+    const planned = await Effect.runPromise(
+      experimentHost.invocation.plan({
+        cwd,
+        experimentSelector: "stream",
+        config: { maxConcurrency: 1 },
+        overrides: { rerun: "all" },
+      }),
+    );
+    if (planned.status !== "ready") throw new Error(`Could not plan stream: ${JSON.stringify(planned)}`);
+    const { receipt } = await Effect.runPromise(experimentHost.invocation.run({ plan: planned.plan }));
+    const [runId] = receipt.createdRunIds;
+    if (runId === undefined) throw new Error("No Run was created for the stream Experiment");
+    const { run } = await Effect.runPromise(runHost.get({ cwd, runId }));
+    return { project, slots: run.slots };
+  } catch (error) {
+    await project.dispose();
+    throw error;
+  }
+}
+
+type TraceRun = Awaited<ReturnType<typeof runTraceCases>>;
+let batch: TraceRun;
+let portablePath: string;
 
 beforeAll(async () => {
-  project = await createFixtureProject("niceeval-trace-stream", FILES);
-  await writeJson(project.cwd, "input.json", { kind: "basic", key: "portable" });
-  const locator = await runSingleAttempt(project.cwd, "stream");
-  const path = join(project.cwd, "portable-trace.sqlite");
-  await copyFile(join(project.cwd, ".niceeval", "record.sqlite"), path);
-  portableBasic = { path, locator };
-  scopedReceipts = (await run("scopes")).outcomes;
+  // Separate Attempts share discovery and Record setup in one Invocation.
+  const generated = Object.fromEntries<TraceInput>(basicCases.map(({ id, key }) => [id, { kind: "basic", key }]));
+  batch = await runTraceCases({
+    ...generated,
+    portable: { kind: "basic", key: "portable" },
+    scopes: { kind: "scopes" },
+    capacity: { kind: "capacity" },
+    admission: { kind: "admission" },
+    content: { kind: "content" },
+  });
+  const { cwd } = batch.project;
+  portablePath = join(cwd, "portable-trace.sqlite");
+  await copyFile(join(cwd, ".niceeval", "record.sqlite"), portablePath);
 }, 60_000);
 
 afterAll(async () => {
-  await project?.dispose();
+  await batch?.project.dispose();
 });
 
-async function run(kind: string, fields: Record<string, unknown> = {}) {
-  await writeJson(project.cwd, "input.json", { kind, ...fields });
-  const locator = await runSingleAttempt(project.cwd, "stream");
-  const outcomes = await readJson<Record<string, unknown>>(project.cwd, "outcomes.json");
+function publishedLocator({ slots }: TraceRun, id: string) {
+  const publication = slots.find(({ evalId }) => evalId === id)?.publication;
+  if (publication?.state !== "published") throw new Error(`Slot for ${id} was not published`);
+  return publication.attemptLocator;
+}
+
+async function readCase(run: TraceRun, id: string) {
+  const locator = publishedLocator(run, id);
+  const outcomes = await readJson<Record<string, unknown>>(run.project.cwd, `${id}-outcomes.json`);
   return { locator, outcomes };
+}
+
+async function runTraceCase(input: TraceInput) {
+  const run = await runTraceCases({ stream: input });
+  try {
+    return await readCase(run, "stream");
+  } finally {
+    await run.project.dispose();
+  }
 }
 
 const invalid = { code: "execution-trace-invalid" };
@@ -249,9 +309,13 @@ const conflict = { code: "execution-trace-conflict" };
 
 // @feature docs/feature/adapters/library/README.md#流式提交事件
 test("the explicit end and the closed prefix determine the published trace", async () => {
+  let index = 0;
   await fc.assert(
-    fc.asyncProperty(fc.string({ minLength: 1 }), async (key) => {
-      const { outcomes } = await run("basic", { key });
+    fc.asyncProperty(traceKey, async (key) => {
+      // Use the prepared Attempts for exploration. A new shrink candidate runs in a fresh Attempt.
+      const sample = basicCases[index++];
+      const { outcomes } =
+        sample?.key === key ? await readCase(batch, sample.id) : await runTraceCase({ kind: "basic", key });
       expect(outcomes).toMatchObject({
         original: { traceId: expect.any(String), events: [{ key }] },
         replayed: { ending: { kind: "declared" }, eventCount: 1 },
@@ -272,14 +336,14 @@ test("the explicit end and the closed prefix determine the published trace", asy
         traceId: (outcomes.original as { traceId: string }).traceId,
       });
     }),
-    { numRuns: Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 1), examples: [["a"]] },
+    propertyOptions,
   );
 }, 60_000);
 
 // @feature docs/feature/adapters/library/README.md#没有到达-end-的流
 test("hostile Record read preserves accepted prefixes and excludes rejected snapshots", async () => {
-  const { locator, path } = portableBasic;
-  const { trace, attempt } = await withInspectionQuery({ cwd: project.cwd, recordPath: path }, async (query) => ({
+  const locator = publishedLocator(batch, "portable");
+  const { trace, attempt } = await withInspectionQuery({ cwd: batch.project.cwd, recordPath: portablePath }, async (query) => ({
     trace: (await query.inspect({ kind: "attempt.trace", locator })).trace.execution,
     attempt: (await query.inspect({ kind: "attempt.get", locator })).attempt,
   }));
@@ -292,7 +356,7 @@ test("hostile Record read preserves accepted prefixes and excludes rejected snap
 
 // @feature docs/feature/adapters/library/README.md#取消与接纳时段
 test("four producers run concurrently and a duplicate reservation never enters its factory", async () => {
-  const { outcomes } = await run("capacity");
+  const { outcomes } = await readCase(batch, "capacity");
   expect(outcomes).toEqual({
     before: [0, 1, 2, 3],
     duplicate: conflict,
@@ -303,13 +367,13 @@ test("four producers run concurrently and a duplicate reservation never enters i
 
 // @feature docs/feature/adapters/library/README.md#取消与接纳时段
 test("hung next and return settle the trace at admission close without changing a passed outcome", async () => {
-  const { locator, outcomes } = await run("admission");
+  const { locator, outcomes } = await readCase(batch, "admission");
   expect(outcomes).toMatchObject({
     receipt: { ending: { kind: "cut", reason: "admission-closed", droppedItems: 0 }, eventCount: 1 },
     managedAbort: true,
     returnCalled: true,
   });
-  const attempt = await withInspectionQuery({ cwd: project.cwd }, async (query) =>
+  const attempt = await withInspectionQuery({ cwd: batch.project.cwd }, async (query) =>
     (await query.inspect({ kind: "attempt.get", locator })).attempt,
   );
   expect(attempt.verdict).toBe("passed");
@@ -317,7 +381,8 @@ test("hung next and return settle the trace at admission close without changing 
 });
 
 // @feature docs/feature/adapters/library/README.md#幂等与重交
-test("a forward scope reference yields the same normalized snapshot and array receipt identities", () => {
+test("a forward scope reference yields the same normalized snapshot and array receipt identities", async () => {
+  const { outcomes: scopedReceipts } = await readCase(batch, "scopes");
   expect(scopedReceipts.stream).toMatchObject({
     scopeCount: 1, eventCount: 1, ending: { kind: "declared" }, traceId: expect.any(String),
   });
@@ -329,7 +394,7 @@ test("a forward scope reference yields the same normalized snapshot and array re
 
 // @feature docs/feature/adapters/library/README.md#规模与回执
 test("a streamed event above the inline threshold retains its attachment evidence", async () => {
-  const { outcomes } = await run("content");
+  const { outcomes } = await readCase(batch, "content");
   expect(outcomes.stream).toMatchObject({ eventCount: 1, evidenceCount: 1, ending: { kind: "declared" } });
 });
 
@@ -338,7 +403,7 @@ test.runIf(process.env.NICEEVAL_TRACE_SCALE === "1")(
   "publishes 200,000 streamed events without retaining item-proportional JS heap",
   async () => {
     const count = 200_000;
-    const { outcomes } = await run("large", { count });
+    const { outcomes } = await runTraceCase({ kind: "large", count });
     expect(outcomes.stream).toMatchObject({ eventCount: count, ending: { kind: "declared" } });
     const samples = outcomes.samples as readonly { emitted: number; heapUsed: number; rss: number }[];
     expect(samples.map(({ emitted }) => emitted)).toEqual([
