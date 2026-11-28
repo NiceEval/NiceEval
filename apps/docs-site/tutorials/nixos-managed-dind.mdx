@@ -10,8 +10,6 @@ Use Incus VMs for eval tasks that need Docker on NixOS. Eval configuration is th
 
 An administrator must provision Incus, the runtime project, storage pool, trusted base image, and `/etc/niceeval/incus-provider.json`, and grant the everyday user the required access. Reference environments need dedicated storage and verifiable capacity. Development environments require separate configuration.
 
-The NiceEval repository's `nixosModules.default` and `nixosModules.docker-profiles` configure Docker Profiles. They do not provision the Incus environment required here. Successfully starting `services.niceeval.dockerProfiles` services does not establish that Incus is ready.
-
 This page does not provide a one-command Incus deployment module. Host changes belong in system configuration; installing the eval project's npm dependencies does not install or update these services.
 
 ## Check the environment as the everyday user

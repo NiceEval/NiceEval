@@ -94,4 +94,4 @@ UserDatabase 只有一个格式标记。新库在私有临时文件中原子建�
 Docker、Incus 与远端 snapshot 的缓存声明各带一个 `cacheFormat`，同时约束存储解释与 artifact 读取。
 该标记与实际 Base、准备内容及 Provider 的语义身份共同参与缓存键。格式不符时拒绝沿用，提示清理对应 artifact 并重新准备。
 Docker 与 Incus 的内部登记表由 UserDatabase 的格式标记统一保护，不另设 schema 或 admin protocol 版本。
-第三方 Provider 的 opaque artifact 能力标识仍由其 owner 提供；外部 Docker Profile 与 Incus descriptor 协议保持独立。
+第三方 Provider 的 opaque artifact 能力标识仍由其 owner 提供。

@@ -8,6 +8,6 @@
 cost(1) + cost(2) + max(cost(3), cost(4))
 ```
 
-并行数同时受 `maxBeforeCacheConcurrency` / `--max-before-cache-concurrency` 与 Provider `scheduling.lane.limit` 限制。准备图的所有节点都结算后，Run 才派发 Attempt；某节点失败只阻断它的 descendants，另一分支仍可结算和派发。普通 Docker、Docker Profile、Vercel 与 custom provider 不声明 `RunPrepared`，不参与准备图；E2B、OpenSandbox 与 Instabox 参与，见[云 Sandbox 的一批 Attempt 只准备一次](sandbox-cloud-before-cache.md)。
+并行数同时受 `maxBeforeCacheConcurrency` / `--max-before-cache-concurrency` 与 Provider `scheduling.lane.limit` 限制。准备图的所有节点都结算后，Run 才派发 Attempt；某节点失败只阻断它的 descendants，另一分支仍可结算和派发。普通 Docker、Vercel 与 custom provider 不声明 `RunPrepared`，不参与准备图；E2B、OpenSandbox 与 Instabox 参与，见[云 Sandbox 的一批 Attempt 只准备一次](sandbox-cloud-before-cache.md)。
 
 需要核对宿主上由 NiceEval 拥有的 before 缓存时，我运行 `niceeval docker cache inventory`。同一 Docker images Domain 把该 artifact 作为 `sandbox-before-cache` entry 展示，并给出 identity、state、lease/hold 数与时间字段；这项只读归属不会让 `docker cache gc` 回收 before 缓存。

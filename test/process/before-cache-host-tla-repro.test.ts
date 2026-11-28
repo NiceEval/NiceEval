@@ -1,17 +1,14 @@
-// 跨进程保证：外部程序与 Provider——通过宿主 journal、Unix socket 与 SQLite 检查 capture、恢复及租约交接。
+// 跨进程保证：文件与锁——生产者私有 clone 失败时保留读者已租用的普通 Docker 镜像。
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import { expect, test } from "vitest";
 
 // @feature docs/feature/sandbox/README.md#shared-builds
-test.each([
-  ["short append and journal reopen", "before-cache-journal-tla-repro.py"],
-  ["concurrent seed publication, reservation release and daemon rotation", "before-cache-contention-tla-repro.py"],
-  ["leased image handoff", "before-cache-image-lease-tla-repro.mjs"],
-])("%s", { timeout: 20_000 }, async (_, fixture) => {
-  const path = fileURLToPath(new URL(`../host/${fixture}`, import.meta.url));
-  const result = fixture.endsWith(".py")
-    ? await execa("python3", ["-B", path], { reject: false, timeout: 15_000 })
-    : await execa(process.execPath, ["--conditions=niceeval-source", path], { reject: false, timeout: 15_000 });
+test("leased image handoff", { timeout: 20_000 }, async () => {
+  const path = fileURLToPath(new URL("../host/before-cache-image-lease-tla-repro.mjs", import.meta.url));
+  const result = await execa(process.execPath, ["--conditions=niceeval-source", path], {
+    reject: false,
+    timeout: 15_000,
+  });
   expect(result.exitCode, result.stderr).toBe(0);
 });

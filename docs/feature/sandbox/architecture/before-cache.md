@@ -29,7 +29,7 @@ Provider 能力  SandboxBeforeCacheSupport
   │                                                  账本 · lease · hold · 标记 · 降级 · 回收
   │                                                  │
   │                                                  └─ BeforeCacheSnapshotDriver：E2B / OpenSandbox / Instabox
-  ├─ AttemptCaptured  ── AttemptBeforeCache（由实例交出）：Docker / Docker Profile
+  ├─ AttemptCaptured  ── AttemptBeforeCache（由实例交出）：Docker
   └─ Unsupported      ── 真实执行：Vercel / defineSandbox()
 Provider API   template、image、snapshot、实例
 ```
@@ -81,7 +81,7 @@ interface SandboxProviderModule<Plan> {
 
 ```typescript
 interface AttemptBeforeCache {
-  /** 运行期资格；例如 Docker Profile 的共享 allocation 在这里报 Unsupported。 */
+  /** 运行期资格。 */
   eligibility(): BeforeCacheEligibility;
   /** 命中时把本实例换成从 artifact 恢复的私有实例。 */
   lookupAndRestore(step: BeforeCacheStep): Effect.Effect<AttemptBeforeCacheLookup, BeforeCacheError>;
@@ -186,7 +186,6 @@ Incus 直接实现这个接口并保留自己的账本。E2B、OpenSandbox 与 I
 | Provider / case | capability | 前缀路径与边界 |
 |---|---|---|
 | 普通单容器 Docker，全部可变状态在 outer writable rootfs | `AttemptCaptured` | 每 Attempt 使用已验证 exact image 的私有 writable container；不进入准备图。 |
-| Docker Profile，具备已验证的独立 fixed-image allocation | `AttemptCaptured` | 只能保存 capability receipt 声明的状态面（例如 `dockerData`）；shared loop/project-quota allocation 在运行期报 `Unsupported`。 |
 | `incusSandbox()` nested Docker | `RunPrepared` | 发布完整、quiesced 的 prepared artifact；每个 Attempt clone 私有 writable root 与 Docker data disk。 |
 | E2B | `RunPrepared` | Base 是 template 引用当前指向的 build；full snapshot。见 [远端 snapshot Before cache](providers/e2b.md#远端-snapshot-driver)。 |
 | OpenSandbox | `RunPrepared` | digest-pinned Base 的 rootfs snapshot；不包含进程、卷或 tmpfs。见 [远端 snapshot Before cache](providers/opensandbox.md#远端-snapshot-driver)。 |
@@ -253,10 +252,6 @@ Before cache key 按实际 Base、Provider 身份与有序 action 声明求摘�
 Provider 在 Attempt 资格判定中给出实际 Base 与 replacement scope；需要先异步验证 execution domain 的 Provider（例如 Docker）在资格判定内完成验证，不先返回空 scope 再补。资格确定后，Runner 按 Invocation 聚合实际的 BeforeCacheKey。同一声明方在同一 scope 出现第二个不同 key 时，发出与 planning 相同的 warning，每个冲突只发一次。运行时 warning 晚于派发，不阻止准备；它只说明这些 action 会互相取代。
 
 同一 replacement scope 的新 generation 发布后，NiceEval 才淘汰已被替代的 Docker image 或远端 snapshot。仍被 private clone、hold、lease 或未完成 capture 使用的旧 generation 不会删除。最后一个 hold 释放后再次尝试淘汰。
-
-Docker Profile 的 raw-image 控制帧携带 replacement scope，seed 按 replacement scope 与 BeforeCacheKey 登记，和其它 Provider 一样按声明方与位置换代。不带 replacement scope 的旧协议 seed 当作旧代处理。
-
-Docker daemon 换代（例如重启）后，旧代 daemon 发布的 seed 不再能作为 artifact 命中。宿主在 journal 锁内在线回收这些旧代 seed，不关闭 admission，也不要求离线处置。没有 lease、hold、reservation 或未完成 capture 引用的旧代 seed 立即删除并写入 journal，释放容量；仍被引用的旧代 seed 标记为待回收，最后一个引用释放时删除。只有 journal 与 seed 登记互相矛盾、无法判断引用时，才 quarantine 该 seed 并关闭 admission，因为这时容量与所有权都不可信。
 
 generation 是 cache repository 内全局递增的整数，含义保持「已分配的最大值 + 1」。分配与 reserve 在同一个 immediate 写事务中完成。
 repository schema 为 generation 建立索引，分配只读索引端点，成本不随已保留或已 tombstone 的 entry 数增长。

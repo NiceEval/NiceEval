@@ -10,8 +10,6 @@ description: "确认 Incus 宿主部署与 NiceEval 的职责边界，并用 doc
 
 管理员需要部署 Incus、运行 project、storage pool、可信基础镜像和 `/etc/niceeval/incus-provider.json`，并授予日常用户所需的访问权限。正式环境需要专用存储和可核验的容量；开发环境需要独立配置。
 
-NiceEval 仓库中的 `nixosModules.default` 和 `nixosModules.docker-profiles` 提供 Docker Profile 配置，不能部署本页需要的 Incus 环境。不要把 `services.niceeval.dockerProfiles` 的服务启动成功当成 Incus 已准备完成。
-
 本页不提供 Incus 的一键部署 module。宿主变更应由系统配置负责，评估项目里的 npm 依赖不会安装或更新这些服务。
 
 ## 用日常用户检查环境

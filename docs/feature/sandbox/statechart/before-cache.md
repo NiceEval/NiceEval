@@ -1,6 +1,6 @@
 # Before cache
 
-[Before cache](../architecture/before-cache.md) 把 before 的执行结果做成可复用的前缀，供后续 Attempt 直接从缓存开始。这一页分五段核对它的规则：准备图的放行、Attempt 内的前缀、普通 Docker 镜像、Docker Profile 宿主，以及缓存冲突告警。每段的模型只覆盖该段写明的规模。
+[Before cache](../architecture/before-cache.md) 把 before 的执行结果做成可复用的前缀，供后续 Attempt 直接从缓存开始。这里核对准备图放行、Attempt 内的前缀、普通 Docker 镜像和缓存冲突告警。每段的模型只覆盖该段写明的规模。
 
 ## 准备图
 
@@ -68,58 +68,6 @@ Provider 最终结算每个节点时，准备图中每个配对最终都放行�
 
 两个进程分别生产与租用，每个 key 一代，竞争同一替换位置，三条规则都成立。状态数超过图的规模上限，只显示检查报告。生产者发布后自己的克隆失败、而读者已经租用的情形由 `test/host/before-cache-image-lease-tla-repro.mjs` 回放。
 
-## Docker Profile 宿主
-
-### 只发布校验过的前缀 seed {#VerifiedOnly}
-
-发布的前缀 seed 已经完整写入并通过校验，key 与内容一致。
-
-### 一个 key 只发布一份 {#UniquePublication}
-
-同一 key 最多一份已发布的前缀 seed。
-
-### 同内容竞争不报未知 {#NoFalseAmbiguity}
-
-两个发布者竞争同一内容时，输家得到已发布的结果，不返回结果未知。
-
-### 确认过的记录可以恢复 {#AckIsRecoverable}
-
-日志回执确认的记录在重启后完整可读。
-
-### 不完整的记录不被接受 {#PartialNeverAdmitted}
-
-重启读取日志时，写到一半的记录不会被当作有效记录，启动按失败关闭。
-
-### 只清理已释放的预约 {#OnlyReleasedScrubbed}
-
-只有已经释放的预约会被清理；同时存在的另一份预约仍能发布。
-
-### 被引用的种子保留 {#ReferencedSeedsRemain}
-
-仍被引用的种子不被回收。
-
-### 换代后准入最终打开 {#RotatedAdmissionEventuallyOpens}
-
-守护进程换代后，新的准入最终可用。
-
-### 换代后旧容量最终释放 {#RotatedCapacityEventuallyFrees}
-
-换代后，旧代的引用全部释放时，旧种子最终全部回收。
-
-```statechart spec="../tla/before-cache/profile/Profile.tla" config="../tla/before-cache/profile/raw-2-TRUE.cfg" view="../tla/before-cache/profile/view.ts" out="../tla/before-cache/profile/out/raw-2-TRUE" digest="sha256:db42cdeeaa05ab66b6054e5fbf1147293f02bffa157c8cfea93f6140fed6b923"
-```
-
-```statechart spec="../tla/before-cache/journal/Journal.tla" config="../tla/before-cache/journal/journal-TRUE.cfg" view="../tla/before-cache/journal/view.ts" out="../tla/before-cache/journal/out/journal-TRUE" digest="sha256:be37c2b70d5f88ce83df0de6fe378a8795a80a8bed48b7277705852c983280cc"
-```
-
-```statechart spec="../tla/before-cache/fence/Fence.tla" config="../tla/before-cache/fence/fence-TRUE.cfg" view="../tla/before-cache/fence/view.ts" out="../tla/before-cache/fence/out/fence-TRUE" digest="sha256:15b0881cdfe74c20d25c46f6238af42d0744b2a12896d28ec1cd09303ae0bfe9"
-```
-
-```statechart spec="../tla/before-cache/daemon-seeds/DaemonSeeds.tla" config="../tla/before-cache/daemon-seeds/daemon-seeds-after.cfg" view="../tla/before-cache/daemon-seeds/view.ts" out="../tla/before-cache/daemon-seeds/out/daemon-seeds-after" digest="sha256:54a87d1b34273e4cd2fb818737d91de0ba476538817ab5d9d8234168de5f7dc0"
-```
-
-四块依次是并发发布（两个发布者、两个 key、进程中断）、日志确认、预约释放与守护进程换代，全部规则成立。并发发布的状态数超过图的规模上限，只显示检查报告。文件系统断电、真实 Docker 数据语义、登记矛盾导致的隔离与删除失败重试不在模型内；后者由 `test/host/before-cache-contention-tla-repro.py` 回放。这些结论只适用于 Docker Profile 宿主协议，Incus 有自己的规则。
-
 ## 缓存冲突告警
 
 ### 冲突都有告警 {#Complete}
@@ -136,14 +84,13 @@ Provider 最终结算每个节点时，准备图中每个配对最终都放行�
 
 ## 动作与代码
 
-路径以 `packages/niceeval/src/` 为根；`watchdog.py` 指 `packaging/docker-profile-host/scripts/watchdog.py`。
+路径以 `packages/niceeval/src/` 为根。
 
 | 段 | 代码 |
 | --- | --- |
 | 准备图 | `runner/before-cache-preparation.ts` 的查找、需求、准备、结算与放行；`runner/run.ts` 等待派发 |
-| Attempt 内的前缀 | `runner/attempt.ts` 的查找、探测、执行、捕获与回退；`sandbox/docker-profile/before-cache.ts` |
+| Attempt 内的前缀 | `runner/attempt.ts` 的查找、探测、执行、捕获与回退 |
 | 普通 Docker 镜像 | `sandbox/docker-cache-repository.ts` 的预约、发布、租用与回收；`sandbox/docker-before-cache.ts` 的制作、保护与删除 |
-| Docker Profile 宿主 | `watchdog.py` 的发布、日志、预约释放与换代；`sandbox/docker-profile/runtime.ts` 等待回执 |
 | 缓存冲突告警 | `runner/before-cache-collisions.ts`；`runner/run.ts`；`runner/before-cache-preparation.ts` 报告实际 key |
 
 ## 模型没有覆盖的部分
