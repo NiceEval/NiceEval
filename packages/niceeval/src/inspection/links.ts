@@ -4,6 +4,10 @@ import { inspectionByteContinuation } from "./continuation.ts";
 import { inspectionShellWord as word, inspectionIdAspect } from "./addressing.ts";
 import type { InspectionLink, InspectionOperation } from "./protocol.ts";
 
+function option(flag: string, value: string): readonly string[] {
+  return value.startsWith("-") ? [flag + "=" + value] : [flag, value];
+}
+
 /** Projects navigation from the identities already exposed by this result page. */
 export function inspectionLinks(operation: InspectionOperation, document: unknown): readonly InspectionLink[] {
   const links: InspectionLink[] = [];
@@ -34,6 +38,8 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
       return;
     }
     for (const [key, child] of Object.entries(value)) {
+      if (key === "archive" && (operation.kind === "attempt.trace" || operation.kind === "attempt.trace.detail"))
+        continue;
       if (typeof child === "string" && child.length > 0) {
         if (["locator", "attemptLocator"].includes(key) && child.startsWith("@")) add("attempt", [child]);
         if (["runId", "originRunId", "sourceRunId"].includes(key)) add("run", [`run:${child}`]);
@@ -54,6 +60,7 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
             ["itemId", "toolOccurrenceId", "commandId", "eventId", "evidenceId", "turnId", "contentId", "id"].includes(
               key,
             ) &&
+            operation.kind !== "attempt.trace.keys" &&
             inspectionIdAspect(child) === "execution"
           )
             add("execution-item", [locator, child]);
@@ -69,7 +76,17 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
       const continuation = Reflect.get(body, "continuation");
       if (typeof continuation === "string") add("next-page", [...args, "--continuation", continuation]);
     };
-    if (operation.kind === "attempt.assertion.detail") {
+    if (operation.kind === "attempt.trace.keys") {
+      nextPage(document, [
+        operation.locator,
+        "execution",
+        "keys",
+        ...option("--trace", operation.traceId),
+        ...(operation.keys ?? []).flatMap((key) => option("--key", key)),
+      ]);
+      const first = Reflect.get(document, "rows")?.find((row: { readonly kind: string }) => row.kind === "event");
+      if (typeof first?.eventId === "string") add("execution-item", [operation.locator, first.eventId]);
+    } else if (operation.kind === "attempt.assertion.detail") {
       nextPage(Reflect.get(document, "assertion"), [
         operation.locator,
         operation.entryId,
@@ -107,11 +124,17 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
         ...(operation.kind === "run.list"
           ? ["runs"]
           : [locator!, operation.kind === "attempt.timing" ? "timing" : "execution"]),
+        ...(operation.kind === "attempt.trace" && operation.traceId !== undefined
+          ? option("--trace", operation.traceId)
+          : []),
+        ...(operation.kind === "attempt.trace" && operation.fromEventId !== undefined
+          ? ["--from", operation.fromEventId]
+          : []),
         ...(operation.kind === "attempt.trace" && operation.actorId !== undefined
-          ? ["--actor", operation.actorId]
+          ? option("--actor", operation.actorId)
           : []),
         ...(operation.kind === "attempt.trace" && operation.eventType !== undefined
-          ? ["--type", operation.eventType]
+          ? option("--type", operation.eventType)
           : []),
         "--continuation",
         continuation,

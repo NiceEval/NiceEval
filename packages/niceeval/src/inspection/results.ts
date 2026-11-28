@@ -43,8 +43,10 @@ import {
 } from "../record/codec/identifiers.ts";
 import { AgentTurnUsageObservationSchema } from "../record/family/agent-turns/schema.ts";
 import {
+  ExecutionTraceArchiveRecordSchema,
   ExecutionTraceEventRecordSchema,
   ExecutionTraceHeaderRecordSchema,
+  ExecutionTraceScopeRecordSchema,
 } from "../record/family/execution-traces/schema.ts";
 import { FileChangesCollectionLimitationSchema } from "../record/family/file-changes/schema.ts";
 import { SourceReceiptLimitationSchema } from "../record/family/source-receipt/index.ts";
@@ -433,11 +435,13 @@ export const InspectionAttemptResultSchema = Schema.Struct({
   sandboxState: AttemptStateResultSchema,
   notes: AttemptNotesSchema,
   verdictCauses: Schema.optional(VerdictCausesSchema),
-  terminal: Schema.optionalKey(Schema.Union([
-    Schema.Struct({ kind: Schema.Literal("explicit-skip"), reason: Schema.String, truncated: Schema.Boolean }),
-    Schema.Struct({ kind: Schema.Literal("cancelled") }),
-    Schema.Struct({ kind: Schema.Literal("historical-cancelled"), reason: Schema.Literal("not-recorded") }),
-  ])),
+  terminal: Schema.optionalKey(
+    Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("explicit-skip"), reason: Schema.String, truncated: Schema.Boolean }),
+      Schema.Struct({ kind: Schema.Literal("cancelled") }),
+      Schema.Struct({ kind: Schema.Literal("historical-cancelled"), reason: Schema.Literal("not-recorded") }),
+    ]),
+  ),
   diagnostics: Schema.suspend(() => TraceDiagnosticsSchema),
   stoppedAt: Schema.Union([
     Schema.Struct({
@@ -739,6 +743,33 @@ const CommandOutcomeSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("terminated"), reason: Schema.Literals(COMMAND_TERMINATION_REASONS) }),
   Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(COMMAND_NOT_STARTED_REASONS) }),
 ]);
+const HistoricalExecutionTraceIndexSchema = Schema.Struct({
+  state: Schema.Literal("not-published"),
+  reason: Schema.Literal("historical"),
+});
+
+const ExecutionKeyRowSchema = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("event"),
+    key: Schema.String,
+    eventId: Schema.String,
+    ordinal: NonNegativeSafeIntegerSchema,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("evidence"),
+    eventKey: Schema.String,
+    key: Schema.String,
+    evidenceId: Schema.String,
+  }),
+  Schema.Struct({ kind: Schema.Literal("missing"), key: Schema.String }),
+]);
+export type ExecutionKeyRow = Schema.Schema.Type<typeof ExecutionKeyRowSchema>;
+export const InspectionTraceKeysResultFields = {
+  rows: Schema.Array(ExecutionKeyRowSchema),
+  continuation: Schema.optional(Schema.String),
+  index: Schema.optional(HistoricalExecutionTraceIndexSchema),
+} as const;
+
 export const InspectionTraceResultSchema = Schema.Struct({
   execution: Schema.Struct({
     state: ProjectionStateSchema,
@@ -776,6 +807,12 @@ export const InspectionTraceResultSchema = Schema.Struct({
         display: ExecutionDisplayPreviewSchema,
       }),
     ),
+    scopeItems: Schema.optional(
+      Schema.Array(
+        ExecutionTraceScopeRecordSchema.pipe(Schema.fieldsAssign({ beforeEvent: NonNegativeSafeIntegerSchema })),
+      ),
+    ),
+    index: Schema.optional(HistoricalExecutionTraceIndexSchema),
     identityIndex: Schema.Struct({
       traceIds: Schema.Array(Schema.String),
       omittedTraceIdCount: Schema.Number,
@@ -945,6 +982,8 @@ export const InspectionTraceDetailResultSchema = Schema.Union([
   }),
   Schema.Struct({
     kind: Schema.Literal("execution-event"),
+    archive: Schema.optional(ExecutionTraceArchiveRecordSchema),
+    index: Schema.optional(HistoricalExecutionTraceIndexSchema),
     event: ExecutionTraceEventRecordSchema,
     omittedEvidencePreviewCount: Schema.optional(NonNegativeSafeIntegerSchema),
     evidence: Schema.Array(
@@ -965,6 +1004,8 @@ export const InspectionTraceDetailResultSchema = Schema.Union([
   }),
   Schema.Struct({
     kind: Schema.Literal("execution-evidence"),
+    archive: Schema.optional(ExecutionTraceArchiveRecordSchema),
+    index: Schema.optional(HistoricalExecutionTraceIndexSchema),
     evidenceId: Schema.String,
     eventId: Schema.String,
     traceId: Schema.String,

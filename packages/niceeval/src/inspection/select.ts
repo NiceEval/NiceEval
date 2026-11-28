@@ -122,6 +122,7 @@ import {
   projectExecutionTraceDetail,
   projectExecutionTraceOutline,
 } from "./execution-traces.ts";
+import { projectExecutionTraceKeys } from "./execution-trace-keys.ts";
 
 type InspectionOperationDetail =
   | { readonly kind: "none" }
@@ -635,6 +636,7 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
             resolved.origin.source,
             traceAttachments(resolved),
             projectExecutionTraceOutline(source, resolved, {
+              fromEventId: operation.fromEventId,
               traceId: operation.traceId,
               sourceId: operation.sourceId,
               actorId: operation.actorId,
@@ -650,6 +652,13 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
             },
           ),
         ),
+      };
+    }
+    case "attempt.trace.keys": {
+      const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      return {
+        ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
+        ...projectExecutionTraceKeys(source, resolved, operation),
       };
     }
     case "attempt.trace.detail": {

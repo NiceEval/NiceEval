@@ -50,6 +50,7 @@ import {
   renderTiming,
   renderTrace,
   renderTraceDetail,
+  renderTraceKeys,
   renderUsage,
 } from "./render.ts";
 import {
@@ -90,6 +91,13 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
   record: option({ type: "string", help: help("Read an external Record.") }),
   all: option({ type: "boolean", help: help("Show Attempts hidden by the compact Results view.") }),
   continuation: option({ type: "string", help: help("Read the next page with the same selection and filters.") }),
+  trace: option({ type: "string", help: help("Select an execution trace by author or persisted ID.") }),
+  from: option({ type: "string", help: help("Start execution at a stable event ID within the selected trace.") }),
+  key: option({
+    type: "string",
+    multiple: true,
+    help: help("Find an exact imported event key; repeat for more keys."),
+  }),
   actor: option({ type: "string", help: help("Filter execution events by exact actor ID.") }),
   type: option({ type: "string", help: help("Filter execution events by exact event type.") }),
   eval: option({ type: "string", help: help("Filter the Experiment assertions matrix by Eval prefix.") }),
@@ -114,7 +122,8 @@ Usage:
 Attempt aspects: assertions, source, execution, timing, usage, diff, artifacts.
 Stable IDs may replace the aspect: ae_, fc_, art_, and execution IDs.
 Experiment aspect: assertions [--eval <prefix>].
-Execution: --actor <id>, --type <type>, --continuation <token>.
+Execution: --trace <trace-id> [--from <eventId>], --actor <id>, --type <type>, --continuation <token>.
+Execution keys: niceeval show @<locator> execution keys --trace <trace-id> [--key <key>]... [--continuation <token>].
 Usage: --reprice <file>. Assertion ID: --full.
 `;
 const COMPARE_HELP = `niceeval compare <run>... -- <run>... [--mode paired|side-by-side|exact] [--max-regressions <n>] [--json]\n`;
@@ -204,8 +213,13 @@ function runShow(
       yield* write("stdout", SHOW_HELP);
       return 0;
     }
+    const executionKeys =
+      parsed.positionals[0]?.startsWith("@") === true &&
+      parsed.positionals[1] === "execution" &&
+      parsed.positionals[2] === "keys" &&
+      parsed.positionals.length === 3;
     const addressResult = yield* Effect.try({
-      try: () => parseInspectionAddress(parsed.positionals),
+      try: () => parseInspectionAddress(executionKeys ? parsed.positionals.slice(0, 2) : parsed.positionals),
       catch: (cause) => failure("parse address", cause),
     }).pipe(Effect.result);
     if (Result.isFailure(addressResult)) return yield* usage(reason(addressResult.failure.cause));
@@ -243,6 +257,9 @@ function runShow(
     const changeId = diff ? address.id : undefined;
     const all = parsed.values.all === true;
     const expand = execution ? address.id : undefined;
+    const traceId = typeof parsed.values.trace === "string" ? parsed.values.trace : undefined;
+    const fromEventId = typeof parsed.values.from === "string" ? parsed.values.from : undefined;
+    const keys = Array.isArray(parsed.values.key) ? parsed.values.key : undefined;
     const actorId = typeof parsed.values.actor === "string" ? parsed.values.actor : undefined;
     const eventType = typeof parsed.values.type === "string" ? parsed.values.type : undefined;
     const continuation = typeof parsed.values.continuation === "string" ? parsed.values.continuation : undefined;
@@ -250,7 +267,13 @@ function runShow(
     const evalIdPrefix = typeof parsed.values.eval === "string" ? parsed.values.eval : undefined;
     if (full && entryId === undefined) return yield* usage("--full requires an ae_ Assertion ID.");
     if (pricingFile !== undefined && !showUsage) return yield* usage("--reprice requires usage.");
-    if ((actorId !== undefined || eventType !== undefined) && (!execution || expand !== undefined))
+    if (executionKeys && traceId === undefined) return yield* usage("Execution keys requires --trace.");
+    if (traceId !== undefined && (!execution || expand !== undefined))
+      return yield* usage("--trace requires an execution outline or execution keys.");
+    if (fromEventId !== undefined && (!execution || executionKeys || expand !== undefined || traceId === undefined))
+      return yield* usage("--from requires an execution outline with --trace.");
+    if (keys !== undefined && !executionKeys) return yield* usage("--key requires execution keys.");
+    if ((actorId !== undefined || eventType !== undefined) && (!execution || executionKeys || expand !== undefined))
       return yield* usage("--actor and --type require execution.");
     if (
       continuation !== undefined &&
@@ -273,6 +296,16 @@ function runShow(
     )
       return yield* usage("--continuation requires a paged selection.");
     const continuationInput = continuation === undefined ? {} : { continuation };
+    const keysOperation: InspectionOperationFor<"attempt.trace.keys"> | undefined =
+      executionKeys && decodedLocator?.valid === true && traceId !== undefined
+        ? {
+            kind: "attempt.trace.keys",
+            locator: decodedLocator.locator,
+            traceId,
+            ...(keys === undefined ? {} : { keys }),
+            ...continuationInput,
+          }
+        : undefined;
     if (evalIdPrefix !== undefined && !matrix) return yield* usage("--eval requires exp:<id> assertions.");
     if (imageId !== undefined && (imageOutput === undefined || json || full || explain))
       return yield* usage("An Assertion image requires --output; --json, --explain, and --full are not accepted.");
@@ -421,16 +454,22 @@ function runShow(
           const orderedLinks = [...links].sort((left, right) => {
             function rank(rel: string): number {
               if (rel === "next-page") return 0;
+              if (executionKeys && rel === "execution-item") return 1;
               return rel === "assertion" || rel === "file-change" ? 1 : 2;
             }
             return rank(left.rel) - rank(right.rel);
           });
-          const commands = [...new Set([...preferred, ...orderedLinks.map((link) => link.command)])];
+          const nextTracePages =
+            trace === undefined
+              ? []
+              : orderedLinks.filter((link) => link.rel === "next-page").map((link) => link.command);
+          const commands = [...new Set([...nextTracePages, ...preferred, ...orderedLinks.map((link) => link.command)])];
           const viewAddress = imageId === undefined ? parsed.positionals : [locator!, entryId!];
-          const flags = ["actor", "type", "continuation", "reprice", "eval"].flatMap((flag) => {
+          const flags = ["trace", "from", "actor", "type", "continuation", "reprice", "eval"].flatMap((flag) => {
             const value = parsed.values[flag];
             return typeof value === "string" ? [`--${flag}`, value] : [];
           });
+          for (const key of keys ?? []) flags.push("--key", key);
           if (full) flags.push("--full");
           if (comparison !== undefined) flags.push("--mode", mode);
           const readAddress =
@@ -493,6 +532,7 @@ function runShow(
                   catch: (cause) => failure("read pricing", cause),
                 });
           function explainedOperations(): readonly InspectionOperation[] {
+            if (keysOperation !== undefined) return [keysOperation];
             if (pricing !== undefined)
               return [{ kind: "attempt.reprice", locator: selectedLocator!, pricing, ...continuationInput }];
             if (expand !== undefined)
@@ -538,6 +578,8 @@ function runShow(
                   kind: "attempt",
                   locator: selectedLocator,
                   slice: "execution",
+                  traceId,
+                  fromEventId,
                   actorId,
                   eventType,
                   continuation,
@@ -571,6 +613,12 @@ function runShow(
             });
             yield* writeJson(document);
           }
+          return 0;
+        }
+        if (keysOperation !== undefined) {
+          const document = yield* select("attempt.trace.keys", () => selectInspectionOperation(opened, keysOperation));
+          if (json) yield* writeJson(document);
+          else yield* writeText(renderTraceKeys(document));
           return 0;
         }
         if (runs || artifacts || pricingFile !== undefined || imageId !== undefined) {
@@ -693,6 +741,8 @@ function runShow(
                 kind: "attempt",
                 locator: selectedLocator,
                 slice: "execution",
+                traceId,
+                fromEventId,
                 actorId,
                 eventType,
                 continuation,
@@ -959,6 +1009,8 @@ function runShow(
             selectInspectionOperation(opened, {
               kind: "attempt.trace",
               locator: selectedLocator,
+              ...(traceId === undefined ? {} : { traceId }),
+              ...(fromEventId === undefined ? {} : { fromEventId }),
               ...(actorId === undefined ? {} : { actorId }),
               ...(eventType === undefined ? {} : { eventType }),
               ...(continuation === undefined ? {} : { continuation }),
@@ -1208,6 +1260,8 @@ export type ShowOperationsInput =
       readonly kind: "attempt";
       readonly locator: string;
       readonly slice: "execution";
+      readonly traceId?: string | undefined;
+      readonly fromEventId?: string | undefined;
       readonly actorId: string | undefined;
       readonly eventType: string | undefined;
       readonly continuation: string | undefined;
@@ -1258,6 +1312,8 @@ export function showOperations(input: ShowOperationsInput): readonly InspectionO
         omitUndefined({
           kind: "attempt.trace" as const,
           locator,
+          traceId: input.traceId,
+          fromEventId: input.fromEventId,
           actorId: input.actorId,
           eventType: input.eventType,
           continuation: input.continuation,

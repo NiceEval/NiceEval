@@ -226,6 +226,9 @@ recovering 表示恢复已经取得写入权，但这个 Run 还没有被标为�
 | `--record` | `niceeval show` | string | 读取一个外部 canonical SQLite Record。 |
 | `--all` | `niceeval show` | boolean | 显示紧凑 Results 视图中隐藏的 Attempt。 |
 | `--continuation` | `niceeval show` | string | Read the next page with the same selection and filters. |
+| `--trace` | `niceeval show` | string | Select an execution trace by author or persisted ID. |
+| `--from` | `niceeval show` | string | Start execution at a stable event ID within the selected trace. |
+| `--key` | `niceeval show` | string[] | Find an exact imported event key; repeat for more keys. |
 | `--actor` | `niceeval show` | string | Filter execution events by exact actor ID. |
 | `--type` | `niceeval show` | string | Filter execution events by exact event type. |
 | `--eval` | `niceeval show` | string | Filter the Experiment assertions matrix by Eval prefix. |

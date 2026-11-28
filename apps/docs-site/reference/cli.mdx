@@ -221,6 +221,9 @@ The table below is generated from each command's own option definitions. Flags n
 | `--record` | `niceeval show` | string | Read an external Record. |
 | `--all` | `niceeval show` | boolean | Show Attempts hidden in the compact Results view. |
 | `--continuation` | `niceeval show` | string | Read the next page with the same selection and filters. |
+| `--trace` | `niceeval show` | string | Select an execution trace by author or persisted ID. |
+| `--from` | `niceeval show` | string | Start execution at a stable event ID within the selected trace. |
+| `--key` | `niceeval show` | string[] | Find an exact imported event key. Repeat for more keys. |
 | `--actor` | `niceeval show` | string | Filter execution events by exact actor ID. |
 | `--type` | `niceeval show` | string | Filter execution events by exact event type. |
 | `--eval` | `niceeval show` | string | Filter the Experiment assertions matrix by Eval ID prefix. |

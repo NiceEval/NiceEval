@@ -1,13 +1,12 @@
-import { Result, Schema } from "effect";
-import * as Data from "effect/Data";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { decodeJsonRecord } from "../shared/json-value.ts";
 
 import type { TraceJson } from "../adapter-execution-trace.ts";
-import type { AttemptRecordCollectionLimitation } from "../record/authoring.ts";
+import { executionTraceIndexKeys as indexKeys } from "../record/family/execution-traces/index-definition.ts";
 import { executionTracesRecordCollection } from "../record/family/execution-traces/definition.ts";
 import {
   ExecutionTraceRecordLimits,
-  ExecutionTraceRecordSchema,
   canonicalTraceJsonChunks,
   displayTextHasForbiddenCharacter,
   parseTraceArtifactJson,
@@ -15,8 +14,9 @@ import {
   type ExecutionDisplayBlockRecord,
   type ExecutionTraceEventRecord,
   type ExecutionTraceHeaderRecord,
+  type ExecutionTraceScopeRecord,
 } from "../record/family/execution-traces/schema.ts";
-import type { DecodedInspectionAttachment, ResolvedInspectionAttempt } from "./facts.ts";
+import type { ResolvedInspectionAttempt } from "./facts.ts";
 import {
   readInspectionArtifactSources,
   readInspectionArtifactDescriptors,
@@ -32,7 +32,15 @@ import {
 } from "./bytes.ts";
 import type { InspectionFactSource } from "./source.ts";
 
-const PAGE_ROWS = 64;
+import {
+  InspectionExecutionTraceError,
+  integrity,
+  openExecutionTraceRecord,
+  type ExecutionTraceRecordReader,
+} from "./execution-trace-record.ts";
+import { HISTORICAL_TRACE_INDEX } from "./execution-trace-keys.ts";
+
+export { InspectionExecutionTraceError } from "./execution-trace-record.ts";
 const IDENTITY_INDEX_LIMIT = 256;
 const utf8 = new TextEncoder();
 
@@ -48,6 +56,7 @@ export interface ExecutionTraceOutlineRequest {
   readonly sourceId?: string | undefined;
   readonly actorId?: string | undefined;
   readonly eventType?: string | undefined;
+  readonly fromEventId?: string | undefined;
   readonly continuation?: string | undefined;
 }
 
@@ -71,6 +80,8 @@ export interface ExecutionTraceOutlineResult {
   )[];
   readonly traces: readonly (ExecutionTraceHeaderRecord & { readonly eventCount: number })[];
   readonly events: readonly ExecutionTraceEventOutline[];
+  readonly scopeItems?: readonly (ExecutionTraceScopeRecord & { readonly beforeEvent: number })[];
+  readonly index?: typeof HISTORICAL_TRACE_INDEX;
   readonly identityIndex: {
     readonly traceIds: readonly string[];
     readonly omittedTraceIdCount: number;
@@ -151,10 +162,16 @@ export type ExecutionTraceDetailResult =
   | {
       readonly kind: "execution-event";
       readonly event: ExecutionTraceEventRecord;
+      readonly archive?: ExecutionTraceHeaderRecord["archive"];
+      readonly index?: typeof HISTORICAL_TRACE_INDEX;
       readonly evidence: readonly ExecutionEvidencePreview[];
       readonly omittedEvidencePreviewCount?: number;
     }
-  | ({ readonly kind: "execution-evidence" } & ExecutionEvidenceRange);
+  | ({
+      readonly kind: "execution-evidence";
+      readonly archive?: ExecutionTraceHeaderRecord["archive"];
+      readonly index?: typeof HISTORICAL_TRACE_INDEX;
+    } & ExecutionEvidenceRange);
 
 export interface ExecutionEvidencePreview {
   readonly evidenceId: string;
@@ -177,85 +194,17 @@ export interface ExecutionEvidenceRange extends Omit<ExecutionEvidencePreview, "
   readonly offset: number;
 }
 
-export class InspectionExecutionTraceError extends Data.TaggedError("InspectionExecutionTraceError")<{}> {
-  readonly code: "inspection-request-invalid" | "inspection-record-integrity-failure" | "restart-required";
-  constructor(code: InspectionExecutionTraceError["code"], message: string) {
-    super();
-    this.message = message;
-    this.name = "InspectionExecutionTraceError";
-    this.code = code;
-  }
-}
-
 interface EvidenceTarget {
   readonly value: TraceJson;
   readonly byteLength: number;
   readonly targetSha256: string;
 }
 
-interface ScanState {
-  readonly headers: Map<string, ExecutionTraceHeaderRecord>;
-  readonly sourceTraceIds: Set<string>;
-  readonly eventCounts: Map<string, number>;
-  readonly eventKeys: Map<string, Set<string>>;
-  readonly scopeIds: Map<string, Set<string>>;
-  readonly clockUnits: Map<string, Map<string, string>>;
-  readonly resolvedLinks: Array<{ readonly traceId: string; readonly targetKey: string }>;
-  readonly causeEdges: Map<string, Map<string, string[]>>;
-  readonly eventIds: Set<string>;
-  readonly evidenceIds: Set<string>;
-  readonly traceIdsForIndex: string[];
-  readonly eventIdsForIndex: string[];
-  readonly evidenceIdsForIndex: string[];
+interface EvidenceReadState {
   artifacts: ReadonlyMap<string, InspectionArtifactSource> | undefined;
   readonly parsedArtifacts: Map<string, unknown>;
   readonly targets: Map<string, EvidenceTarget>;
   descriptors: ReadonlyMap<string, InspectionArtifactDescriptor> | undefined;
-}
-
-function digest(value: Uint8Array | string): string {
-  return new InspectionSha256().update(typeof value === "string" ? utf8.encode(value) : value).digestHex();
-}
-
-function tupleLengthPrefix(length: number): Uint8Array {
-  if (!Number.isSafeInteger(length) || length < 0 || length > 0xffff_ffff) {
-    throw integrity("Execution trace collection item identity length is invalid.");
-  }
-  const prefix = new Uint8Array(4);
-  new DataView(prefix.buffer).setUint32(0, length, false);
-  return prefix;
-}
-
-function updateTuplePart(hash: InspectionSha256, part: string | number): void {
-  const tag = typeof part === "string" ? 1 : 2;
-  if (typeof part === "number" && !Number.isSafeInteger(part)) {
-    throw integrity("Execution trace collection item identity ordinal is invalid.");
-  }
-  const payload = utf8.encode(String(part));
-  hash.update(Uint8Array.of(tag)).update(tupleLengthPrefix(payload.byteLength)).update(payload);
-}
-
-function executionCollectionItemLogicalIdentity(ordinal: number, canonicalDigest: string): string {
-  return inspectionTupleDigest("niceeval.record.collection-item-logical-identity", [ordinal, canonicalDigest]);
-}
-
-function inspectionTupleDigest(domain: string, parts: readonly (string | number)[]): string {
-  const hash = new InspectionSha256();
-  updateTuplePart(hash, domain);
-  for (const part of parts) updateTuplePart(hash, part);
-  return hash.digestHex();
-}
-
-function parseJson(bytes: Uint8Array, label: string): unknown {
-  try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
-  } catch {
-    throw integrity(`${label} is not UTF-8 JSON.`);
-  }
-}
-
-function integrity(message: string): InspectionExecutionTraceError {
-  return new InspectionExecutionTraceError("inspection-record-integrity-failure", message);
 }
 
 function pointerSegments(pointer: string): readonly string[] | undefined {
@@ -308,82 +257,8 @@ function resolvePointer(root: unknown, pointer: string): unknown | undefined {
   return current;
 }
 
-function collectionAttachment(resolved: ResolvedInspectionAttempt): DecodedInspectionAttachment | undefined {
-  const matches = resolved.origin.attachments.filter(
-    ({ physical }) =>
-      physical.ownerKind === "attempt" &&
-      physical.ownerAttemptId === resolved.attempt.attemptId &&
-      physical.family === executionTracesRecordCollection.family,
-  );
-  if (matches.length > 1) throw integrity("Execution trace owner has duplicate collection attachments.");
-  return matches[0];
-}
-
-function validateAttachment(
-  resolved: ResolvedInspectionAttempt,
-  attachment: DecodedInspectionAttachment,
-): {
-  readonly collection: {
-    readonly state: "complete" | "partial";
-    readonly limitations: readonly AttemptRecordCollectionLimitation[];
-  };
-  readonly expectedDigest: string;
-} {
-  const physical = attachment.physical;
-  if (
-    physical.ownerKind !== "attempt" ||
-    physical.ownerAttemptId !== resolved.attempt.attemptId ||
-    physical.ownerRunId !== resolved.attempt.originRunId ||
-    physical.family !== executionTracesRecordCollection.family ||
-    physical.familyRevision !== undefined ||
-    physical.references.length !== 0 ||
-    physical.contents.length !== 0 ||
-    digest(physical.canonicalBytes) !== physical.canonicalDigest ||
-    digest(physical.logicalInventoryBytes) !== physical.inventoryDigest ||
-    physical.logicalIdentity !==
-      inspectionTupleDigest("niceeval.record.attachment-logical-identity", [
-        physical.attachmentId,
-        physical.canonicalDigest,
-        physical.inventoryDigest,
-      ])
-  ) {
-    throw integrity("Execution trace collection attachment closure is invalid.");
-  }
-  const shell = Schema.decodeUnknownResult(executionTracesRecordCollection.schema, { onExcessProperty: "error" })(
-    attachment.value,
-  );
-  if (Result.isFailure(shell) || shell.success.items.length !== 0)
-    throw integrity("Execution trace collection shell is invalid.");
-  const inventory = parseJson(physical.logicalInventoryBytes, "Execution trace collection inventory") as {
-    readonly collection?: { readonly count?: unknown; readonly byteLength?: unknown; readonly digest?: unknown };
-  };
-  if (
-    inventory.collection?.count !== physical.collectionItemCount ||
-    inventory.collection.byteLength !== physical.collectionItemByteLength ||
-    typeof inventory.collection.digest !== "string"
-  )
-    throw integrity("Execution trace collection inventory is invalid.");
+function newEvidenceReadState(): EvidenceReadState {
   return {
-    collection: shell.success.collection,
-    expectedDigest: inventory.collection.digest,
-  };
-}
-
-function newScanState(): ScanState {
-  return {
-    headers: new Map(),
-    sourceTraceIds: new Set(),
-    eventCounts: new Map(),
-    eventKeys: new Map(),
-    scopeIds: new Map(),
-    clockUnits: new Map(),
-    resolvedLinks: [],
-    causeEdges: new Map(),
-    eventIds: new Set(),
-    evidenceIds: new Set(),
-    traceIdsForIndex: [],
-    eventIdsForIndex: [],
-    evidenceIdsForIndex: [],
     artifacts: undefined,
     parsedArtifacts: new Map(),
     targets: new Map(),
@@ -393,7 +268,7 @@ function newScanState(): ScanState {
 
 function readArtifact(
   resolved: ResolvedInspectionAttempt,
-  state: ScanState,
+  state: EvidenceReadState,
   artifactId: string,
 ): InspectionArtifactSource {
   if (state.artifacts === undefined) {
@@ -408,7 +283,7 @@ function readArtifact(
 
 function verifyEvidence(
   resolved: ResolvedInspectionAttempt,
-  state: ScanState,
+  state: EvidenceReadState,
   evidence: ExecutionTraceEventRecord["evidence"][number],
 ): EvidenceTarget {
   const artifact = readArtifact(resolved, state, evidence.artifactId);
@@ -471,7 +346,7 @@ function displayStrings(block: ExecutionDisplayBlockRecord): readonly string[] {
 /** Display blocks are re-validated on read so a hostile or foreign writer cannot bypass acceptance rules. */
 function verifyDisplay(
   resolved: ResolvedInspectionAttempt,
-  state: ScanState,
+  state: EvidenceReadState,
   display: ExecutionTraceEventRecord["display"],
 ): void {
   if (display === undefined) return;
@@ -515,194 +390,8 @@ function verifyDisplay(
   }
 }
 
-function observeRecord(
-  resolved: ResolvedInspectionAttempt,
-  state: ScanState,
-  record: Schema.Schema.Type<typeof ExecutionTraceRecordSchema>,
-): void {
-  if (record.kind === "trace-header") {
-    if (state.headers.has(record.traceId) || state.sourceTraceIds.has(record.sourceTraceId)) {
-      throw integrity("Execution trace identities are duplicated.");
-    }
-    state.headers.set(record.traceId, record);
-    state.sourceTraceIds.add(record.sourceTraceId);
-    state.eventCounts.set(record.traceId, 0);
-    state.eventKeys.set(record.traceId, new Set());
-    const scopeIds = new Set<string>();
-    for (const scope of record.scopes) {
-      if (scopeIds.has(scope.scopeId)) {
-        throw integrity("Execution trace scope identity is duplicated.");
-      }
-      scopeIds.add(scope.scopeId);
-    }
-    state.scopeIds.set(record.traceId, scopeIds);
-    state.clockUnits.set(record.traceId, new Map());
-    state.causeEdges.set(record.traceId, new Map());
-    if (state.traceIdsForIndex.length < IDENTITY_INDEX_LIMIT) state.traceIdsForIndex.push(record.traceId);
-    return;
-  }
-  const header = state.headers.get(record.traceId);
-  const keys = state.eventKeys.get(record.traceId);
-  const expectedOrdinal = state.eventCounts.get(record.traceId);
-  if (
-    header === undefined ||
-    keys === undefined ||
-    expectedOrdinal === undefined ||
-    record.ordinal !== expectedOrdinal ||
-    keys.has(record.key) ||
-    state.eventIds.has(record.eventId)
-  )
-    throw integrity("Execution trace event sequence or identity is invalid.");
-  keys.add(record.key);
-  state.eventIds.add(record.eventId);
-  state.eventCounts.set(record.traceId, expectedOrdinal + 1);
-  if (state.eventIdsForIndex.length < IDENTITY_INDEX_LIMIT) state.eventIdsForIndex.push(record.eventId);
-  const evidenceKeys = new Set<string>();
-  for (const evidence of record.evidence) {
-    if (evidenceKeys.has(evidence.key) || state.evidenceIds.has(evidence.evidenceId))
-      throw integrity("Execution evidence identity is duplicated.");
-    evidenceKeys.add(evidence.key);
-    state.evidenceIds.add(evidence.evidenceId);
-    if (state.evidenceIdsForIndex.length < IDENTITY_INDEX_LIMIT) state.evidenceIdsForIndex.push(evidence.evidenceId);
-    verifyEvidence(resolved, state, evidence);
-  }
-  verifyDisplay(resolved, state, record.display);
-  const membershipScopes = new Set<string>();
-  const declaredScopes = state.scopeIds.get(record.traceId)!;
-  for (const membership of record.scopeMemberships) {
-    if (!declaredScopes.has(membership.scopeId) || membershipScopes.has(membership.scopeId)) {
-      throw integrity("Execution trace scope membership is invalid.");
-    }
-    membershipScopes.add(membership.scopeId);
-  }
-  if (record.time !== undefined) {
-    const units = state.clockUnits.get(record.traceId)!;
-    const priorUnit = units.get(record.time.clockId);
-    if (priorUnit !== undefined && priorUnit !== record.time.unit) {
-      throw integrity("Execution trace clock unit changed within one trace.");
-    }
-    units.set(record.time.clockId, record.time.unit);
-  }
-  for (const link of record.links) {
-    if (!("targetKey" in link)) continue;
-    state.resolvedLinks.push({ traceId: record.traceId, targetKey: link.targetKey });
-    if (link.relation === "causes") {
-      const edges = state.causeEdges.get(record.traceId)!;
-      const targets = edges.get(record.key) ?? [];
-      targets.push(link.targetKey);
-      edges.set(record.key, targets);
-    }
-  }
-}
-
-function hasDirectedCycle(keys: ReadonlySet<string>, edges: ReadonlyMap<string, readonly string[]>): boolean {
-  const states = new Map<string, "visiting" | "visited">();
-  for (const root of keys) {
-    if (states.get(root) === "visited") continue;
-    const stack: Array<{ readonly key: string; next: number }> = [{ key: root, next: 0 }];
-    states.set(root, "visiting");
-    while (stack.length > 0) {
-      const frame = stack[stack.length - 1]!;
-      const target = (edges.get(frame.key) ?? [])[frame.next];
-      if (target === undefined) {
-        states.set(frame.key, "visited");
-        stack.pop();
-        continue;
-      }
-      frame.next += 1;
-      const targetState = states.get(target);
-      if (targetState === "visiting") return true;
-      if (targetState === "visited") continue;
-      states.set(target, "visiting");
-      stack.push({ key: target, next: 0 });
-    }
-  }
-  return false;
-}
-
-function validateScanSemantics(state: ScanState): void {
-  for (const link of state.resolvedLinks) {
-    if (!state.eventKeys.get(link.traceId)?.has(link.targetKey)) {
-      throw integrity("Resolved execution trace link leaves its trace snapshot.");
-    }
-  }
-  for (const [traceId, edges] of state.causeEdges) {
-    const keys = state.eventKeys.get(traceId);
-    if (keys === undefined || hasDirectedCycle(keys, edges)) {
-      throw integrity("Execution trace causes links contain a cycle.");
-    }
-  }
-}
-
-function scanCollection(
-  resolved: ResolvedInspectionAttempt,
-  visit: (
-    record: Schema.Schema.Type<typeof ExecutionTraceRecordSchema>,
-    collectionOrdinal: number,
-    state: ScanState,
-  ) => void,
-):
-  | {
-      readonly state: ScanState;
-      readonly collection: {
-        readonly state: "complete" | "partial";
-        readonly limitations: readonly AttemptRecordCollectionLimitation[];
-      };
-    }
-  | undefined {
-  const attachment = collectionAttachment(resolved);
-  if (attachment === undefined) return undefined;
-  const validated = validateAttachment(resolved, attachment);
-  const state = newScanState();
-  const hash = new InspectionSha256();
-  let after = -1;
-  let ordinal = 0;
-  let byteLength = 0;
-  for (;;) {
-    const page = resolved.origin.source.readCollectionPage(attachment.physical.attachmentId, after, PAGE_ROWS);
-    if (
-      page.attachmentId !== attachment.physical.attachmentId ||
-      page.afterOrdinal !== after ||
-      page.items.length > PAGE_ROWS ||
-      (page.items.length === 0 && page.nextOrdinal !== null)
-    )
-      throw integrity("Execution trace collection page is invalid.");
-    for (const item of page.items) {
-      const itemDigest = digest(item.canonicalBytes);
-      if (
-        item.ordinal !== ordinal ||
-        item.canonicalDigest !== itemDigest ||
-        item.logicalIdentity !== executionCollectionItemLogicalIdentity(ordinal, itemDigest)
-      )
-        throw integrity("Execution trace collection item closure is invalid.");
-      const decoded = Schema.decodeUnknownResult(ExecutionTraceRecordSchema, { onExcessProperty: "error" })(
-        parseJson(item.canonicalBytes, "Execution trace collection item"),
-      );
-      if (Result.isFailure(decoded)) throw integrity("Execution trace collection item schema is invalid.");
-      hash.update(item.canonicalBytes).update(Uint8Array.of(0x0a));
-      byteLength += item.canonicalBytes.byteLength;
-      observeRecord(resolved, state, decoded.success);
-      visit(decoded.success, ordinal, state);
-      ordinal += 1;
-    }
-    if (page.nextOrdinal === null) break;
-    if (page.items.length === 0 || page.nextOrdinal !== ordinal - 1)
-      throw integrity("Execution trace collection continuation is invalid.");
-    after = page.nextOrdinal;
-  }
-  if (
-    ordinal !== attachment.physical.collectionItemCount ||
-    byteLength !== attachment.physical.collectionItemByteLength ||
-    hash.digestHex() !== validated.expectedDigest
-  )
-    throw integrity("Execution trace collection aggregate closure is invalid.");
-  validateScanSemantics(state);
-  return { state, collection: validated.collection };
-}
-
 function matches(event: ExecutionTraceEventRecord, filters: ExecutionTraceFilters): boolean {
   return (
-    (filters.traceId === undefined || event.traceId === filters.traceId) &&
     (filters.sourceId === undefined || event.source.id === filters.sourceId) &&
     (filters.actorId === undefined || event.actor?.id === filters.actorId) &&
     (filters.eventType === undefined || event.type === filters.eventType)
@@ -718,6 +407,7 @@ interface ContinuationBinding {
   readonly operation: "attempt.trace";
   readonly sourceIdentity: InspectionFactSource["kind"];
   readonly cutoff: string;
+  readonly originCutoff?: string | undefined;
   readonly originAttempt: string;
   readonly sourceFamily: string;
   readonly familyRevision: number | undefined;
@@ -728,21 +418,34 @@ interface ContinuationBinding {
     readonly eventType: string | null;
   };
   readonly lastOrdinal: number;
+  readonly remaining?: number | undefined;
+  readonly companion?: string | undefined;
+  readonly main?: string | undefined;
+  readonly fromEventId?: string | undefined;
 }
 
 export interface ExecutionTraceContinuationContext {
   readonly source: InspectionFactSource;
+  readonly originCutoff?: string | undefined;
   readonly originAttempt: string;
   readonly sourceFamily: string;
   readonly familyRevision: number | undefined;
   readonly filters: ExecutionTraceFilters;
+  readonly companion?: string | undefined;
+  readonly main?: string | undefined;
+  readonly fromEventId?: string | undefined;
 }
 
-function continuationBinding(context: ExecutionTraceContinuationContext, lastOrdinal: number): ContinuationBinding {
+function continuationBinding(
+  context: ExecutionTraceContinuationContext,
+  lastOrdinal: number,
+  remaining?: number,
+): ContinuationBinding {
   return {
     operation: "attempt.trace",
     sourceIdentity: context.source.kind,
     cutoff: context.source.cutoff().identity,
+    originCutoff: context.originCutoff,
     originAttempt: context.originAttempt,
     sourceFamily: context.sourceFamily,
     familyRevision: context.familyRevision,
@@ -754,26 +457,17 @@ function continuationBinding(context: ExecutionTraceContinuationContext, lastOrd
       eventType: context.filters.eventType ?? null,
     },
     lastOrdinal,
-  };
-}
-
-function nativeContinuationContext(
-  source: InspectionFactSource,
-  resolved: ResolvedInspectionAttempt,
-  filters: ExecutionTraceFilters,
-): ExecutionTraceContinuationContext {
-  return {
-    source,
-    originAttempt: `${resolved.attempt.originRunId}:${resolved.attempt.attemptId}`,
-    sourceFamily: EXECUTION_TRACE_CONTINUATION_FAMILIES.executionTraces,
-    familyRevision: undefined,
-    filters,
+    remaining,
+    companion: context.companion,
+    main: context.main,
+    fromEventId: context.fromEventId,
   };
 }
 
 export function encodeExecutionTraceContinuation(
   context: ExecutionTraceContinuationContext,
   lastOrdinal: number,
+  remaining?: number,
 ): string {
   if (!Number.isSafeInteger(lastOrdinal) || lastOrdinal < 0) {
     throw new InspectionExecutionTraceError(
@@ -781,18 +475,25 @@ export function encodeExecutionTraceContinuation(
       "Execution trace continuation binding changed; restart from the first page.",
     );
   }
-  return encodeBase64UrlUtf8(JSON.stringify(continuationBinding(context, lastOrdinal)));
+  return encodeBase64UrlUtf8(JSON.stringify(continuationBinding(context, lastOrdinal, remaining)));
 }
 
 export function decodeExecutionTraceContinuation(token: string, context: ExecutionTraceContinuationContext): number {
+  return readTraceContinuation(token, context).lastOrdinal;
+}
+
+function readTraceContinuation(token: string, context: ExecutionTraceContinuationContext) {
   try {
     const parsed = decodeJsonRecord(decodeBase64UrlUtf8(token));
     const lastOrdinal = Schema.decodeUnknownSync(Schema.Number)(parsed.lastOrdinal);
-    const expected = continuationBinding(context, lastOrdinal);
+    const remaining = Schema.decodeUnknownSync(Schema.UndefinedOr(Schema.Number))(parsed.remaining);
+    const expected = continuationBinding(context, lastOrdinal, remaining);
     if (!Number.isSafeInteger(lastOrdinal) || lastOrdinal < 0 || JSON.stringify(parsed) !== JSON.stringify(expected)) {
       throw new Error("binding changed");
     }
-    return lastOrdinal;
+    if (remaining !== undefined && (!Number.isSafeInteger(remaining) || remaining < 0))
+      throw new Error("binding changed");
+    return { lastOrdinal, remaining };
   } catch {
     throw new InspectionExecutionTraceError(
       "restart-required",
@@ -904,6 +605,291 @@ function outlineEvent(event: ExecutionTraceEventRecord): ExecutionTraceEventOutl
   return { ...envelope, display };
 }
 
+const emptyIdentities: ExecutionTraceOutlineResult["identityIndex"] = {
+  traceIds: [],
+  omittedTraceIdCount: 0,
+  eventIds: [],
+  omittedEventIdCount: 0,
+  evidenceIds: [],
+  omittedEvidenceIdCount: 0,
+};
+
+interface IndexedTraceHeader {
+  readonly header: ExecutionTraceHeaderRecord;
+  readonly recordOrdinal: number;
+  readonly eventCount: number;
+  readonly scopeCount: number;
+}
+
+type SelectedTraceIndex = NonNullable<ExecutionTraceRecordReader["index"]>;
+
+function indexedHeader(
+  reader: ExecutionTraceRecordReader,
+  entry: { readonly recordOrdinal: number; readonly traceId: string; readonly sourceTraceId: string },
+): ExecutionTraceHeaderRecord {
+  const record = reader.read(entry.recordOrdinal);
+  if (
+    record.kind !== "trace-header" ||
+    record.traceId !== entry.traceId ||
+    record.sourceTraceId !== entry.sourceTraceId
+  )
+    throw integrity("Execution trace index does not address its header.");
+  return record;
+}
+
+function indexedHeaders(reader: ExecutionTraceRecordReader, index: SelectedTraceIndex, traceId: string | undefined) {
+  const traces: IndexedTraceHeader[] = [];
+  const traceIds: string[] = [];
+  const eventIds: string[] = [];
+  const evidenceIds: string[] = [];
+  let allEvents = 0;
+  let allEvidence = 0;
+  const selected = traceId === undefined ? undefined : index.findTrace(traceId);
+  const entries =
+    traceId === undefined
+      ? Array.from(index.prefix("0/"), ({ entry }) => entry).sort(
+          (left, right) => left.recordOrdinal - right.recordOrdinal,
+        )
+      : selected === undefined
+        ? []
+        : [selected];
+
+  for (const { value, recordOrdinal } of entries) {
+    if (value.kind !== "trace") throw integrity("Execution trace header index entry is invalid.");
+    const header = indexedHeader(reader, { ...value, recordOrdinal });
+    if (traceIds.length < IDENTITY_INDEX_LIMIT) traceIds.push(value.traceId);
+    let eventCount = 0;
+    let evidenceCount = 0;
+    if (
+      header.eventCount === undefined ||
+      header.evidenceCount === undefined ||
+      (header.eventCount > 0 && eventIds.length < IDENTITY_INDEX_LIMIT)
+    ) {
+      // Older array headers have no counts. Their mapping provides exact counts without reading payloads.
+      let sampled = 0;
+      for (const { entry } of index.prefix(indexKeys.ordered(value.sourceTraceId))) {
+        if (entry.value.kind === "event") {
+          eventCount += 1;
+          if (eventIds.length < IDENTITY_INDEX_LIMIT) eventIds.push(entry.value.eventId);
+        } else if (entry.value.kind === "evidence") {
+          evidenceCount += 1;
+          if (evidenceIds.length < IDENTITY_INDEX_LIMIT) evidenceIds.push(entry.value.evidenceId);
+        }
+        sampled += 1;
+        if (header.eventCount !== undefined && header.evidenceCount !== undefined && sampled === IDENTITY_INDEX_LIMIT)
+          break;
+      }
+    }
+    eventCount = header.eventCount ?? eventCount;
+    evidenceCount = header.evidenceCount ?? evidenceCount;
+    allEvents += eventCount;
+    allEvidence += evidenceCount;
+    traces.push({ header, recordOrdinal, eventCount, scopeCount: header.scopeCount ?? 0 });
+  }
+  return {
+    traces,
+    allEvents,
+    identities: {
+      traceIds,
+      eventIds,
+      evidenceIds,
+      omittedTraceIdCount: traces.length - traceIds.length,
+      omittedEventIdCount: allEvents - eventIds.length,
+      omittedEvidenceIdCount: allEvidence - evidenceIds.length,
+    },
+  };
+}
+
+function missingStart() {
+  return new InspectionExecutionTraceError(
+    "inspection-selection-missing",
+    "Starting event does not belong to the selected trace and filters.",
+  );
+}
+
+function exactEvent(
+  reader: ExecutionTraceRecordReader,
+  entry: {
+    readonly recordOrdinal: number;
+    readonly eventId: string;
+    readonly traceId: string;
+    readonly ordinal: number;
+  },
+) {
+  const record = reader.read(entry.recordOrdinal);
+  if (
+    record.kind !== "event" ||
+    record.eventId !== entry.eventId ||
+    record.traceId !== entry.traceId ||
+    record.ordinal !== entry.ordinal
+  )
+    throw integrity("Execution trace index does not address its event.");
+  return record;
+}
+
+function outlinePage(resolved: ResolvedInspectionAttempt) {
+  const events: ExecutionTraceEventOutline[] = [];
+  const scopeItems: NonNullable<ExecutionTraceOutlineResult["scopeItems"]>[number][] = [];
+  const state = newEvidenceReadState();
+  let bytes = 2;
+  let lastOrdinal = -1;
+  let hasMore = false;
+  return {
+    events,
+    scopeItems,
+    get lastOrdinal() {
+      return lastOrdinal;
+    },
+    get hasMore() {
+      return hasMore;
+    },
+    add(record: ExecutionTraceEventRecord | ExecutionTraceScopeRecord, ordinal: number) {
+      if (hasMore) return;
+      const length = events.length + scopeItems.length;
+      if (length === ExecutionTraceRecordLimits.maximumOutlineEvents) {
+        hasMore = true;
+        return;
+      }
+      const projected =
+        record.kind === "scope"
+          ? ({ kind: "scope", value: { ...record, beforeEvent: events.length } } as const)
+          : ({ kind: "event", value: outlineEvent(record) } as const);
+      const size = utf8ByteLength(JSON.stringify(projected.value)) + (length > 0 ? 1 : 0);
+      if (length > 0 && bytes + size > ExecutionTraceRecordLimits.maximumOutlineBytes) {
+        hasMore = true;
+        return;
+      }
+      bytes += size;
+      lastOrdinal = ordinal;
+      if (projected.kind === "scope") scopeItems.push(projected.value);
+      else {
+        if (record.kind === "event") verifyDisplay(resolved, state, record.display);
+        events.push(projected.value);
+      }
+    },
+  };
+}
+
+function publishedOutline(
+  reader: ExecutionTraceRecordReader,
+  index: SelectedTraceIndex,
+  resolved: ResolvedInspectionAttempt,
+  filters: ExecutionTraceFilters,
+  fromEventId: string | undefined,
+  resume: ReturnType<typeof readTraceContinuation> | undefined,
+) {
+  const { traces, allEvents, identities } = indexedHeaders(reader, index, filters.traceId);
+  const page = outlinePage(resolved);
+  let start = 0;
+  let firstOrdinal = 0;
+  if (fromEventId !== undefined) {
+    const entry = index.find(indexKeys.eventId(fromEventId));
+    if (entry?.value.kind !== "event" || entry.value.traceId !== traces[0]?.header.traceId) throw missingStart();
+    start = entry.recordOrdinal;
+    firstOrdinal = entry.value.ordinal;
+    if (resume !== undefined && start > resume.lastOrdinal)
+      throw new InspectionExecutionTraceError(
+        "restart-required",
+        "Execution trace continuation precedes its starting event.",
+      );
+  }
+
+  const filtered = filters.sourceId !== undefined || filters.actorId !== undefined || filters.eventType !== undefined;
+  let matchingEvents = 0;
+  for (const trace of traces) {
+    const end = trace.recordOrdinal + 1 + trace.eventCount + trace.scopeCount;
+    const first = Math.max(start, trace.recordOrdinal + 1, (resume?.lastOrdinal ?? -1) + 1);
+    for (const { record, recordOrdinal } of reader.readRange(first, end)) {
+      if (record.traceId !== trace.header.traceId || record.kind === "trace-header")
+        throw integrity("Execution trace item lies outside its indexed header.");
+      if (recordOrdinal === start && fromEventId !== undefined) {
+        if (record.kind !== "event" || record.eventId !== fromEventId || record.ordinal !== firstOrdinal)
+          throw integrity("Execution trace index does not address the starting event.");
+        if (!matches(record, filters)) throw missingStart();
+      }
+      if (record.kind === "event" && !matches(record, filters)) continue;
+      if (record.kind === "event") matchingEvents += 1;
+      page.add(record, recordOrdinal);
+      if (page.hasMore && !filtered) break;
+    }
+    if (page.hasMore && !filtered) break;
+  }
+  const remaining = (filtered ? matchingEvents : (resume?.remaining ?? allEvents - firstOrdinal)) - page.events.length;
+  return { page, remaining, identities, headers: traces.map(({ header, eventCount }) => ({ ...header, eventCount })) };
+}
+
+function historicalOutline(
+  reader: ExecutionTraceRecordReader,
+  resolved: ResolvedInspectionAttempt,
+  filters: ExecutionTraceFilters,
+  fromEventId: string | undefined,
+  resumeAfter: number,
+) {
+  const traces = new Map<string, ExecutionTraceHeaderRecord & { eventCount: number }>();
+  const traceIds: string[] = [];
+  const eventIds: string[] = [];
+  const evidenceIds: string[] = [];
+  let allEvents = 0;
+  let allEvidence = 0;
+  let matchingEvents = 0;
+  let started = fromEventId === undefined;
+  let selectedTrace = false;
+  let header: (ExecutionTraceHeaderRecord & { eventCount: number }) | undefined;
+  const page = outlinePage(resolved);
+  for (const { record, recordOrdinal } of reader.readRange()) {
+    if (record.kind === "trace-header") {
+      header = { ...record, eventCount: 0 };
+      if (traces.has(record.traceId)) throw integrity("Execution trace identities are duplicated.");
+      traces.set(record.traceId, header);
+      if (traceIds.length < IDENTITY_INDEX_LIMIT) traceIds.push(record.traceId);
+      selectedTrace =
+        filters.traceId === undefined || filters.traceId === record.traceId || filters.traceId === record.sourceTraceId;
+      continue;
+    }
+    if (
+      header === undefined ||
+      header.traceId !== record.traceId ||
+      record.kind !== "event" ||
+      record.ordinal !== header.eventCount
+    )
+      throw integrity("Historical execution trace sequence is invalid.");
+    header.eventCount += 1;
+    allEvents += 1;
+    allEvidence += record.evidence.length;
+    if (eventIds.length < IDENTITY_INDEX_LIMIT) eventIds.push(record.eventId);
+    for (const evidence of record.evidence) {
+      if (evidenceIds.length === IDENTITY_INDEX_LIMIT) break;
+      evidenceIds.push(evidence.evidenceId);
+    }
+    if (!selectedTrace || !matches(record, filters)) continue;
+    if (record.eventId === fromEventId) started = true;
+    if (!started || recordOrdinal <= resumeAfter) continue;
+    matchingEvents += 1;
+    page.add(record, recordOrdinal);
+  }
+  if (!started) throw missingStart();
+  return {
+    page,
+    remaining: matchingEvents - page.events.length,
+    identities: {
+      traceIds,
+      eventIds,
+      evidenceIds,
+      omittedTraceIdCount: traces.size - traceIds.length,
+      omittedEventIdCount: allEvents - eventIds.length,
+      omittedEvidenceIdCount: allEvidence - evidenceIds.length,
+    },
+    headers: [...traces.values()].filter(
+      (trace) =>
+        filters.traceId === undefined || trace.traceId === filters.traceId || trace.sourceTraceId === filters.traceId,
+    ),
+  };
+}
+
+// @concord-code
+// @concord-implements docs/feature/adapters/use-case/long-trace-stream.md#outline
+// @concord-implements docs/feature/adapters/use-case/long-trace-stream.md#jump
+// @concord-implements docs/feature/adapters/use-case/long-trace-stream.md#continue
 export function projectExecutionTraceOutline(
   source: InspectionFactSource,
   resolved: ResolvedInspectionAttempt,
@@ -915,101 +901,59 @@ export function projectExecutionTraceOutline(
     actorId: request.actorId,
     eventType: request.eventType,
   };
-  const nativeAttachment = collectionAttachment(resolved);
-  if (
-    request.continuation !== undefined &&
-    nativeAttachment === undefined &&
-    continuationSourceFamily(request.continuation) === EXECUTION_TRACE_CONTINUATION_FAMILIES.agentTurns
-  ) {
+  const reader = openExecutionTraceRecord(resolved);
+  const context: ExecutionTraceContinuationContext = {
+    source,
+    filters,
+    originAttempt: `${resolved.attempt.originRunId}:${resolved.attempt.attemptId}`,
+    originCutoff: resolved.origin.source.cutoff().identity,
+    sourceFamily: EXECUTION_TRACE_CONTINUATION_FAMILIES.executionTraces,
+    familyRevision: undefined,
+    ...(reader === undefined ? {} : { main: reader.identity }),
+    ...(reader?.index === undefined ? {} : { companion: reader.index.identity }),
+    ...(request.fromEventId === undefined ? {} : { fromEventId: request.fromEventId }),
+  };
+  if (request.fromEventId !== undefined && request.traceId === undefined && request.continuation === undefined)
+    throw missingStart();
+  const resume =
+    request.continuation === undefined ||
+    (reader === undefined &&
+      request.fromEventId === undefined &&
+      continuationSourceFamily(request.continuation) === EXECUTION_TRACE_CONTINUATION_FAMILIES.agentTurns)
+      ? undefined
+      : readTraceContinuation(request.continuation, context);
+  if (reader === undefined) {
+    if (request.fromEventId !== undefined) throw missingStart();
     return {
       state: "not-recorded",
       limitations: [],
       traces: [],
       events: [],
-      identityIndex: {
-        traceIds: [],
-        omittedTraceIdCount: 0,
-        eventIds: [],
-        omittedEventIdCount: 0,
-        evidenceIds: [],
-        omittedEvidenceIdCount: 0,
-      },
+      identityIndex: emptyIdentities,
       hasMore: false,
       omittedEventCount: 0,
     };
   }
-  const continuationContext = nativeContinuationContext(source, resolved, filters);
-  const resumeAfter =
-    request.continuation === undefined
-      ? -1
-      : decodeExecutionTraceContinuation(request.continuation, continuationContext);
-  const retained: Array<{ readonly event: ExecutionTraceEventOutline; readonly collectionOrdinal: number }> = [];
-  let matched = 0;
-  let priorMatches = 0;
-  let pageFull = false;
-  const scanned = scanCollection(resolved, (record, collectionOrdinal) => {
-    if (record.kind !== "event" || !matches(record, filters)) return;
-    matched += 1;
-    if (collectionOrdinal <= resumeAfter) {
-      priorMatches += 1;
-      return;
-    }
-    if (pageFull || retained.length >= ExecutionTraceRecordLimits.maximumOutlineEvents) {
-      pageFull = true;
-      return;
-    }
-    const candidate = { event: outlineEvent(record), collectionOrdinal };
-    const nextEvents = [...retained.map(({ event }) => event), candidate.event];
-    if (utf8ByteLength(JSON.stringify(nextEvents)) > ExecutionTraceRecordLimits.maximumOutlineBytes) {
-      pageFull = true;
-      if (retained.length > 0) return;
-    }
-    retained.push(candidate);
-  });
-  if (scanned === undefined)
-    return {
-      state: "not-recorded",
-      limitations: [],
-      traces: [],
-      events: [],
-      identityIndex: {
-        traceIds: [],
-        omittedTraceIdCount: 0,
-        eventIds: [],
-        omittedEventIdCount: 0,
-        evidenceIds: [],
-        omittedEvidenceIdCount: 0,
-      },
-      hasMore: false,
-      omittedEventCount: 0,
-    };
-  const remaining = Math.max(0, matched - priorMatches - retained.length);
-  const lastOrdinal = retained.at(-1)?.collectionOrdinal;
-  const traceHeaders = [...scanned.state.headers.values()]
-    // An empty filtered page does not prove the producer captured all events.
-    .filter((header) => filters.traceId === undefined || header.traceId === filters.traceId)
-    .map((header) => ({
-      ...header,
-      eventCount: scanned.state.eventCounts.get(header.traceId) ?? 0,
-    }));
+  if (resume !== undefined && resume.lastOrdinal >= reader.count)
+    throw new InspectionExecutionTraceError(
+      "restart-required",
+      "Execution trace continuation position is outside its collection.",
+    );
+  const { page, remaining, identities, headers } =
+    reader.index === undefined
+      ? historicalOutline(reader, resolved, filters, request.fromEventId, resume?.lastOrdinal ?? -1)
+      : publishedOutline(reader, reader.index, resolved, filters, request.fromEventId, resume);
   return {
-    state: scanned.collection.state,
-    limitations: scanned.collection.limitations,
-    traces: traceHeaders,
-    events: retained.map(({ event }) => event),
-    identityIndex: {
-      traceIds: scanned.state.traceIdsForIndex,
-      omittedTraceIdCount: scanned.state.headers.size - scanned.state.traceIdsForIndex.length,
-      eventIds: scanned.state.eventIdsForIndex,
-      omittedEventIdCount: scanned.state.eventIds.size - scanned.state.eventIdsForIndex.length,
-      evidenceIds: scanned.state.evidenceIdsForIndex,
-      omittedEvidenceIdCount: scanned.state.evidenceIds.size - scanned.state.evidenceIdsForIndex.length,
-    },
-    hasMore: remaining > 0,
+    state: reader.collection.state,
+    limitations: reader.collection.limitations,
+    traces: headers,
+    events: page.events,
+    ...(page.scopeItems.length === 0 ? {} : { scopeItems: page.scopeItems }),
+    ...(reader.index === undefined ? { index: HISTORICAL_TRACE_INDEX } : {}),
+    identityIndex: identities,
+    hasMore: page.hasMore,
     omittedEventCount: remaining,
-    ...(remaining > 0 && lastOrdinal !== undefined
-      ? { continuation: encodeExecutionTraceContinuation(continuationContext, lastOrdinal) }
-      : {}),
+    ...(page.hasMore ? { continuation: encodeExecutionTraceContinuation(context, page.lastOrdinal, remaining) } : {}),
   };
 }
 
@@ -1064,36 +1008,68 @@ export function projectExecutionTraceDetail(
   resolved: ResolvedInspectionAttempt,
   selector: ExecutionTraceDetailSelector,
 ): ExecutionTraceDetailResult | undefined {
+  const reader = openExecutionTraceRecord(resolved);
+  if (reader === undefined) return undefined;
   let selectedEvent: ExecutionTraceEventRecord | undefined;
   let selectedEvidence: ExecutionTraceEventRecord["evidence"][number] | undefined;
-  let selectedTarget: EvidenceTarget | undefined;
-  const scanned = scanCollection(resolved, (record, _ordinal, state) => {
-    if (record.kind !== "event") return;
-    if (selector.kind === "execution-event" && record.eventId === selector.eventId) selectedEvent = record;
+  let header: ExecutionTraceHeaderRecord | undefined;
+  if (reader.index !== undefined) {
+    const entry = reader.index.find(
+      selector.kind === "execution-event"
+        ? indexKeys.eventId(selector.eventId)
+        : indexKeys.evidenceId(selector.evidenceId),
+    );
+    if (entry === undefined) return undefined;
+    if (entry.value.kind !== "event" && entry.value.kind !== "evidence")
+      throw integrity("Execution trace detail index entry is invalid.");
+    selectedEvent = exactEvent(reader, { ...entry.value, recordOrdinal: entry.recordOrdinal });
+    const trace = reader.index.find(indexKeys.trace(entry.value.sourceTraceId));
+    if (trace?.value.kind !== "trace" || trace.value.traceId !== selectedEvent.traceId)
+      throw integrity("Execution trace detail index does not address its header.");
+    header = indexedHeader(reader, { ...trace.value, recordOrdinal: trace.recordOrdinal });
     if (selector.kind === "execution-evidence") {
-      const evidence = record.evidence.find(({ evidenceId }) => evidenceId === selector.evidenceId);
-      if (evidence !== undefined) {
-        selectedEvent = record;
-        selectedEvidence = evidence;
-        selectedTarget = verifyEvidence(resolved, state, evidence);
-      }
+      if (entry.value.kind !== "evidence") throw integrity("Execution evidence index entry is invalid.");
+      selectedEvidence = selectedEvent.evidence[entry.value.evidenceOrdinal];
+      if (selectedEvidence?.evidenceId !== selector.evidenceId)
+        throw integrity("Execution evidence index does not address its evidence.");
     }
-  });
-  if (scanned === undefined || selectedEvent === undefined) return undefined;
+  } else {
+    for (const { record } of reader.readRange()) {
+      if (record.kind === "trace-header") {
+        header = record;
+        continue;
+      }
+      if (record.kind !== "event") continue;
+      if (selector.kind === "execution-event" && record.eventId !== selector.eventId) continue;
+      if (selector.kind === "execution-evidence") {
+        selectedEvidence = record.evidence.find(({ evidenceId }) => evidenceId === selector.evidenceId);
+        if (selectedEvidence === undefined) continue;
+      }
+      selectedEvent = record;
+      break;
+    }
+  }
+  if (selectedEvent === undefined) return undefined;
+  if (header?.traceId !== selectedEvent.traceId) throw integrity("Execution trace event has no header.");
+  const provenance = {
+    ...(header.archive === undefined ? {} : { archive: header.archive }),
+    ...(reader.index === undefined ? { index: HISTORICAL_TRACE_INDEX } : {}),
+  };
+  const state = newEvidenceReadState();
   if (selector.kind === "execution-evidence") {
-    if (selectedEvidence === undefined || selectedTarget === undefined) return undefined;
+    if (selectedEvidence === undefined) return undefined;
+    const target = verifyEvidence(resolved, state, selectedEvidence);
     return {
       kind: "execution-evidence",
-      ...range(selectedEvent, selectedEvidence, selectedTarget, selector.offset ?? 0, selector.limit ?? 64 * 1024),
+      ...provenance,
+      ...range(selectedEvent, selectedEvidence, target, selector.offset ?? 0, selector.limit ?? 64 * 1024),
     };
   }
+  verifyDisplay(resolved, state, selectedEvent.display);
   const previews: ExecutionEvidencePreview[] = [];
   let remaining = ExecutionTraceRecordLimits.maximumDetailBytes;
   for (const evidence of selectedEvent.evidence) {
-    const target = scanned.state.targets.get(
-      `${evidence.artifactId}\u0000${evidence.artifactSha256}\u0000${evidence.pointer}`,
-    );
-    if (target === undefined) throw integrity("Execution evidence cache is unavailable.");
+    const target = verifyEvidence(resolved, state, evidence);
     const value = range(selectedEvent, evidence, target, 0, ExecutionTraceRecordLimits.maximumDetailPreviewBytes);
     const preview: ExecutionEvidencePreview = {
       evidenceId: value.evidenceId,
@@ -1117,6 +1093,7 @@ export function projectExecutionTraceDetail(
   return {
     kind: "execution-event",
     event: selectedEvent,
+    ...provenance,
     evidence: previews,
     ...(omittedEvidencePreviewCount === 0 ? {} : { omittedEvidencePreviewCount }),
   };

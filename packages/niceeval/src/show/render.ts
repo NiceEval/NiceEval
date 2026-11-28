@@ -3,6 +3,7 @@
 // @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
 import type { AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
 import { assertionRoleLabel, assertionRoleCounts, assertionVerdictLine } from "../assertions/display.ts";
+import type { InspectionSuccessDocumentFor } from "../inspection/protocol.ts";
 import type { InspectionAttemptResult } from "../inspection/results.ts";
 import type { AssertionDetailResult, PagedAssertionDetailSchema } from "../inspection/assertion-result.ts";
 import type { AssertionFactValue } from "../assertions/record/model.ts";
@@ -1075,12 +1076,18 @@ export function renderAttempt(
   record?: string,
 ): string {
   const terminalFact = value.terminal;
-  const outcome = value.outcome === "cancelled" && terminalFact?.kind === "explicit-skip"
-    ? "explicit skip"
-    : terminalFact?.kind === "historical-cancelled" ? "cancelled (historical)" : value.outcome;
-  const skipReason = terminalFact?.kind === "explicit-skip"
-    ? `${terminalFact.reason}${terminalFact.truncated ? " [truncated]" : ""}`
-    : terminalFact?.kind === "historical-cancelled" ? "not recorded (historical)" : undefined;
+  const outcome =
+    value.outcome === "cancelled" && terminalFact?.kind === "explicit-skip"
+      ? "explicit skip"
+      : terminalFact?.kind === "historical-cancelled"
+        ? "cancelled (historical)"
+        : value.outcome;
+  const skipReason =
+    terminalFact?.kind === "explicit-skip"
+      ? `${terminalFact.reason}${terminalFact.truncated ? " [truncated]" : ""}`
+      : terminalFact?.kind === "historical-cancelled"
+        ? "not recorded (historical)"
+        : undefined;
   return terminal([
     {
       footerCommand: undefined,
@@ -1459,6 +1466,73 @@ function captureLimitationSummary(value: TraceView["execution"]["limitations"][n
   }
 }
 
+function traceLiteral(text: string): string {
+  return Array.from(text, (character) =>
+    displayTextHasForbiddenCharacter(character)
+      ? "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0")
+      : character,
+  ).join("");
+}
+
+function traceProvenanceEntries(
+  archive: TraceView["execution"]["traces"][number]["archive"],
+  index?: TraceView["execution"]["index"],
+) {
+  return [
+    ...(archive === undefined
+      ? []
+      : [
+          { key: "Archive", value: traceLiteral(archive.system + " " + JSON.stringify(archive.locator)) },
+          ...(archive.sha256 === undefined ? [] : [{ key: "Archive SHA-256", value: archive.sha256 }]),
+          ...(archive.byteLength === undefined ? [] : [{ key: "Archive bytes", value: String(archive.byteLength) }]),
+        ]),
+    ...(index === undefined ? [] : [{ key: "Index", value: "not-published (historical)" }]),
+  ];
+}
+
+export function renderTraceKeys(value: InspectionSuccessDocumentFor<"attempt.trace.keys">): string {
+  const rows = value.rows.map((row) => {
+    switch (row.kind) {
+      case "event":
+        return traceLiteral(JSON.stringify(row.key)) + "  " + row.eventId;
+      case "evidence":
+        return (
+          "  " +
+          traceLiteral(JSON.stringify(row.eventKey)) +
+          "  " +
+          traceLiteral(JSON.stringify(row.key)) +
+          "  " +
+          row.evidenceId
+        );
+      case "missing":
+        return traceLiteral(JSON.stringify(row.key)) + "  missing";
+    }
+  });
+  return terminal([
+    { kind: "keyValue", entries: traceProvenanceEntries(undefined, value.index) },
+    { kind: "raw", text: rows.length === 0 ? "No event keys recorded." : rows.join("\n") },
+  ]);
+}
+
+function traceOutlineRows({ execution }: TraceView) {
+  const scopes = execution.scopeItems ?? [];
+  let scopeIndex = 0;
+  const rows: Array<
+    | { readonly kind: "event"; readonly event: TraceView["execution"]["events"][number] }
+    | NonNullable<TraceView["execution"]["scopeItems"]>[number]
+  > = [];
+  for (let i = 0; i <= execution.events.length; i += 1) {
+    while (scopes[scopeIndex]?.beforeEvent === i) {
+      const scope = scopes[scopeIndex];
+      if (scope !== undefined) rows.push(scope);
+      scopeIndex += 1;
+    }
+    const event = execution.events[i];
+    if (event !== undefined) rows.push({ kind: "event", event });
+  }
+  return rows;
+}
+
 export function renderTrace(value: TraceView, record?: string): string {
   const blocks: TerminalBlock[] = [
     {
@@ -1480,12 +1554,20 @@ export function renderTrace(value: TraceView, record?: string): string {
           kind: "keyValue",
           entries: [
             { key: "Capture", value: factPhrase(value.execution.state) },
+            ...traceProvenanceEntries(undefined, value.execution.index),
             { key: "Traces", value: String(value.execution.traces.length) },
             {
               key: "Events",
               value: `${value.execution.events.length} shown; ${value.execution.omittedEventCount} remaining in this selection`,
             },
-            { key: "Page", value: value.execution.hasMore ? "more events available" : "end of selected events" },
+            {
+              key: "Page",
+              value: value.execution.hasMore
+                ? value.execution.omittedEventCount > 0
+                  ? "more events available"
+                  : "more trace items available"
+                : "end of selected events",
+            },
             ...(value.execution.continuation === undefined
               ? []
               : [{ key: "Continuation", value: value.execution.continuation }]),
@@ -1505,29 +1587,54 @@ export function renderTrace(value: TraceView, record?: string): string {
             kind: "keyValue",
             entries: [
               { key: "Trace ID", value: trace.traceId },
+              { key: "Schema", value: safeEventText(trace.schema.id) },
               { key: "Producer collection", value: factPhrase(trace.collection.state) },
               { key: "Recorded events", value: String(trace.eventCount) },
+              ...(trace.scopeCount === undefined ? [] : [{ key: "Recorded scopes", value: String(trace.scopeCount) }]),
+              ...(trace.evidenceCount === undefined
+                ? []
+                : [{ key: "Recorded evidence", value: String(trace.evidenceCount) }]),
+              ...traceProvenanceEntries(trace.archive),
             ],
           },
           {
             kind: "table",
             columns: [{ maxWidth: 40, header: "Recording limitation" }],
             rows: countedSummaries(
-              trace.collection.limitations.map((limitation) => safeEventText(limitation.message)),
+              trace.collection.limitations.map((limitation) =>
+                safeEventText(
+                  limitation.code === "niceeval.trace-stream-cut"
+                    ? limitation.code + " · " + limitation.message
+                    : limitation.message,
+                ),
+              ),
             ).map((message) => [message]),
             overflow: "wrap",
           },
         ]),
         { meta: undefined, attachNext: false, kind: "divider", title: "Event page" },
-        ...value.execution.events
-          .filter(
-            (event) =>
-              event.source.id !== "niceeval.simulated-user" ||
-              !value.conversation.turns.some((turn) =>
-                event.scopeMemberships.some((scope) => scope.scopeId === turn.turnId && scope.state === "included"),
-              ),
+        ...traceOutlineRows(value).flatMap<TerminalPanelContentBlock>((row) => {
+          if (row.kind === "scope") {
+            return [
+              {
+                kind: "keyValue",
+                entries: [
+                  { key: "Scope", value: safeEventText(row.scope.label) },
+                  { key: "Scope ID", value: safeEventText(row.scope.scopeId) },
+                  { key: "Boundary", value: safeEventText(JSON.stringify(row.scope.boundary)) },
+                ],
+              },
+            ];
+          }
+          const { event } = row;
+          if (
+            event.source.id === "niceeval.simulated-user" &&
+            value.conversation.turns.some((turn) =>
+              event.scopeMemberships.some((scope) => scope.scopeId === turn.turnId && scope.state === "included"),
+            )
           )
-          .flatMap<TerminalPanelContentBlock>((event) => [
+            return [];
+          return [
             { meta: undefined, attachNext: false, kind: "divider", title: safeEventText(event.type) },
             {
               kind: "keyValue",
@@ -1558,7 +1665,8 @@ export function renderTrace(value: TraceView, record?: string): string {
                     ).join("\n"),
                   }),
                 )),
-          ]),
+          ];
+        }),
       ],
     },
     {
@@ -1937,6 +2045,7 @@ export function renderTraceDetail(value: TraceDetailView): string {
             kind: "keyValue",
             entries: [
               { key: "Trace", value: body.event.traceId },
+              ...traceProvenanceEntries(body.archive, body.index),
               { key: "Source", value: safeEventText(body.event.source.id) },
               { key: "Native event ID", value: safeEventText(body.event.source.eventId ?? "not recorded") },
               {
@@ -2005,6 +2114,7 @@ export function renderTraceDetail(value: TraceDetailView): string {
             kind: "keyValue",
             entries: [
               { key: "Trace", value: body.traceId },
+              ...traceProvenanceEntries(body.archive, body.index),
               { key: "Event", value: body.eventId },
               { key: "Artifact", value: body.artifactId },
               { key: "Pointer", value: safeEventText(body.pointer) },
@@ -3178,12 +3288,17 @@ export function renderAssertions(
       kind: "keyValue",
       entries: [
         ...(entry.decision.reason === null ? [] : [{ key: "Reason", value: factPhrase(entry.decision.reason) }]),
-        ...(failure === undefined ? [] : [{
-          key: "Evaluator failure",
-          value: failure.state === "recorded"
-            ? `${failure.name}: ${failure.message}${failure.truncated ? " [truncated]" : ""}`
-            : "not recorded",
-        }]),
+        ...(failure === undefined
+          ? []
+          : [
+              {
+                key: "Evaluator failure",
+                value:
+                  failure.state === "recorded"
+                    ? `${failure.name}: ${failure.message}${failure.truncated ? " [truncated]" : ""}`
+                    : "not recorded",
+              },
+            ]),
         ...[...new Set(reasons)].map((value) => ({ key: "Rationale", value })),
         ...commandAssertionFields(entry.evaluation.observed),
       ],

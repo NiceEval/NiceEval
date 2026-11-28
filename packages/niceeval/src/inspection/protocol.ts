@@ -34,6 +34,7 @@ import {
   InspectionRunListResultSchema,
   InspectionSourcesResultSchema,
   InspectionTraceDetailResultSchema,
+  InspectionTraceKeysResultFields,
   InspectionTraceResultSchema,
 } from "./results.ts";
 
@@ -277,6 +278,7 @@ export const inspectionProtocolRegistry = Object.freeze({
     request: operation("attempt.trace", {
       locator: AttemptLocatorSchema,
       traceId: Schema.optional(Schema.String),
+      fromEventId: Schema.optional(Schema.String),
       sourceId: Schema.optional(Schema.String),
       actorId: Schema.optional(Schema.String),
       eventType: Schema.optional(Schema.String),
@@ -285,12 +287,27 @@ export const inspectionProtocolRegistry = Object.freeze({
     result: { trace: InspectionTraceResultSchema },
     factKinds: [
       "execution-traces",
+      "execution-trace-index",
       "agent-turns",
       "turn-contexts",
       "sandbox-commands",
       "runner-activities",
       "runner-diagnostics",
     ],
+  }),
+  "attempt.trace.keys": spec({
+    request: operation("attempt.trace.keys", {
+      locator: AttemptLocatorSchema,
+      traceId: Schema.String.check(Schema.isNonEmpty()),
+      keys: Schema.optional(
+        Schema.Array(Schema.String.check(Schema.isNonEmpty())).check(
+          Schema.makeFilter((keys) => keys.length >= 1 && keys.length <= 64 && new Set(keys).size === keys.length),
+        ),
+      ),
+      continuation: Schema.optional(Schema.String),
+    }),
+    result: InspectionTraceKeysResultFields,
+    factKinds: ["execution-traces", "execution-trace-index"],
   }),
   "attempt.trace.detail": spec({
     request: operation("attempt.trace.detail", {
@@ -308,7 +325,7 @@ export const inspectionProtocolRegistry = Object.freeze({
       ]),
     }),
     result: { detail: InspectionTraceDetailResultSchema },
-    factKinds: ["execution-traces", "agent-turns", "sandbox-commands", "artifacts"],
+    factKinds: ["execution-traces", "execution-trace-index", "agent-turns", "sandbox-commands", "artifacts"],
   }),
   "attempt.timing": spec({
     request: operation("attempt.timing", {
