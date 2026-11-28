@@ -1,14 +1,16 @@
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Effect, Option } from "effect";
-import { experimentHost } from "niceeval/experiment/host";
-import { narrowInspectionSuccess } from "niceeval/inspection";
+import { decodeExpPlanDocument, decodeExpStartEvent, experimentHost } from "niceeval/experiment/host";
+import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createFeedbackCoordinator } from "../../packages/niceeval/src/runner/feedback/coordinator.ts";
 import { createNodeFeedbackIO } from "../../packages/niceeval/src/runner/feedback/io.ts";
 import type { AttemptBeforeCache, BeforeCacheStep } from "../../packages/niceeval/src/sandbox/backend.ts";
 import { makeDockerBeforeCacheCapability } from "../../packages/niceeval/src/sandbox/docker-before-cache.ts";
+import { remoteSnapshotPreparer } from "../../packages/niceeval/src/sandbox/remote-snapshot/preparer.ts";
 import {
   defineSandboxTemplate,
   planSandboxTemplate,
@@ -18,8 +20,7 @@ import {
   type SandboxLayer,
   type BeforeCachePreparer,
 } from "../../packages/niceeval/src/sandbox/layer.ts";
-import { showJsonDocuments } from "./fixtures/judge-harness/harness.ts";
-import { createLifecycleProject } from "./fixtures/lifecycle-sandbox/harness.ts";
+import { createLifecycleProject, runCli } from "./fixtures/lifecycle-sandbox/harness.ts";
 
 type Mode = "docker" | "remote";
 function providerFixture(
@@ -28,10 +29,11 @@ function providerFixture(
   variant: number,
   image: string,
   stop: () => void,
+  providedPreparer?: BeforeCachePreparer<void>,
 ) {
   const template = sandboxLayerStateOf(layer).template;
   const replacementScope = { provider: mode, executionDomainId: "fixture", baseReference: "repo" };
-  const preparer: BeforeCachePreparer<void> = {
+  const preparer: BeforeCachePreparer<void> = providedPreparer ?? {
     continuesStaging: false,
     supportsAgentDerived: false,
     eligibility: () =>
@@ -222,7 +224,7 @@ function runtimeProviderFixture(
             module: {
               id: "docker",
               capabilities: binding.capabilities,
-              beforeCache: { _tag: "AttemptCaptured", coverage: "all" },
+              beforeCache: { _tag: "AttemptCaptured", coverage: "all", ...(typeof cache === "function" ? {} : { requiresUserDatabase: true }) },
               collectBuildPreparation: () => Effect.succeed(Option.none()),
               materialize: (_, context) =>
                 binding.materialize(context).pipe(
@@ -385,11 +387,19 @@ export default defineEval({async test(){}});`,
   },
 );
 
-describe("Docker eligibility with an unsupported ledger", () => {
+describe.each(["docker", "remote"] as const)("%s eligibility with an unsupported ledger", (mode) => {
   let project: Awaited<ReturnType<typeof createLifecycleProject>>;
-  let locator: string;
   let databasePath: string;
   let originalDatabase: Buffer;
+  const rejected = new Map<string, Awaited<ReturnType<typeof runCli>>>();
+  let refusedEvents: number;
+  let refusedRecord: boolean;
+  let refusedBytes: Buffer;
+  let bypass: Awaited<ReturnType<typeof runCli>>;
+  let previewCarry: Awaited<ReturnType<typeof runCli>>;
+  let executeCarry: Awaited<ReturnType<typeof runCli>>;
+  let carryEvents: number;
+  let carryBytes: Buffer;
 
   beforeAll(async () => {
     project = await createLifecycleProject({
@@ -428,8 +438,20 @@ describe("Docker eligibility with an unsupported ledger", () => {
       adoptBeforeCacheHold: unexpected,
       fallBackToBase: unexpected,
     });
+    const remote = remoteSnapshotPreparer({
+      preserves: { disks: ["/"], memory: true },
+      sourceUsableAfterSnapshot: true,
+      snapshotSettleMs: 32,
+      resolveBase: () => Effect.die("Preflight must precede Provider resolution"),
+      createFromSnapshot: () => Effect.die("The fixture has no remote snapshots"),
+      createSnapshot: () => Effect.die("The fixture has no remote snapshots"),
+      findSnapshot: () => Effect.die("The fixture has no remote snapshots"),
+      deleteSnapshot: () => Effect.die("The fixture has no remote snapshots"),
+    });
     Reflect.set(process, Symbol.for(project.cwd), (layer: SandboxLayer<"template-bearing">) =>
-      runtimeProviderFixture(layer, "unchanged", capability),
+      mode === "docker"
+        ? runtimeProviderFixture(layer, "unchanged", capability)
+        : providerFixture(layer, mode, 1, "repo:tag", unexpected, remote),
     );
     await writeFile(
       join(project.cwd, "experiments/lifecycle.ts"),
@@ -440,10 +462,32 @@ import base from "../sandbox.ts";
 const sandbox = Reflect.get(process, Symbol.for(${JSON.stringify(project.cwd)}))(base);
 export default defineExperiment({ adapter: agent, sandbox, evals: "*" });`,
     );
-    const { attempts } = await project.run();
-    expect(attempts).toHaveLength(1);
-    locator = attempts[0]!.locator;
-  });
+    const argv = ["exp", "lifecycle"];
+    for (const mode of ["dry", "run"]) {
+      for (const format of ["json", "human"]) {
+        rejected.set(
+          `${mode}:${format}`,
+          await runCli(project.cwd, [
+            ...argv,
+            "--rerun",
+            "all",
+            ...(mode === "dry" ? ["--dry"] : []),
+            ...(format === "json" ? ["--json"] : []),
+          ]),
+        );
+      }
+    }
+    refusedEvents = project.events.length;
+    refusedRecord = existsSync(join(project.cwd, ".niceeval", "record.sqlite"));
+    refusedBytes = await readFile(databasePath);
+
+    bypass = await runCli(project.cwd, [...argv, "--rerun", "all", "--sandbox-before-cache", "bypass", "--json"]);
+    const eventsBeforeCarry = project.events.length;
+    previewCarry = await runCli(project.cwd, [...argv, "--dry", "--json"]);
+    executeCarry = await runCli(project.cwd, [...argv, "--json"]);
+    carryEvents = project.events.length - eventsBeforeCarry;
+    carryBytes = await readFile(databasePath);
+  }, 30_000);
 
   afterAll(async () => {
     vi.unstubAllEnvs();
@@ -453,20 +497,43 @@ export default defineExperiment({ adapter: agent, sandbox, evals: "*" });`,
     }
   });
 
-  // @feature docs/feature/sandbox/README.md#user-database-format
-  test("publishes the repair instructions and affected database path in the Attempt", async () => {
-    const [document] = await showJsonDocuments(project.cwd, [locator, "execution"]);
-    const result = narrowInspectionSuccess(document!, "attempt.trace");
-    if (!result.success) throw new Error(result.reason);
-    const warnings = result.value.trace.diagnostics.items.filter((item) => item.code === "cache-degraded");
-    expect(warnings.map((item) => item.summary)).toEqual([expect.stringContaining("user-database-unsupported")]);
-    expect(warnings[0]!.summary).toContain("then remove the user database and rerun");
-    expect(warnings[0]!.summary).toContain(databasePath);
+  // @feature docs/feature/sandbox/data-model.md#user-database-preflight
+  test("rejects an unsupported ledger before provider operations with one actionable diagnosis", () => {
+    fc.assert(
+      fc.property(fc.constantFrom("dry", "run"), fc.constantFrom("json", "human"), (mode, format) => {
+        const result = rejected.get(`${mode}:${format}`)!;
+        expect(result.code, JSON.stringify(result)).toBe(1);
+        if (format === "json") {
+          expect(result.stderr).toBe("");
+          expect(JSON.parse(result.stdout)).toEqual({
+            event: "warning",
+            level: "error",
+            code: "user-database-unsupported",
+            message: expect.stringContaining(databasePath),
+          });
+        } else {
+          expect(result.stdout).toBe("");
+          expect(result.stderr.match(/user-database-unsupported/gu)).toHaveLength(1);
+        }
+        const output = result.stdout + result.stderr;
+        expect(output).toContain(databasePath);
+        expect(output).toContain("Stop its consumers, reconcile retained provider artifacts and holds");
+        expect(refusedEvents).toBe(0);
+        expect(refusedRecord).toBe(false);
+        expect(refusedBytes).toEqual(originalDatabase);
+      }),
+      { seed: 261127, numRuns: 4, examples: [["dry", "json"], ["run", "json"], ["dry", "human"], ["run", "human"]] },
+    );
   });
 
-  // @feature docs/feature/sandbox/README.md#user-database-format
-  test("replays the before action and preserves the original database", async () => {
-    expect(await readFile(join(project.cwd, "marker-e0"), "utf8")).toBe("");
-    expect(await readFile(databasePath)).toEqual(originalDatabase);
+  // @feature docs/feature/sandbox/data-model.md#user-database-preflight
+  test("leaves bypass and fully carried plans usable with the same unsupported ledger", () => {
+    expect(bypass.code, JSON.stringify(bypass)).toBe(0);
+    expect(previewCarry.code, JSON.stringify(previewCarry)).toBe(0);
+    expect(decodeExpPlanDocument(JSON.parse(previewCarry.stdout)).reused).toBe(1);
+    expect(executeCarry.code, JSON.stringify(executeCarry)).toBe(0);
+    expect(decodeExpStartEvent(JSON.parse(executeCarry.stdout.split("\n")[0]!)).reused).toBe(1);
+    expect(carryEvents).toBe(0);
+    expect(carryBytes).toEqual(originalDatabase);
   });
 });

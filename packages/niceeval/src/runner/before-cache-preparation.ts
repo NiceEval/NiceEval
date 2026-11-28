@@ -154,7 +154,7 @@ function asError(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(String(cause));
 }
 
-function continuousEligibleActions(
+export function continuousEligibleActions(
   plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
   coverage: SandboxActionState,
 ): readonly Extract<ScheduledSandboxBefore, { readonly kind: "action" }>[] {

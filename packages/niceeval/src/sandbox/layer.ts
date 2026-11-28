@@ -433,7 +433,11 @@ export type SandboxBeforeCacheSupport<Plan> =
       readonly coverage: SandboxActionState;
       readonly preparer: BeforeCachePreparer<Plan>;
     }
-  | { readonly _tag: "AttemptCaptured"; readonly coverage: SandboxActionState }
+  | {
+      readonly _tag: "AttemptCaptured";
+      readonly coverage: SandboxActionState;
+      readonly requiresUserDatabase?: true;
+    }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
 export type BeforeCacheStart =
@@ -485,6 +489,7 @@ export interface BeforeCachePreparationContext {
 
 export interface BeforeCachePreparer<Plan> {
   readonly continuesStaging: boolean;
+  readonly requiresUserDatabase?: true | undefined;
   /** Internal runtime capability; never serialized into a physical plan identity. */
   readonly supportsAgentDerived: boolean;
   readonly eligibility: (
@@ -986,6 +991,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
           coverage: support.coverage,
           preparer: {
             continuesStaging: support.preparer.continuesStaging,
+            requiresUserDatabase: support.preparer.requiresUserDatabase,
             supportsAgentDerived: support.preparer.supportsAgentDerived,
             eligibility: (_, context) => support.preparer.eligibility(input.runtimePlan, context),
             lookup: (_, context, steps, options) => support.preparer.lookup(input.runtimePlan, context, steps, options),
@@ -1748,7 +1754,7 @@ const dockerComposeProviderModule = {
 
 const dockerfileProviderModule = {
   id: "niceeval/dockerfile",
-  beforeCache: { _tag: "AttemptCaptured", coverage: sandboxState.all },
+  beforeCache: { _tag: "AttemptCaptured", coverage: sandboxState.all, requiresUserDatabase: true },
   capabilities: {
     dockerExecution: undefined,
     retention: { _tag: "Suspendable" },
@@ -1781,7 +1787,7 @@ const dockerfileEphemeralProviderModule = {
 
 const dockerImageProviderModule = {
   id: "niceeval/docker-image",
-  beforeCache: { _tag: "AttemptCaptured", coverage: sandboxState.all },
+  beforeCache: { _tag: "AttemptCaptured", coverage: sandboxState.all, requiresUserDatabase: true },
   capabilities: {
     dockerExecution: undefined,
     retention: { _tag: "Suspendable" },

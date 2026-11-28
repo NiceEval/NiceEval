@@ -100,6 +100,7 @@ import {
 import { openRunnerRecordCoordinator, prepareRunnerRecordReuse, type RunnerRecordAttempt } from "./record.ts";
 import { bindRunnerRunObservabilityDiagnostics } from "./source-receipts/runtime.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
+import { checkBeforeCacheUserDatabase } from "./before-cache-preflight.ts";
 import {
   prepareBeforeCaches,
   type BeforeCachePreparationActivityEvent,
@@ -321,8 +322,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         keepSandbox: opts.keepSandbox,
       });
 
-      // Coordinator creates draft Runs first, then uses their real `draft.runId`
-      // values and the frozen Record view to partition every Slot into reuse/gap.
+      // The coordinator partitions the Slots and checks the resulting work before opening draft Runs.
       const recordCoordinator = yield* openRunnerRecordCoordinator({
         recordRoot,
         startedAt: t0,
@@ -330,6 +330,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         runs: opts.agentRuns,
         reuse,
         session: opts.session,
+        preflight: (plan) => checkBeforeCacheUserDatabase(targetPlan, plan),
       });
       // The draft is the only authority for a Run identity. Session, shape and
       // reporters all observe this same mapping; no caller can replace it with a

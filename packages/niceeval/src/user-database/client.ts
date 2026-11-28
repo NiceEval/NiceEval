@@ -1,4 +1,5 @@
 import { Worker } from "node:worker_threads";
+import { access } from "node:fs/promises";
 import { Effect, type Scope } from "effect";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { isDockerCacheRepositoryResult } from "../sandbox/docker-cache-repository.ts";
@@ -23,6 +24,7 @@ import {
   type UserDatabaseWorkerRequestWithoutId,
   type UserDatabaseWorkerResponse,
   type UserDatabaseWorkerStartup,
+  type UserDatabaseWorkerData,
 } from "./protocol.ts";
 
 const WorkerLimits = {
@@ -146,11 +148,7 @@ class UserDatabaseWorkerClient {
     });
   }
 
-  static open(input: {
-    readonly databasePath: string;
-    readonly legacyPath: string;
-    readonly busyTimeoutMs: number;
-  }): Promise<UserDatabaseWorkerClient> {
+  static open(input: UserDatabaseWorkerData): Promise<UserDatabaseWorkerClient> {
     const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
     const worker = new Worker(new URL(`./storage-worker.${extension}`, import.meta.url), {
       workerData: input,
@@ -277,6 +275,23 @@ class UserDatabaseRuntime implements UserDatabase {
 }
 
 export const userDatabaseHost = Object.freeze({
+  checkFormat: (): Effect.Effect<void, UserDatabaseUnsupported> =>
+    Effect.tryPromise({
+      try: async () => {
+        const paths = userDatabasePaths();
+        await access(paths.database);
+        const worker = await UserDatabaseWorkerClient.open({
+          databasePath: paths.database,
+          legacyPath: paths.legacy,
+          busyTimeoutMs: 5_000,
+          readOnly: true,
+        });
+        await worker.close();
+      },
+      catch: localFailure,
+    }).pipe(
+      Effect.catch((failure) => (failure._tag === "UserDatabaseUnsupported" ? Effect.fail(failure) : Effect.void)),
+    ),
   open: (options: UserDatabaseOpenOptions = {}): Effect.Effect<UserDatabase, UserDatabaseFailure, Scope.Scope> => {
     const timeout = options.busyTimeoutMs ?? 5_000;
     if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 120_000) {
@@ -299,6 +314,7 @@ export const userDatabaseHost = Object.freeze({
               databasePath: paths.database,
               legacyPath: paths.legacy,
               busyTimeoutMs: timeout,
+              readOnly: false,
             }),
           ),
         catch: localFailure,

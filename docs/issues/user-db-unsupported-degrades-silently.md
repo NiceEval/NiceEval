@@ -16,6 +16,11 @@ On 2026-11-25 NiceEval-Eval ran `niceeval exp --experiment install/canary --expe
 - Provider instances created by an interrupted Invocation are either reclaimed on the next run or reported with a public command to reclaim them.
 - The repair guidance names a public command that can enumerate and reconcile artifacts recorded in the old database, or states which NiceEval version can do it.
 
+## Follow-up
+
+The first expectation is resolved by the [Invocation preflight](../feature/sandbox/data-model.md#user-database-preflight).
+Provider instance recovery and reconciliation of artifacts recorded in the old database remain open.
+
 ## Impact
 
 A full paid run silently lost all Before cache reuse; orphaned running instances kept billing; the operator cannot follow the repair instruction without reading internals.

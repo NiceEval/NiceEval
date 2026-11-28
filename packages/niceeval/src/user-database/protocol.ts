@@ -90,6 +90,7 @@ export interface UserDatabaseWorkerData {
   readonly databasePath: string;
   readonly legacyPath: string;
   readonly busyTimeoutMs: number;
+  readonly readOnly: boolean;
 }
 
 const ExternalCauseSchema = Schema.declare(isExternalCause);

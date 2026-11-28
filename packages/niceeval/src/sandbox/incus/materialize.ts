@@ -526,6 +526,7 @@ export function incusProviderModule(
       coverage: sandboxState.all,
       preparer: {
         continuesStaging: false,
+        requiresUserDatabase: true,
         supportsAgentDerived: false,
         materializeFrom: (
           plan: IncusRuntimePlan,

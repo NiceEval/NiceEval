@@ -215,6 +215,7 @@ function assertSupportedFormat(database: DatabaseSync, path: string): void {
   try {
     assertHostFormat(database, HostFormatIdentity, CreateHostFormat);
   } catch (cause) {
+    if (!(cause instanceof UserDatabaseInvalid)) throw cause;
     throw new UserDatabaseUnsupported({
       code: "user-database-unsupported",
       message: `User database ${path} was written by an older NiceEval or has an unsupported format. Stop its consumers, reconcile retained provider artifacts and holds, then remove ${path} and rerun. The database has not been migrated or cleared.`,
@@ -226,8 +227,9 @@ function assertSupportedFormat(database: DatabaseSync, path: string): void {
   assertCurrentDatabase(database);
 }
 
-function openStorageDatabase(path: string, busyTimeoutMs: number): DatabaseSync {
+function openStorageDatabase(path: string, busyTimeoutMs: number, readOnly = false): DatabaseSync {
   const database = new DatabaseSync(path, {
+    readOnly,
     allowExtension: false,
     defensive: true,
     enableDoubleQuotedStringLiterals: false,
@@ -288,16 +290,18 @@ function decodeWorkerData(value: unknown): UserDatabaseWorkerData {
   const databasePath = Reflect.get(value, "databasePath");
   const legacyPath = Reflect.get(value, "legacyPath");
   const busyTimeoutMs = Reflect.get(value, "busyTimeoutMs");
+  const readOnly = Reflect.get(value, "readOnly");
   if (
     typeof databasePath !== "string" ||
     typeof legacyPath !== "string" ||
+    typeof readOnly !== "boolean" ||
     !Number.isSafeInteger(busyTimeoutMs) ||
     Number(busyTimeoutMs) < 1 ||
     Number(busyTimeoutMs) > 120_000
   ) {
     throw invalid("UserDatabase worker data is invalid");
   }
-  return { databasePath, legacyPath, busyTimeoutMs: Number(busyTimeoutMs) };
+  return { databasePath, legacyPath, busyTimeoutMs: Number(busyTimeoutMs), readOnly };
 }
 
 function isDurableStateRequest(value: unknown): value is DurableStateRequest {
@@ -337,7 +341,7 @@ class UserDatabaseStorage {
   }
 
   static async open(input: UserDatabaseWorkerData): Promise<UserDatabaseStorage> {
-    if (await exists(input.legacyPath)) {
+    if (!input.readOnly && (await exists(input.legacyPath))) {
       throw new UserDatabaseLegacyFound({
         code: "user-database-legacy-found",
         message: `Legacy user database ${input.legacyPath} was written by an older NiceEval; reconcile retained provider artifacts and holds, then remove it and rerun before opening ${input.databasePath}`,
@@ -345,12 +349,14 @@ class UserDatabaseStorage {
         databasePath: input.databasePath,
       });
     }
-    await mkdir(dirname(input.databasePath), { recursive: true, mode: 0o700 });
-    await publishInitialHostFormat(input);
-    const database = openStorageDatabase(input.databasePath, input.busyTimeoutMs);
+    if (!input.readOnly) {
+      await mkdir(dirname(input.databasePath), { recursive: true, mode: 0o700 });
+      await publishInitialHostFormat(input);
+    }
+    const database = openStorageDatabase(input.databasePath, input.busyTimeoutMs, input.readOnly);
     try {
       assertSupportedFormat(database, input.databasePath);
-      database.exec("PRAGMA journal_mode=WAL;");
+      if (!input.readOnly) database.exec("PRAGMA journal_mode=WAL;");
       const storage = new UserDatabaseStorage(database);
       storage.installAuthorizer();
       return storage;

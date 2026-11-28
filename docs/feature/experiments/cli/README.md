@@ -64,6 +64,13 @@ Assertions/Observability 缺失、partial、损坏或不支持，或 timing 超�
 `--dry` 不建立 Invocation 或 Run。它在一个固定 `PublicationCutoff` 下读取已发布 Attempt；已发布只表示可读，是否可沿用仍由当次 policy 判定。
 与相同目标的 `project.get` 相比，运行选项只能改变执行动作；`--rerun all` 不把 covered 位置改成当前 gap。
 
+### 用户库启动错误 {#user-database-startup-error}
+
+普通运行和 `--dry` 都执行 [UserDatabase 预检](../../sandbox/data-model.md#user-database-preflight)。
+旧格式使命令非零退出。人读输出报告一次错误，说明库路径、原因和修复顺序。
+`--json` 输出单条 `event: "warning"`，其中 `level` 为 `"error"`，`code` 为 `"user-database-unsupported"`，`message` 与人读正文一致。
+这条记录是普通运行的终态，也是 `--dry` 的错误文档。
+
 ### `debug`
 
 `debug` 通过具名只读 `experimentHost.debug()` 显示所选 Experiment 的生命周期命令计划。Eval selector 可省略；省略时规划该 Experiment 自己选中的全部 Eval，给出同一棵批量 command plan。提供 selector 时继续显示唯一 `Eval × Experiment` 配对。CLI
@@ -387,6 +394,7 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 普通 `exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt。显式 sharedState recovery 明确拒绝
 `--json`，因为它不建立 Invocation 或 receipt，也没有 NDJSON 形状。完整形态见
 [NDJSON 输出案例](output/json-stream.md)。
+如果 [UserDatabase 预检失败](#user-database-startup-error)，命令只输出启动错误。
 
 末尾 terminal envelope 的 `summary.inputTokens` 与 `summary.outputTokens` 只汇总本次真实执行的 Attempt，不重复计入沿用结果。
 输入采用不含缓存读取与缓存写入的互斥 token 桶。普通 Adapter 使用已登记的调用用量；只有全部贡献都完整且对应指标已知时才输出该总量。

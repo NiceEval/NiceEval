@@ -80,6 +80,15 @@ UserDatabase 只有一个格式标记。新库在私有临时文件中原子建�
 用户清理前先停止全部消费者，并在 Provider 控制台核对远端 snapshot，或通过 Docker、Incus CLI 核对 image、VM 与 disk。
 只有确认没有消费者与 hold 后，才显式清理对应资源和用户库。下一次运行从空库按当前 key 重新准备并发布。
 
+### Invocation 预检 {#user-database-preflight}
+
+计划中有待执行工作需要 Before cache 账本时，Invocation 在 Provider I/O 和派发之前以只读方式校验已有 UserDatabase。
+全部沿用结果的计划，以及待执行工作无需该账本的计划，跳过此校验。没有库时，仍由首次消费初始化。
+
+预检发现 `user-database-unsupported` 时，Invocation 不启动，只报告一次库路径、原因和上述修复顺序。
+旧格式是确定的持久状态。继续运行会让每次执行承担无缓存成本，因此先修复再运行。
+命令反馈见 [Experiments CLI](../experiments/cli/README.md#user-database-startup-error)。
+
 ## 缓存格式
 
 Docker、Incus 与远端 snapshot 的缓存声明各带一个 `cacheFormat`，同时约束存储解释与 artifact 读取。

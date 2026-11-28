@@ -208,7 +208,8 @@ type BeforeCacheStart =
 | `agent-install-failed` | [Agent 派生节点](#agent-派生节点)的安装或复检失败 |
 
 每条 `degraded` 诊断在原因之后带上安全的失败摘要，并按原因归类真实来源：
-`ledger-unavailable` 只用于账本读写本身失败，诊断写出已分类的 UserDatabase 失败消息（例如由旧版 NiceEval 写入、需要停用后删除重跑的提示），不只给原因代码。
+`ledger-unavailable` 用于运行时的账本读写失败，诊断带已分类的 UserDatabase 失败消息。
+启动时发现旧库格式按 [Invocation 预检](../data-model.md#user-database-preflight) 拒绝运行。
 读取 staging 实例状态（挂载信息、标记文件）失败属于 `staging-failed`，不能记为账本不可用。
 同一 Run 内账本失败只需修复一次，结束页与 `exp --json` 对同一 `(provider, execution_domain_id)` 的账本失败聚合为一条 Run 级诊断，后代节点仍记 `parent-unavailable`。
 

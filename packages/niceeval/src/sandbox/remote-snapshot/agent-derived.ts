@@ -13,6 +13,25 @@ export interface PlannedAgentDerivedNode {
   readonly installers: readonly AgentInstaller[];
 }
 
+export function cacheableAgentInstallers(
+  installs: readonly AgentInstall[],
+  installers: readonly AgentInstaller[],
+): readonly AgentInstaller[] | undefined {
+  if (installs.length === 0) return undefined;
+  const matched: AgentInstaller[] = [];
+  for (const install of installs) {
+    const installer = installers.find(
+      (candidate) =>
+        candidate.identity.agent === install.identity.agent &&
+        candidate.identity.version === install.identity.version &&
+        candidate.identity.revision === install.identity.revision,
+    );
+    if (installer?.installMode !== "staged" || installer[AGENT_DOCKERFILE_CACHE_SAFE] !== true) return undefined;
+    matched.push(installer);
+  }
+  return matched;
+}
+
 /** Cache-only identity: this node never participates in Attempt or config identity. */
 export function plannedAgentDerivedNode(
   plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
@@ -21,24 +40,8 @@ export function plannedAgentDerivedNode(
   installers: readonly AgentInstaller[],
   parent?: { readonly key: string; readonly positions: readonly string[] },
 ): PlannedAgentDerivedNode | undefined {
-  if (installs.length === 0) return undefined;
-  const matched = installs.map((install) =>
-    installers.find(
-      (installer) =>
-        installer.identity.agent === install.identity.agent &&
-        installer.identity.version === install.identity.version &&
-        installer.identity.revision === install.identity.revision,
-    ),
-  );
-  if (
-    matched.some(
-      (installer) =>
-        installer === undefined ||
-        installer.installMode !== "staged" ||
-        installer[AGENT_DOCKERFILE_CACHE_SAFE] !== true,
-    )
-  )
-    return undefined;
+  const matched = cacheableAgentInstallers(installs, installers);
+  if (matched === undefined) return undefined;
 
   const declarationMetadata = {
     domain: "niceeval.remote-snapshot-agent-derived",

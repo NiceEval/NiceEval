@@ -795,6 +795,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
 
   return {
     continuesStaging: driver.sourceUsableAfterSnapshot,
+    requiresUserDatabase: true,
     supportsAgentDerived: true,
     eligibility: (plan, context) =>
       driver.resolveBase(plan).pipe(

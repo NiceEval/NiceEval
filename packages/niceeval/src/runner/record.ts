@@ -396,16 +396,17 @@ function publishStateInvalid(runId: RunId): RunnerRecordPublishStateInvalid {
  * Runs, and writes carry references before dispatch. No global Record writer
  * lock or superseded draft/attachment contract participates in this boundary.
  */
-export function openRunnerRecordCoordinator(input: {
+export function openRunnerRecordCoordinator<E>(input: {
   readonly recordRoot: RecordRoot;
   readonly startedAt: number;
   readonly evals: readonly DiscoveredEval[];
   readonly runs: readonly AgentRun[];
   readonly reuse: RunnerRecordReuseInput;
   readonly session: SessionTracker | undefined;
+  readonly preflight: (plan: ExecutionReusePlan) => Effect.Effect<void, E>;
 }): Effect.Effect<
   RunnerRecordCoordinator,
-  RunnerRecordOpenError,
+  RunnerRecordOpenError | E,
   | import("effect").Scope.Scope
   | import("../record/platform/services.ts").RecordEntropy
   | import("../coordination/record-leases.ts").RecordCoordination
@@ -456,10 +457,28 @@ export function openRunnerRecordCoordinator(input: {
         return {
           plan,
           runId: decoded.success,
+          target: targetForRunnerRecordRun({ planned: plan, runId: decoded.success, startedAt: startedAt.success }),
           writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.experimentId}`),
         };
       }),
     );
+    const target = { invocationId, runs: candidates.map((candidate) => candidate.target) };
+    const { reusePlan, carriedResults } = yield* Effect.scoped(
+      Effect.gen(function* () {
+        if (!existsSync(recordSqlitePath(rootPath))) {
+          const reusePlan = yield* planProjectTargetReuseWithoutSources({ target, policy: input.reuse.policy });
+          return { reusePlan, carriedResults: [] };
+        }
+        const reader = yield* recordHost.openRead({ root: input.recordRoot });
+        const reusePlan = yield* planProjectTargetReuse({ reader, target, policy: input.reuse.policy });
+        const carriedResults = yield* readCurrentExecutionReusePlanResults({ reader, plan: reusePlan }).pipe(
+          Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })),
+        );
+        return { reusePlan, carriedResults };
+      }),
+    );
+    yield* input.preflight(reusePlan);
+
     // Register the complete durable owner before admitting any mutable aggregate.
     // A concurrent portable gate must see this Invocation even during Run setup.
     if (input.session !== undefined) {
@@ -496,7 +515,7 @@ export function openRunnerRecordCoordinator(input: {
     }
     const openedRuns = yield* Effect.forEach(
       candidates,
-      ({ plan, runId, writerGeneration }) =>
+      ({ plan, runId, target, writerGeneration }) =>
         recordHost
           .createRun({
             root: input.recordRoot,
@@ -507,14 +526,13 @@ export function openRunnerRecordCoordinator(input: {
             expectedSlots: plan.expectedSlots,
             writerGeneration,
           })
-          .pipe(Effect.map((session) => ({ plan, session, writerGeneration }))),
+          .pipe(Effect.map((session) => ({ plan, session, target, writerGeneration }))),
       { concurrency: 1 },
     );
     const byRun = new Map<AgentRun, RunnerRecordRun>();
     const byRecordRunId = new Map<RunId, RunnerRecordRun>();
     const runIdsByExperiment = new Map<string, string>();
-    const targetRuns: TargetRun[] = [];
-    for (const { plan, session, writerGeneration } of openedRuns) {
+    for (const { plan, session, target, writerGeneration } of openedRuns) {
       yield* session.attach(NiceEvalRecordAttachments.identityManifests, {
         entries: [
           ...new Map(
@@ -530,11 +548,6 @@ export function openRunnerRecordCoordinator(input: {
           return 0;
         }),
       });
-      const target = targetForRunnerRecordRun({
-        planned: plan,
-        runId: session.runId,
-        startedAt: startedAt.success,
-      });
       const recordRun: RunnerRecordRun = {
         ...plan,
         session,
@@ -548,22 +561,7 @@ export function openRunnerRecordCoordinator(input: {
       byRun.set(plan.run, recordRun);
       byRecordRunId.set(session.runId, recordRun);
       runIdsByExperiment.set(plan.run.experimentId, session.runId);
-      targetRuns.push(target);
     }
-    const target = {
-      invocationId,
-      runs: targetRuns,
-    };
-    const { reusePlan, carriedResults } = yield* Effect.scoped(
-      Effect.gen(function* () {
-        const reader = yield* recordHost.openRead({ root: input.recordRoot });
-        const reusePlan = yield* planProjectTargetReuse({ reader, target, policy: input.reuse.policy });
-        const carriedResults = yield* readCurrentExecutionReusePlanResults({ reader, plan: reusePlan }).pipe(
-          Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })),
-        );
-        return { reusePlan, carriedResults };
-      }),
-    );
     const carriedAttemptsByKey = new Map<string, Set<number>>();
     for (const slot of reusePlan.slots) {
       const recordRun = byRecordRunId.get(slot.runId);

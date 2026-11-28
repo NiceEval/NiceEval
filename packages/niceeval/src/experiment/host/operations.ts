@@ -28,6 +28,8 @@ import { prepareRunnerRecordReuse, withRunnerCurrentReusePreview } from "../../r
 import { projectCurrentReuseReadback } from "../../runner/reuse-readback.ts";
 import { projectTargetPolicyIdentity, type ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
 import { runEvals } from "../../runner/run.ts";
+import { checkBeforeCacheUserDatabase } from "../../runner/before-cache-preflight.ts";
+import { UserDatabaseUnsupported } from "../../user-database/errors.ts";
 import { readCaseLockEffect } from "../../runner/lock.ts";
 import { exactProcessState } from "../../runner/node-process-identity.ts";
 import { JUnit } from "../../runner/reporters/json.ts";
@@ -698,6 +700,7 @@ export function planInvocation(
                 reuse,
                 use: ({ reusePlan, readReadbacks }) =>
                   Effect.gen(function* () {
+                    yield* checkBeforeCacheUserDatabase(target, reusePlan);
                     const readbacks = yield* readReadbacks();
                     const pairs = new Map(
                       reusePlan.slots.map((slot) => [
@@ -899,11 +902,14 @@ export function runInvocation(
         const session = new SessionTracker(projectDatabaseRoot, projectStateDatabase);
         const closePortable = projectStateDatabase.closeInvocationPortable(projectDatabaseRoot);
         let sessionClosed = false;
+        let userDatabaseRejected = false;
         let feedbackStarted = false;
         let feedbackFinished = false;
         // During failure cleanup, close the worker after the fallback Session close
         // and preserve the original failure.
-        yield* Effect.addFinalizer(() => (sessionClosed ? Effect.void : closePortable.pipe(Effect.ignore)));
+        yield* Effect.addFinalizer(() =>
+          sessionClosed || userDatabaseRejected ? Effect.void : closePortable.pipe(Effect.ignore),
+        );
         yield* Effect.addFinalizer(() =>
           sessionClosed ? Effect.void : session.close({ status: "incomplete" }).pipe(Effect.ignore),
         );
@@ -955,7 +961,13 @@ export function runInvocation(
                   });
                   feedbackStarted = true;
                 }),
-            }),
+            }).pipe(
+              Effect.tapError((cause) =>
+                Effect.sync(() => {
+                  userDatabaseRejected = cause instanceof UserDatabaseUnsupported;
+                }),
+              ),
+            ),
           (deactivate) => Effect.sync(deactivate),
         );
         const summary = completedSummary;

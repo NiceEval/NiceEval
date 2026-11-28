@@ -22,6 +22,7 @@ import {
   renderHumanCommandPlan,
   resolveOutputForm,
 } from "../../../runner/feedback/index.ts";
+import type { WarningEvent } from "../../../runner/feedback/json.ts";
 import { renderSessionListText, renderSessionShowText } from "../../../runner/session.ts";
 import { sessionListDocumentToJson, sessionShowDocumentToJson } from "./session-protocol.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../../runner/reuse-readback.ts";
@@ -286,6 +287,21 @@ function enumFlag<const Value extends string>(
 
 function jsonDocument(value: unknown): string {
   return `${JSON.stringify(value)}\n`;
+}
+
+function userDatabaseStartupError(error: ExperimentHostError, json: boolean) {
+  const output = json
+    ? write(
+        "stdout",
+        jsonDocument({
+          event: "warning",
+          level: "error",
+          code: error.code,
+          message: error.message,
+        } satisfies WarningEvent),
+      )
+    : write("stderr", `error (${error.code}): ${error.message}\n`);
+  return output.pipe(Effect.as(1));
 }
 
 function catalogText(catalog: {
@@ -1039,16 +1055,22 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
         .load(invocation.cwd)
         .pipe(Effect.mapError((cause) => failure("load config", cause)));
       const experimentIds = Array.isArray(input.values.experiment) ? input.values.experiment : undefined;
-      const plan = yield* experimentHost.invocation
-        .plan({
+      const planned = yield* Effect.result(
+        experimentHost.invocation.plan({
           cwd: invocation.cwd,
           config,
           ...selection(input.positionals, experimentIds),
           ...(typeof input.values.tag === "string" ? { tag: input.values.tag } : {}),
           overrides: overrides(input.values),
           preview: input.values.dry === true,
-        })
-        .pipe(Effect.mapError((cause) => failure("plan invocation", cause)));
+        }),
+      );
+      if (Result.isFailure(planned)) {
+        if (planned.failure.code === "user-database-unsupported")
+          return yield* userDatabaseStartupError(planned.failure, input.values.json === true);
+        return yield* Effect.fail(failure("plan invocation", planned.failure));
+      }
+      const plan = planned.success;
       if (plan.status !== "ready") {
         yield* write("stderr", selectionProblemText(plan));
         return 1;
@@ -1132,6 +1154,8 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
         ),
       );
       if (Result.isFailure(outcome)) {
+        if (outcome.failure.code === "user-database-unsupported")
+          return yield* userDatabaseStartupError(outcome.failure, input.values.json === true);
         if (outcome.failure.code === "runner-record-assertions-invalid") {
           yield* write("stderr", `error: ${outcome.failure.message}\n`);
           return 1;
