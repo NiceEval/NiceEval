@@ -19,6 +19,7 @@ test.concurrent("install 就地修复后复检，成功时不准备或上传 sta
 // @feature docs/feature/adapters/README.md
 test.concurrent("invocation show 显示清洗并按 Unicode 截断的探测原因与修复失败原因", async () => {
   await runnerE2E.case("install-repair-detail", {}, async ({ commands: { niceeval }, paths }) => {
+    const probeMissReason = `missing ${"x".repeat(191)}😀`;
     const source = join(paths.projectRoot, "experiments/install-repair.ts");
     await writeFile(
       source,
@@ -55,15 +56,27 @@ test.concurrent("invocation show 显示清洗并按 Unicode 截断的探测原�
         },
         { timeoutMs: 10_000, intervalMs: 50, label: "ensure detail is visible" },
       );
-      expect(detail).toBe(
-        `probe miss: missing ${"x".repeat(191)}😀; in-place repair unavailable: fixture repair failed`,
-      );
+      expect(detail).toBe(`probe miss: ${probeMissReason}; in-place repair unavailable: fixture…`);
     } finally {
       await writeFile(join(paths.projectRoot, "ensure-install-release"), "release");
     }
     const result = await running.done;
     expect(result.exitCode, result.diagnostic()).toBe(0);
-    expect(only(result.expEvalEvents(), () => true)).toMatchObject({ verdict: "passed" });
+    const { verdict, locator } = only(result.expEvalEvents(), () => true);
+    expect(verdict).toBe("passed");
+    const shown = await niceeval.run(["show", locator, "--json"]);
+    expect(shown.exitCode, shown.diagnostic()).toBe(0);
+    expect(shown.attempt().attempt.agentInstall).toEqual({
+      state: "available",
+      value: [
+        {
+          identity: { agent: "repair-fixture", version: "1.0.0", revision: "1" },
+          outcome: "installed",
+          probeMissReason,
+          repairFailureReason: "fixture repair failed",
+        },
+      ],
+    });
   });
 });
 
