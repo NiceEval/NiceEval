@@ -196,6 +196,20 @@ const ScopeSchema = Schema.Struct({
 });
 const InputScopeSchema = ScopeSchema.mapFields((fields) => ({ ...fields, boundary: TraceInputJsonSchema }));
 
+const ArchiveSchema = Schema.Struct({
+  system: IdentifierSchema.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => !/[\p{Cc}\uD800-\uDFFF]/u.test(value), {
+        identifier: "ExecutionTraceArchiveSystem",
+      }),
+    ),
+  ),
+  locator: ExecutionTraceJsonSchema,
+  sha256: Schema.optional(Sha256Schema),
+  byteLength: Schema.optional(NonNegativeSafeIntegerSchema),
+});
+const InputArchiveSchema = ArchiveSchema.mapFields((fields) => ({ ...fields, locator: TraceInputJsonSchema }));
+
 const LinkSchema = Schema.Union([
   Schema.Struct({ relation: IdentifierSchema, targetKey: IdentifierSchema }),
   Schema.Struct({
@@ -291,6 +305,7 @@ const InputEventSchema = Schema.Struct({
 export const ExecutionTraceInputSchema = Schema.Struct({
   traceId: IdentifierSchema,
   schema: Schema.Struct({ id: IdentifierSchema }),
+  archive: Schema.optional(InputArchiveSchema),
   collection: CollectionSchema,
   scopes: Schema.Array(InputScopeSchema),
   events: Schema.Array(InputEventSchema),
@@ -301,6 +316,7 @@ export const ExecutionTraceHeaderRecordSchema = Schema.Struct({
   traceId: IdentifierSchema,
   sourceTraceId: IdentifierSchema,
   schema: Schema.Struct({ id: IdentifierSchema }),
+  archive: Schema.optional(ArchiveSchema),
   collection: CollectionSchema,
   scopes: Schema.Array(ScopeSchema),
 });

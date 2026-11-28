@@ -7,6 +7,20 @@ export interface ExecutionTraceLimitation {
   readonly message: string;
 }
 
+/** Describes the coverage of the submitted execution trace. */
+export interface ExecutionTraceCollection {
+  readonly state: "complete" | "partial";
+  readonly limitations: readonly ExecutionTraceLimitation[];
+}
+
+/** Identifies an externally retained original without granting access to it. */
+export interface ExecutionTraceArchive {
+  readonly system: string;
+  readonly locator: TraceJson;
+  readonly sha256?: string;
+  readonly byteLength?: number;
+}
+
 /** Defines an application trace boundary with a stable scope ID; membership is declared separately for each event. */
 export interface ExecutionTraceScope {
   readonly scopeId: string;
@@ -101,12 +115,43 @@ export interface ExecutionTraceEvent<out Type extends string = string, out Paylo
 export interface ExecutionTraceInput<out Event extends ExecutionTraceEvent = ExecutionTraceEvent> {
   readonly traceId: string;
   readonly schema: { readonly id: string };
-  readonly collection: {
-    readonly state: "complete" | "partial";
-    readonly limitations: readonly ExecutionTraceLimitation[];
-  };
+  readonly archive?: ExecutionTraceArchive;
+  readonly collection: ExecutionTraceCollection;
   readonly scopes: readonly ExecutionTraceScope[];
   readonly events: readonly Event[];
+}
+
+/** Describes one streamed scope, event, or producer declaration of completeness. */
+export type ExecutionTraceStreamItem<Event extends ExecutionTraceEvent = ExecutionTraceEvent> =
+  | { readonly kind: "scope"; readonly scope: ExecutionTraceScope }
+  | { readonly kind: "event"; readonly event: Event }
+  | { readonly kind: "end"; readonly collection: ExecutionTraceCollection };
+
+/** Supplies the producer factory and optional caller cancellation for one trace submission. */
+export interface ExecutionTraceStreamInput<out Event extends ExecutionTraceEvent = ExecutionTraceEvent> {
+  readonly traceId: string;
+  readonly schema: { readonly id: string };
+  readonly archive?: ExecutionTraceArchive;
+  readonly events: {
+    readonly stream: (signal: AbortSignal) => AsyncIterable<ExecutionTraceStreamItem<Event>>;
+  };
+  readonly signal?: AbortSignal;
+}
+
+/** Explains why the framework stopped pulling before receiving an end item. */
+export type ExecutionTraceStreamCutReason = "producer-error" | "unterminated" | "aborted" | "admission-closed";
+
+/** Summarizes the retained items and completeness of an accepted streamed trace. */
+export interface ExecutionTraceStreamReceipt {
+  readonly state: "accepted";
+  readonly traceId: string;
+  readonly ending:
+    | { readonly kind: "declared" }
+    | { readonly kind: "cut"; readonly reason: ExecutionTraceStreamCutReason; readonly droppedItems: number };
+  readonly collection: ExecutionTraceCollection;
+  readonly scopeCount: number;
+  readonly eventCount: number;
+  readonly evidenceCount: number;
 }
 
 /** Maps accepted application event and evidence keys to stored IDs; retain the receipt for later navigation rather than guessing IDs. */

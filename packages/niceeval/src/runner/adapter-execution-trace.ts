@@ -343,6 +343,12 @@ function durableDisplay(
 }
 
 function verifySemantics(input: Schema.Schema.Type<typeof ExecutionTraceInputSchema>): void {
+  if (input.collection.limitations.some(({ code }) => code.startsWith("niceeval."))) {
+    throw traceError(
+      "execution-trace-invalid",
+      "Execution trace limitation codes starting with niceeval. are reserved.",
+    );
+  }
   const scopeIds = new Set<string>();
   for (const scope of input.scopes) {
     if (scopeIds.has(scope.scopeId))
@@ -470,6 +476,7 @@ export function createAdapterExecutionTraceCollector(
         traceId,
         sourceTraceId: snapshot.traceId,
         schema: snapshot.schema,
+        ...(snapshot.archive === undefined ? {} : { archive: snapshot.archive }),
         collection: {
           state: snapshot.collection.state,
           limitations: snapshot.collection.limitations,

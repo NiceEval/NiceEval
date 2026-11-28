@@ -29,6 +29,8 @@ export type {
 export type {
   ExecutionDisplayBlock,
   ExecutionTraceActor,
+  ExecutionTraceArchive,
+  ExecutionTraceCollection,
   ExecutionTraceEvent,
   ExecutionTraceEvidence,
   ExecutionTraceInput,
@@ -38,6 +40,10 @@ export type {
   ExecutionTraceScope,
   ExecutionTraceScopeMembership,
   ExecutionTraceSource,
+  ExecutionTraceStreamCutReason,
+  ExecutionTraceStreamInput,
+  ExecutionTraceStreamItem,
+  ExecutionTraceStreamReceipt,
   ExecutionTraceTime,
   TraceJson,
 } from "../adapter-execution-trace.ts";
