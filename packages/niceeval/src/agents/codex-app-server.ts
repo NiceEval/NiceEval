@@ -6,6 +6,8 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import { attemptResources } from "../context/attempt-resources.ts";
+import { reportUpstreamFailure } from "./upstream-failure.ts";
+import type { SandboxAgentSendContext } from "./types.ts";
 
 type RecordValue = globalThis.Record<string, unknown>;
 type PendingQuestion = {
@@ -31,6 +33,19 @@ const stateSlot = createSessionKey<CodexState>("codex/app-server-native");
 
 function record(value: unknown): RecordValue | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as RecordValue) : undefined;
+}
+
+function reportCodexFailure(ctx: SandboxAgentSendContext, value: unknown): void {
+  const error = record(value);
+  if (error === undefined) return;
+  const info = error.codexErrorInfo;
+  const variants = Object.entries(record(info) ?? {});
+  const [variant, properties] = variants.length === 1 ? (variants[0] ?? []) : [];
+  reportUpstreamFailure(ctx, "Codex", {
+    reason: typeof info === "string" ? info : variant,
+    code: error.code,
+    httpStatus: record(properties)?.httpStatusCode ?? error.httpStatusCode,
+  });
 }
 
 function progressPreview(value: unknown): string | undefined {
@@ -408,7 +423,7 @@ function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor
   };
 }
 
-async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, turnId: string): Promise<Turn> {
+async function drive(state: CodexState, ctx: SandboxAgentSendContext, from: number, turnId: string): Promise<Turn> {
   const receipt = await state.driver.waitFor(
     state.cursor,
     (value) => {
@@ -429,9 +444,11 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, 
   if (frame.method === "item/tool/requestUserInput") return waitingTurn(state, frame, from, receipt.cursor, turnId);
   const frames = turnFrames(state.driver.framesSince(from).slice(0, receipt.cursor - from), state.threadId, turnId);
   const parsed = protocolEvents(frames, state.reported);
-  const turn = record(record(frame.params)?.turn);
+  const params = record(frame.params);
+  const turn = record(params?.turn);
   const status = turn?.status;
   if (frame.method === "error") {
+    reportCodexFailure(ctx, params?.error);
     throw makeSendFailure({
       acceptance: sendAcceptanceFromEvents(parsed.events),
       message: `Codex app-server turn failed: ${JSON.stringify(frame.params)}`,
@@ -441,6 +458,7 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, 
       process: state.driver.processReceipt(),
     });
   }
+  if (status === "failed") reportCodexFailure(ctx, turn?.error);
   return {
     status: status === "failed" ? "failed" : "completed",
     events: parsed.events,
@@ -451,7 +469,7 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, 
 
 export async function sendCodexAppServer(
   input: { readonly text: string; readonly responses?: readonly InputResponse[] | undefined },
-  ctx: SandboxAgentContext,
+  ctx: SandboxAgentSendContext,
   env: Readonly<Record<string, string>>,
   failureFacts?: (
     raw: string,

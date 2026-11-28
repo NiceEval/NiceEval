@@ -38,6 +38,7 @@ const Step = Schema.Struct({
 const Terminal = Schema.Struct({
   conversation_id: nonEmptyString,
   status: Schema.NonEmptyString,
+  finished_reason: field(Schema.Unknown),
   response: field(Schema.String),
   error: nonEmptyString,
 });

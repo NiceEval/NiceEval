@@ -216,6 +216,13 @@ export interface OpenClawRunJson {
   sessionId: string | undefined;
   usage: Usage | undefined;
   failed: boolean;
+  upstreamFailure:
+    | {
+        readonly reason: JsonValue | undefined;
+        readonly code: JsonValue | undefined;
+        readonly httpStatus: JsonValue | undefined;
+      }
+    | undefined;
 }
 
 const Payloads = Schema.Array(Schema.Struct({ text: string }));
@@ -272,7 +279,8 @@ function parseJsonDocument(stdout: string | undefined): typeof RunDocument.Type 
 
 export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJson {
   const document = parseJsonDocument(stdout);
-  if (document === undefined) return { failed: false, text: undefined, sessionId: undefined, usage: undefined };
+  if (document === undefined)
+    return { failed: false, text: undefined, sessionId: undefined, usage: undefined, upstreamFailure: undefined };
   const agent = document.meta?.agentMeta;
   const text =
     document.result?.text ??
@@ -293,9 +301,16 @@ export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJso
     document.usage ?? document.result?.usage ?? document.meta?.usage ?? agent?.usage ?? agent?.lastCallUsage;
   let usage: Usage | undefined;
   if (reported !== undefined) usage = normalizeUsage("openclaw", reported);
-  const failed =
-    document.error !== undefined ||
-    document.success === false ||
-    (document.status !== undefined && /^(error|failed)$/i.test(document.status));
-  return { text, sessionId, usage, failed };
+  const failedStatus = document.status !== undefined && /^(error|failed)$/i.test(document.status);
+  const failed = document.error !== undefined || document.success === false || failedStatus;
+  const error = document.error;
+  const facts = typeof error === "object" && error !== null && !Array.isArray(error) ? error : undefined;
+  const upstreamFailure = failed
+    ? {
+        reason: failedStatus ? document.status : facts?.name,
+        code: facts?.code,
+        httpStatus: facts?.statusCode ?? facts?.status,
+      }
+    : undefined;
+  return { text, sessionId, usage, failed, upstreamFailure };
 }

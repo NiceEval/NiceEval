@@ -5,6 +5,7 @@ import {
   compareObservabilityText,
   makeSafeText,
   makeSafeIdentifier,
+  makeTurnId,
   type DiagnosticId,
   type ObservabilityEntityIdForKind,
 } from "../../record/family/source-receipt/model.ts";
@@ -85,6 +86,7 @@ export function normalizeAttemptDiagnostics(input: {
       readonly kind: AttemptDiagnostic["kind"];
       readonly causes: DiagnosticRecord["causes"];
       readonly origin: DiagnosticRecord["origin"] | undefined;
+      readonly context?: DiagnosticRecord["context"];
     }): Effect.Effect<void, RunnerObservabilityProducerError> => {
       const code = makeSafeIdentifier(value.code);
       if (code === undefined) {
@@ -95,12 +97,18 @@ export function normalizeAttemptDiagnostics(input: {
       if (retainedSummary === undefined) {
         limitations.addUnsupported("diagnostic");
       }
+      const phase = attemptDiagnosticPhase(value.origin);
+      const candidateTurnId = value.context?.turnId;
+      const turnId =
+        code === "agent-upstream-failure" && phase === "agent.send" && typeof candidateTurnId === "string"
+          ? makeTurnId(candidateTurnId)
+          : undefined;
       return Effect.map(input.mint("diagnostic"), (diagnosticId) => {
         diagnostics.push({
           diagnosticId: diagnosticId as DiagnosticId,
           kind: value.kind,
           code,
-          phase: attemptDiagnosticPhase(value.origin),
+          phase,
           // Runner redacts the detail before sealing. Unsafe detail falls back
           // to a generic summary with partial coverage.
           summary:
@@ -111,7 +119,10 @@ export function normalizeAttemptDiagnostics(input: {
                 : "Runner recorded an advisory diagnostic.",
             )!,
           causes: retainCauses(value.causes, limitations),
-          context: [],
+          context:
+            turnId === undefined
+              ? []
+              : [{ kind: "entity", target: { family: "niceeval.agent-turns", kind: "turn", id: turnId } }],
           redaction: { state: "none" as const },
           sourceFrame: null,
           refs: [],
@@ -136,6 +147,7 @@ export function normalizeAttemptDiagnostics(input: {
         kind: diagnostic.level === "error" ? ("execution-error" as const) : ("advisory" as const),
         origin: diagnostic.origin,
         causes: diagnostic.causes,
+        context: diagnostic.context,
       });
     }
     return {

@@ -18,6 +18,7 @@ import { shellQuote } from "../sandbox/shell.ts";
 import type { AgentInstall, AgentInstaller } from "./types.ts";
 import { exactNpmPluginRevision, normalizeExactNpmPlugins, type ExactNpmPlugin } from "./exact-npm-plugins.ts";
 import { createSessionKey } from "./session-key.ts";
+import { reportUpstreamFailure } from "./upstream-failure.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenClaw 的 agent adapter(沙箱型)。
@@ -315,9 +316,12 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
             });
 
             const runJson = parseOpenClawRunJson(res.stdout);
+            const matchesSession = runJson.sessionId === undefined || runJson.sessionId === sessionId;
+            if (matchesSession && runJson.upstreamFailure !== undefined) {
+              reportUpstreamFailure(ctx, "OpenClaw", runJson.upstreamFailure);
+            }
             const transcript =
-              (checkpoint === undefined || checkpoint.exitCode === 0) &&
-              (runJson.sessionId === undefined || runJson.sessionId === sessionId)
+              (checkpoint === undefined || checkpoint.exitCode === 0) && matchesSession
                 ? await sb.runCommand("node", [...reader, "read", checkpoint?.stdout.trim() ?? ""], { signal })
                 : undefined;
             let raw: string | undefined;

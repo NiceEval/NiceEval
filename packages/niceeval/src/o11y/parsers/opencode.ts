@@ -66,7 +66,10 @@ const OpenCodeEvent = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("error"),
     sessionID,
-    error: Schema.Struct({ name: string, data: field(Schema.Struct({ message: string })) }),
+    error: Schema.Struct({
+      name: string,
+      data: field(Schema.Struct({ message: string, statusCode: field(Schema.Unknown) })),
+    }),
   }),
 ]);
 const decodeLine = lineDecoder(OpenCodeEvent);
@@ -128,11 +131,16 @@ export function sessionIdFromOpenCodeTranscript(raw: string | undefined): string
   return undefined;
 }
 
-export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscript {
+type OpenCodeUpstreamFailure = { readonly reason: string | undefined; readonly httpStatus: unknown };
+
+export function parseOpenCodeTranscript(
+  raw: string | undefined,
+): ParsedTranscript & { readonly upstreamFailure: OpenCodeUpstreamFailure | undefined } {
   const events: StreamEvent[] = [];
   const usage: Usage = {};
   const unrecognizedEvents: Record<string, number> = Object.create(null);
   let parseSuccess = true;
+  let upstreamFailure: OpenCodeUpstreamFailure | undefined;
   const toolPart = (part: typeof ToolPart.Type): void => {
     const { tool: name, callID: callId, state } = part;
     let input: JsonValue = state.input === undefined ? {} : state.input;
@@ -227,6 +235,9 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
         if (event.part.tokens !== undefined) addUsage(usage, normalizeUsage("opencode", event.part.tokens));
         break;
       case "error": {
+        if (event.error.name !== undefined || event.error.data?.statusCode !== undefined) {
+          upstreamFailure = { reason: event.error.name, httpStatus: event.error.data?.statusCode };
+        }
         const message = event.error.data?.message ?? event.error.name;
         if (message) events.push({ type: "error", message });
         else parseSuccess = false;
@@ -236,5 +247,12 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
         assertNever(event);
     }
   }
-  return { events, usage: transcriptUsage("opencode", usage), compactions: 0, parseSuccess, unrecognizedEvents };
+  return {
+    events,
+    usage: transcriptUsage("opencode", usage),
+    compactions: 0,
+    parseSuccess,
+    unrecognizedEvents,
+    upstreamFailure,
+  };
 }

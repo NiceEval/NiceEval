@@ -154,19 +154,23 @@ function captureRunnerAttemptSourceSnapshot(
       collection: sourceCollection([
         { collection: diagnosticsNormalization.collection, stage: "runner-diagnostic-sink" },
       ]),
-      segments: diagnosticsNormalization.diagnostics.map((diagnostic, index) => ({
-        segmentId: diagnosticSegmentIds.get(diagnostic.diagnosticId),
-        diagnosticId: diagnostic.diagnosticId,
-        sequence: index + 1,
-        kind: diagnostic.kind,
-        code: diagnostic.code,
-        phase: diagnostic.phase === "collection" ? "attempt.teardown" : diagnostic.phase,
-        turnId: null,
-        summary: diagnostic.summary,
-        causes: diagnostic.causes.map((cause) => ({ code: cause.code, summary: cause.summary })),
-        redaction: receiptDiagnosticRedaction(diagnostic.redaction),
-        sourceFrame: diagnostic.sourceFrame,
-      })),
+      segments: diagnosticsNormalization.diagnostics.map((diagnostic, index) => {
+        const owner = diagnostic.context.find((entry) => entry.kind === "entity" && entry.target.kind === "turn");
+        const turnId = owner?.kind === "entity" && owner.target.kind === "turn" ? owner.target.id : undefined;
+        return {
+          segmentId: diagnosticSegmentIds.get(diagnostic.diagnosticId),
+          diagnosticId: diagnostic.diagnosticId,
+          sequence: index + 1,
+          kind: diagnostic.kind,
+          code: diagnostic.code,
+          phase: diagnostic.phase === "collection" ? "attempt.teardown" : diagnostic.phase,
+          turnId: turnId !== undefined && runtime.conversationTurns.has(turnId) ? turnId : null,
+          summary: diagnostic.summary,
+          causes: diagnostic.causes.map((cause) => ({ code: cause.code, summary: cause.summary })),
+          redaction: receiptDiagnosticRedaction(diagnostic.redaction),
+          sourceFrame: diagnostic.sourceFrame,
+        };
+      }),
     };
     const runnerDiagnostics = yield* decodeReceipt(
       AttemptRunnerDiagnosticsAttachmentSchema,

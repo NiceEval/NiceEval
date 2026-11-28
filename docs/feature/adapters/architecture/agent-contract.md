@@ -73,6 +73,13 @@ Adapter 只负责把行为落进 `events` 单源，`send` 返回的 `Turn` 不�
 
 `SendFailure` 必须携带受理事实 `acceptance: "rejected" | "started" | "unknown"`，并尽可能保存 events、usage、进程状态与正规化后的 `ExternalCause`。只有协议能证明输入未被受理时才写 `rejected`；空事件、非零退出或一句 “retry later” 都不能独自证明未受理。完整分类与重试门见[执行失败分类](../../error-classification/architecture.md)。
 
+### 上游失败诊断 {#upstream-failure-diagnostics}
+
+官方 Adapter 解码到具名上游终止原因时，用 `agent-upstream-failure` 诊断记录 Adapter、Turn ID 和原因。
+协议提供错误码或 HTTP 失败状态时一并记录。`show <locator> execution --json` 可查询这些事实。
+诊断只保存经 Attempt 敏感值规则脱敏的有界字段。
+Adapter 通过诊断接口单向写入这些字段。诊断独立于 Eval 的执行身份。
+
 ## AgentContext
 
 ```ts

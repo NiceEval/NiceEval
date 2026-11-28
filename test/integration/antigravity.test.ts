@@ -215,8 +215,19 @@ test("rejects invalid terminal evidence while retaining accepted events, usage a
   );
   await withAgent(
     () => protocolResult(error, 2),
-    async ({ send }) => {
-      await expect(send()).rejects.toMatchObject({ type: "agent-send-failed", acceptance: "unknown", process: { exitCode: 2 } });
+    async ({ send, diagnostics }) => {
+      await expect(send()).rejects.toMatchObject({
+        type: "agent-send-failed",
+        acceptance: "unknown",
+        process: { exitCode: 2 },
+      });
+      expect(diagnostics).toMatchObject([
+        {
+          code: "agent-upstream-failure",
+          message: "Antigravity upstream failure: error · ERROR",
+          data: { reason: "error", upstreamCode: "ERROR" },
+        },
+      ]);
     },
   );
 });

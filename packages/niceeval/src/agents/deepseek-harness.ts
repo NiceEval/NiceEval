@@ -4,6 +4,7 @@ import { makeSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, TurnEvidenceCoverage } from "../types.ts";
 import { makeSendFailure, normalizeSendFailure } from "../context/send-failures.ts";
+import { reportUpstreamFailure } from "./upstream-failure.ts";
 import { shared } from "./shared.ts";
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import { shell } from "../sandbox/commands.ts";
@@ -219,6 +220,12 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
           }
         }
         const run = parseDeepSeekHarnessRun(res.stdout, res.exitCode);
+        if (run.failureReason !== undefined) {
+          reportUpstreamFailure(ctx, "DeepSeek Harness", {
+            reason: run.failureReason.kind,
+            code: run.failureReason.error?.code,
+          });
+        }
         if (run.status === undefined) {
           return yield* Effect.fail(
             redactSensitiveEvidence(

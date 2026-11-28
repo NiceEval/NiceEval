@@ -23,6 +23,7 @@ import { shared } from "./shared.ts";
 import { excludeFromDiff, installSkills } from "./skills.ts";
 import type { McpHttpServer, McpStdioServer } from "./types.ts";
 import { UnrecognizedAgentEvents } from "./unrecognized-events.ts";
+import { reportUpstreamFailure, upstreamFailureIdentifier } from "./upstream-failure.ts";
 
 const MCP_PATH = ".agents/mcp_config.json";
 const SKILL_DIR = ".agents/skills";
@@ -210,6 +211,12 @@ export function antigravityAgent(config?: AntigravityConfig): SandboxAgent {
         }).pipe(Effect.result);
         const parsed = parseAntigravityPrint(Result.isSuccess(execution) ? execution.success.stdout : stdout.join(""));
         if (parsed.sessionId !== undefined) ctx.session.capture(parsed.sessionId);
+        if (parsed.malformedLine === undefined && parsed.terminal && parsed.terminal.status !== "SUCCESS") {
+          reportUpstreamFailure(ctx, "Antigravity", {
+            reason: upstreamFailureIdentifier(parsed.terminal.finished_reason) ?? parsed.terminal.status,
+            code: parsed.terminal.status,
+          });
+        }
         state.unknownEvents.observe(redactSensitiveEvidence(parsed.unrecognizedEvents, state.sensitiveValues));
         const evidence = { events: parsed.events, usage: parsed.usage };
         const acceptance = parsed.accepted ? "started" : "unknown";

@@ -242,11 +242,11 @@ export function parseDeepSeekHarnessRun(stdout: string, exitCode: number) {
     }
   }
   const status = terminalStatus(exitCode, trustedFinal);
-  if (status === "failed") {
-    const reason = trustedFinal?.reason;
+  const failureReason = status === "failed" ? (trustedFinal?.reason ?? undefined) : undefined;
+  if (failureReason !== undefined) {
     events.push({
       type: "error",
-      message: reason?.error?.message || `DeepSeek Harness ended with reason ${reason?.kind}.`,
+      message: failureReason.error?.message || `DeepSeek Harness ended with reason ${failureReason.kind}.`,
     });
   }
   return {
@@ -254,6 +254,7 @@ export function parseDeepSeekHarnessRun(stdout: string, exitCode: number) {
     accepted,
     events,
     status,
+    failureReason,
     usage: totalUsage(steps),
     usageGap: Array.from(steps.values()).some((step) => step === undefined),
     protocolGap: protocolGap || calls.size > 0,

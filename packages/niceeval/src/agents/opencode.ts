@@ -25,6 +25,7 @@ import type {
   TurnEvidenceCoverage,
 } from "../types.ts";
 import { makeSendFailure, normalizeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
+import { reportUpstreamFailure } from "./upstream-failure.ts";
 
 // OpenCode sandbox adapter。驱动:`opencode run --format json --auto`;
 // 行为轨优先 stdout JSONL,不足时 `opencode export <sessionID>`。
@@ -222,6 +223,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
         if (sessionId) ctx.session.capture(sessionId);
 
         let parsed = parseOpenCodeTranscript(raw);
+        if (parsed.upstreamFailure !== undefined) reportUpstreamFailure(ctx, "OpenCode", parsed.upstreamFailure);
         let hasUnrecognizedEvents = Object.keys(parsed.unrecognizedEvents ?? {}).length > 0;
         const unknown = unknownEvents.get(sb.sandboxId);
         unknown?.observe(parsed.unrecognizedEvents);

@@ -11,6 +11,7 @@ import { notCommandProjection, opaqueCommandProjection } from "../o11y/command-p
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import { AGENT_BASELINE_RECIPE_REVISION, DEFAULT_BUN_VERSION, DEFAULT_OMP_CLI_VERSION } from "./coding-cli-versions.ts";
 import type { AgentArtifactPlatform } from "./types.ts";
+import { reportUpstreamFailure } from "./upstream-failure.ts";
 
 const COMPAT_PROVIDER = "niceeval-compat";
 const API_KEY_ENV = "NICEEVAL_OMP_API_KEY";
@@ -195,6 +196,15 @@ export function ompAgent(config?: OmpConfig): Agent {
         const terminal = nativeEvents.filter(
           (event) => event.type === "agent_end" && event.isTerminal === true && Array.isArray(event.messages),
         );
+        if (stream.failed) {
+          const failedMessage = nativeEvents.findLast(
+            (event) =>
+              event.type === "message_end" &&
+              event.message?.role === "assistant" &&
+              (event.message.stopReason === "error" || event.message.stopReason === "aborted"),
+          );
+          reportUpstreamFailure(ctx, "Oh My Pi", { reason: failedMessage?.message?.stopReason });
+        }
         if (res.exitCode !== 0 || terminal.length !== 1) {
           return yield* Effect.fail(
             makeSendFailure({

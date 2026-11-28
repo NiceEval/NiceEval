@@ -80,6 +80,58 @@ function sendContext(sandbox: Sandbox): SendContext {
   };
 }
 
+// @feature docs/feature/adapters/README.md#tool-projection-and-privacy
+test.each([
+  { exitCode: 0, sessionId: undefined },
+  { exitCode: 1, sessionId: undefined },
+  { exitCode: 1, sessionId: "unrelated-session" },
+])(
+  "OpenClaw attributes upstream failures with exit $exitCode and reported session $sessionId",
+  async ({ exitCode, sessionId }) => {
+    const agent = openClawAgent({ apiKey: "fixture-key" });
+    if (agent.kind !== "sandbox") throw new Error("Expected a Sandbox Agent");
+    const sandbox = transcriptSandbox("/bin/openclaw", async (bin) =>
+      bin === "/bin/openclaw"
+        ? {
+            stdout: JSON.stringify({
+              sessionId,
+              status: "failed",
+              error: { code: "gateway_error", status: 503, message: "provider response body" },
+              text: "partial reply",
+            }),
+            stderr: "",
+            exitCode,
+          }
+        : { stdout: "", stderr: "", exitCode: 1 },
+    );
+    const diagnostics: Parameters<SendContext["diagnostic"]>[0][] = [];
+    const sending = agent.send(
+      { text: "Reply once." },
+      { ...sendContext(sandbox), diagnostic: (input) => diagnostics.push(input) },
+    );
+    if (exitCode === 0) {
+      await expect(sending).resolves.toMatchObject({
+        status: "failed",
+        events: [
+          { type: "message", role: "assistant", text: "partial reply" },
+          { type: "error", message: expect.stringContaining("agent run exited with code 0") },
+        ],
+      });
+    } else {
+      await expect(sending).rejects.toMatchObject({
+        type: "agent-send-failed",
+        acceptance: "started",
+        events: [{ type: "message", role: "assistant", text: "partial reply" }],
+      });
+    }
+    expect(diagnostics).toMatchObject(
+      sessionId === undefined
+        ? [{ code: "agent-upstream-failure", message: "OpenClaw upstream failure: failed · gateway_error · HTTP 503" }]
+        : [],
+    );
+  },
+);
+
 // @feature docs/feature/adapters/README.md#coding-cli-compatibility
 test("OpenClaw reports unavailable evidence when the native session accessor fails", async () => {
   const agent = openClawAgent({ apiKey: "fixture-key" });

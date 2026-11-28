@@ -95,7 +95,12 @@ function extractText(content: typeof Content.Type | undefined): string {
   return content.flatMap((block) => (block.type === "text" && block.text !== undefined ? [block.text] : [])).join("\n");
 }
 
-export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
+export function parseBubTranscriptWithFailure(raw: string | undefined): {
+  readonly transcript: ParsedTranscript;
+  readonly upstreamFailure: { readonly reason: string | undefined; readonly code: string | undefined };
+} {
+  let reason: string | undefined;
+  let code: string | undefined;
   const events: StreamEvent[] = [];
   const usage: Usage = {};
   let compactions = 0;
@@ -184,14 +189,15 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
         }
         const status = data?.status;
         const error = data?.error;
-        const failed =
-          (error !== undefined && error !== false && error !== "") ||
-          (status !== undefined && /^(error|failed|aborted|cancell?ed|timeout)$/i.test(status));
-        if (failed)
+        const failedStatus = status !== undefined && /^(error|failed|aborted|cancell?ed|timeout)$/i.test(status);
+        if (failedStatus) reason = status;
+        if (isBubError(error)) code = error.kind;
+        if ((error !== undefined && error !== false && error !== "") || failedStatus) {
           events.push({
             type: "error",
             message: typeof error === "string" && error ? error : `${String(name)}: ${String(status)}`,
           });
+        }
         break;
       }
       case "anchor": {
@@ -203,6 +209,7 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
         break;
       }
       case "error":
+        code = entry.payload.kind;
         events.push({ type: "error", message: entry.payload.message });
         break;
       case "system":
@@ -212,7 +219,14 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
     }
   }
 
-  return { events, usage: transcriptUsage("bub", usage), compactions, parseSuccess, unrecognizedEvents };
+  return {
+    transcript: { events, usage: transcriptUsage("bub", usage), compactions, parseSuccess, unrecognizedEvents },
+    upstreamFailure: { reason, code },
+  };
+}
+
+export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
+  return parseBubTranscriptWithFailure(raw).transcript;
 }
 
 /** 便捷形态:只要 StreamEvent[]。 */

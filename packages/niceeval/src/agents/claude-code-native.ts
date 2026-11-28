@@ -6,6 +6,8 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { attemptResources } from "../context/attempt-resources.ts";
+import { reportUpstreamFailure, upstreamHttpFailureStatus } from "./upstream-failure.ts";
+import type { SandboxAgentSendContext } from "./types.ts";
 
 type RecordValue = globalThis.Record<string, unknown>;
 type PendingQuestion = {
@@ -34,6 +36,28 @@ type ClaudeState = {
 const slot = createSessionKey<ClaudeState>("claude-code/stream-json-native");
 function record(value: unknown): RecordValue | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as RecordValue) : undefined;
+}
+
+function claudeApiStatus(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  return upstreamHttpFailureStatus(/^API Error:\s*([45][0-9]{2})\b/u.exec(value)?.[1]);
+}
+
+function reportClaudeFailure(ctx: SandboxAgentSendContext, frame: RecordValue, frames: readonly unknown[]): void {
+  const upstream = record(frame.error);
+  const lastAssistantError = frames
+    .map(record)
+    .findLast((candidate) => candidate?.type === "assistant" && typeof candidate.error === "string")?.error;
+  const errors: readonly unknown[] = Array.isArray(frame.errors) ? frame.errors : [];
+  const httpStatus =
+    upstreamHttpFailureStatus(upstream?.status) ??
+    errors.map(claudeApiStatus).find((status) => status !== undefined) ??
+    claudeApiStatus(frame.result);
+  reportUpstreamFailure(ctx, "Claude Code", {
+    reason: frame.subtype,
+    code: upstream?.type ?? upstream?.code ?? lastAssistantError,
+    httpStatus,
+  });
 }
 
 async function resolveBin(ctx: SandboxAgentContext): Promise<string> {
@@ -257,7 +281,7 @@ function pendingFrom(frame: RecordValue, sessionId: string): Pending | undefined
   };
 }
 
-async function drive(state: ClaudeState, from: number, ctx: SandboxAgentContext): Promise<Turn> {
+async function drive(state: ClaudeState, from: number, ctx: SandboxAgentSendContext): Promise<Turn> {
   for (;;) {
     const scanFrom = state.cursor;
     const receipt = await state.driver.waitFor(
@@ -322,6 +346,7 @@ async function drive(state: ClaudeState, from: number, ctx: SandboxAgentContext)
       if (candidate) captureSession(state, candidate, ctx);
     }
     if (frame.is_error === true) {
+      reportClaudeFailure(ctx, frame, frames);
       throw makeSendFailure({
         acceptance: sendAcceptanceFromEvents(parsed.events),
         message: String(frame.result ?? frame.subtype ?? "Claude Code turn failed"),
@@ -342,7 +367,7 @@ async function drive(state: ClaudeState, from: number, ctx: SandboxAgentContext)
 
 export async function sendClaudeCodeNative(
   input: { readonly text: string; readonly responses?: readonly InputResponse[] | undefined },
-  ctx: SandboxAgentContext,
+  ctx: SandboxAgentSendContext,
   args: readonly string[],
   env: Readonly<Record<string, string>>,
 ): Promise<Turn> {

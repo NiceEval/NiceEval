@@ -31,6 +31,8 @@ import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failu
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import { DEFAULT_BUB_VERSION } from "./coding-cli-versions.ts";
+import { parseBubTranscriptWithFailure } from "../o11y/parsers/bub.ts";
+import { reportUpstreamFailure } from "./upstream-failure.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // bub 的 agent adapter(沙箱型)。
@@ -318,8 +320,10 @@ ${last}`);
 
               const tape = await sb.readText(path).catch(() => undefined);
               // A resumed session keeps its earlier entries in the file. Return this send's evidence.
-              const raw = priorTape !== undefined && tape?.startsWith(priorTape) ? tape.slice(priorTape.length) : tape;
-              const parsed = shared.parseBub(raw);
+              const appendedTape =
+                priorTape !== undefined && tape?.startsWith(priorTape) ? tape.slice(priorTape.length) : undefined;
+              const raw = appendedTape ?? tape;
+              const { transcript: parsed, upstreamFailure } = parseBubTranscriptWithFailure(raw);
               info.unknown.observe(parsed.unrecognizedEvents);
               const events = [...parsed.events];
               let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
@@ -340,6 +344,9 @@ ${last}`);
                 turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
               }
               if (res.exitCode !== 0) {
+                if (resumedSession === undefined || appendedTape !== undefined) {
+                  reportUpstreamFailure(ctx, "Bub", upstreamFailure);
+                }
                 throw makeSendFailure({
                   acceptance: sendAcceptanceFromEvents(events),
                   message: shared.diagnoseFailure(res, parsed.events, raw),

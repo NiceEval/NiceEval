@@ -8,7 +8,7 @@ const unsupported = () => {
   throw new Error("Unexpected Sandbox operation");
 };
 
-async function send(result: CommandResult) {
+async function send(result: CommandResult, diagnostic: Parameters<SandboxAgent["send"]>[1]["diagnostic"] = noop) {
   const sandbox: Sandbox = {
     sandboxId: "omp-protocol",
     workdir: "/workspace",
@@ -46,7 +46,7 @@ async function send(result: CommandResult) {
     turnId: "omp-protocol-turn" as SendContext["turnId"],
     session: { capture: noop, get: () => undefined, set: noop, take: () => undefined },
     progress: noop,
-    diagnostic: noop,
+    diagnostic,
     log: noop,
   };
   await agent.before?.(sandbox, { ...ctx, reportInstallation: noop });
@@ -96,6 +96,37 @@ test("OMP completes a JSONL Turn only when exit succeeds and exactly one end is 
         [[{ type: "agent_end", messages: [], isTerminal: true }], 1],
       ],
       numRuns: 35,
+    },
+  );
+});
+
+// @feature docs/feature/adapters/README.md#tool-projection-and-privacy
+test("OMP retains the assistant's named failed stop reason without copying its error text", async () => {
+  await fc.assert(
+    fc.asyncProperty(fc.constantFrom("aborted", "error"), fc.string(), async (stopReason, errorMessage) => {
+      const stdout = [
+        { ...assistantEnd, message: { ...assistantEnd.message, stopReason, errorMessage } },
+        { type: "agent_end", isTerminal: true, messages: [] },
+      ]
+        .map((frame) => JSON.stringify(frame))
+        .join("\n");
+      const diagnostics: Parameters<Parameters<SandboxAgent["send"]>[1]["diagnostic"]>[0][] = [];
+      const turn = await send({ exitCode: 0, stdout, stderr: "" }, (value) => diagnostics.push(value));
+      expect(turn.status).toBe("failed");
+      expect(diagnostics).toMatchObject([
+        {
+          code: "agent-upstream-failure",
+          message: `Oh My Pi upstream failure: ${stopReason}`,
+          data: { reason: stopReason },
+        },
+      ]);
+    }),
+    {
+      examples: [
+        ["aborted", ""],
+        ["error", "provider body"],
+      ],
+      numRuns: 12,
     },
   );
 });
