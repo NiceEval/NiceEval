@@ -16,7 +16,6 @@ const SECONDARY_ERROR_TAIL = "request req_docker_secondary_987";
 // @feature docs/feature/experiments/README.md
 // @regression memory/human-short-error-and-score-summary.md
 // @regression memory/pre-dispatch-run-diagnostics.md
-// @issue docs/issues/attempt-error-tail.md
 
 test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属 details", async () => {
   await cliE2E.case(
