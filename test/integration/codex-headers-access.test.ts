@@ -1,7 +1,10 @@
 import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import fc from "fast-check";
 import { shared } from "niceeval/adapter";
+import type { InspectionSuccessDocumentFor } from "niceeval/inspection";
+import { withInspectionQuery } from "niceeval/inspection/host";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   noSandboxBackendCapabilities,
@@ -20,6 +23,12 @@ import {
 } from "./fixtures/judge-harness/harness.ts";
 
 const registerProcess = Symbol.for("niceeval.test.codex-headers-access");
+
+const usageCases = [
+  { name: "no-base", coverage: "complete", firstCache: 60, lastCache: 90 },
+  { name: "custom-headers", coverage: "partial", firstCache: 70, lastCache: 95 },
+  { name: "cf-env-fallback", coverage: "unavailable" },
+] as const;
 
 const patches = [
   { path: "edited.txt", kind: { type: "update", move_path: null }, status: "completed" },
@@ -67,12 +76,48 @@ function startCodexAppServer(argv: readonly string[]): ManagedProcess {
       if (frame.method === "turn/start") {
         emit({ id: frame.id, result: { turn: { id: "fixture-turn" } } });
         const params = { threadId: "fixture-session", turnId: "fixture-turn" };
+        const usageCase = usageCases.find(({ name }) => name === frame.params.input[0].text);
+        if (usageCase === undefined) throw new Error("Unexpected Codex fixture input");
+        const tokens = (
+          inputTokens: number,
+          cachedInputTokens: number,
+          outputTokens: number,
+          reasoningOutputTokens: number,
+        ) => ({
+          inputTokens,
+          cachedInputTokens,
+          outputTokens,
+          reasoningOutputTokens,
+          totalTokens: inputTokens + outputTokens,
+        });
+        const update = (last: ReturnType<typeof tokens>, total: ReturnType<typeof tokens>) =>
+          emit({
+            method: "thread/tokenUsage/updated",
+            params: { ...params, tokenUsage: { last, total, modelContextWindow: null } },
+          });
+        if (usageCase.coverage !== "unavailable") {
+          const first = tokens(100, usageCase.firstCache, 10, 1);
+          update(first, first);
+          update(first, first);
+        }
         for (const { path, kind, status } of patches) {
           const item = { id: path, type: "fileChange", changes: [{ path, kind, diff: "fixture diff" }] };
           emit({ method: "item/started", params: { ...params, item: { ...item, status: "inProgress" } } });
           emit({ method: "item/completed", params: { ...params, item: { ...item, status } } });
         }
-        emit({ method: "item/completed", params: { ...params, item: { id: "msg-1", type: "agentMessage", text: "ok" } } });
+        if (usageCase.coverage === "partial") {
+          emit({ method: "error", params: { ...params, willRetry: true, error: { message: "Reconnecting" } } });
+        }
+        if (usageCase.coverage !== "unavailable") {
+          update(
+            tokens(125, usageCase.lastCache, 15, 1),
+            tokens(225, usageCase.firstCache + usageCase.lastCache, 25, 2),
+          );
+        }
+        emit({
+          method: "item/completed",
+          params: { ...params, item: { id: "msg-1", type: "agentMessage", text: "ok" } },
+        });
         emit({ method: "turn/completed", params: { ...params, turn: { id: "fixture-turn", status: "completed" } } });
       } else {
         emit({ id: frame.id, result: { thread: { id: "fixture-session" } } });
@@ -85,7 +130,10 @@ function startCodexAppServer(argv: readonly string[]): ManagedProcess {
 }
 
 function codexSandboxSource() {
-  return HOST_SANDBOX_SOURCE
+  return HOST_SANDBOX_SOURCE.replace(
+    "targetPlatform: hostPlatform(),",
+    'targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },',
+  )
     .replace(
       "  return {\n    sandboxId:",
       `
@@ -147,6 +195,8 @@ const SCENARIOS: readonly Scenario[] = [
 
 describe("codexAgent headers and Cloudflare Access config generation and redaction", () => {
   const results = new Map<string, { configToml: string; commandsText: string; passed: boolean }>();
+  const usageByCase = new Map<string, InspectionSuccessDocumentFor<"attempt.usage">["usage"]>();
+  let executionIdentityDigest: string | undefined;
   const projects: string[] = [];
   let patchEvidence: { tool: string; input: unknown; outcome: string | undefined }[] = [];
 
@@ -154,11 +204,14 @@ describe("codexAgent headers and Cloudflare Access config generation and redacti
     Reflect.set(process, registerProcess, (sandbox: Sandbox) => {
       registerSandboxCapabilities(sandbox, {
         ...noSandboxBackendCapabilities,
-        managedProcess: supportedBackendCapability(async (input: ManagedProcessStart) => startCodexAppServer(input.argv)),
+        managedProcess: supportedBackendCapability(async (input: ManagedProcessStart) =>
+          startCodexAppServer(input.argv),
+        ),
       });
     });
 
     for (const scenario of SCENARIOS) {
+      const exerciseUsage = usageCases.some(({ name }) => name === scenario.name);
       vi.stubEnv("CODEX_API_KEY", "codex-fixture-key-123");
       vi.stubEnv("CODEX_BASE_URL", undefined);
       vi.stubEnv("CF_ACCESS_CLIENT_ID", scenario.cfEnv?.id);
@@ -178,16 +231,15 @@ describe("codexAgent headers and Cloudflare Access config generation and redacti
         evals: {
           "check-config.eval.ts": `
             import { writeFile } from "node:fs/promises";
-            import { resolve } from "node:path";
             import { defineEval } from "niceeval";
             import { includes } from "niceeval/expect";
 
             export default defineEval({
               async test(t) {
                 const res = await t.sandbox.runShell("cat ~/.codex/config.toml");
-                await writeFile(resolve(import.meta.dirname, "..", "config-toml.txt"), res.stdout, "utf8");
+                await writeFile(process.env.NICEEVAL_CODEX_FIXTURE_CONFIG_OUTPUT, res.stdout, "utf8");
                 t.check(res.stdout, includes('model = "gpt-5.4"')).label("model-written");
-                ${scenario.name === "no-base" ? 'await t.send("Exercise Codex native patch events");' : ""}
+                ${exerciseUsage ? `await t.send(${JSON.stringify(scenario.name)});` : ""}
               },
             });
           `,
@@ -202,20 +254,29 @@ describe("codexAgent headers and Cloudflare Access config generation and redacti
         },
       });
       projects.push(cwd);
+      const configPath = join(cwd, "config-toml.txt");
+      vi.stubEnv("NICEEVAL_CODEX_FIXTURE_CONFIG_OUTPUT", configPath);
 
       const run = await planAndRunExperiment(cwd, "run", { rerun: "all" });
       const slot = run.run?.slots[0];
       if (slot?.publication.state !== "published") throw new Error(`Missing slot for ${scenario.name}`);
       const locator = slot.publication.attemptLocator;
+      if (exerciseUsage) {
+        const usage = await withInspectionQuery(
+          { cwd },
+          async (query) => (await query.inspect({ kind: "attempt.usage", locator })).usage,
+        );
+        usageByCase.set(scenario.name, usage);
+      }
 
       const { readFile } = await import("node:fs/promises");
-      const { join } = await import("node:path");
-      const configToml = await readFile(join(cwd, "config-toml.txt"), "utf8");
+      const configToml = await readFile(configPath, "utf8");
       const entries = await readAssertionsList(cwd, locator);
       const [execDoc] = await showJsonDocuments(cwd, [locator, "execution"]);
       const exec = narrowInspectionSuccess(execDoc!, "attempt.trace");
       if (!exec.success) throw new Error(exec.reason);
       if (scenario.name === "no-base") {
+        executionIdentityDigest = slot.executionIdentityDigest;
         const items = exec.value.trace.conversation.items;
         patchEvidence = items.flatMap((item) => {
           if (item.kind !== "tool-call" || item.toolOccurrenceId === undefined) return [];
@@ -247,6 +308,47 @@ describe("codexAgent headers and Cloudflare Access config generation and redacti
     Reflect.deleteProperty(process, registerProcess);
     vi.unstubAllEnvs();
     await Promise.all(projects.map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  // @feature docs/feature/adapters/README.md#usage-accounting
+  // @issue docs/issues/codex-agent-send-usage-counts-only-last-request.md
+  test("preserves Codex usage and marks incomplete receipt coverage", () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...usageCases), (sample) => {
+        const usage = usageByCase.get(sample.name);
+        expect(usage?.state).toBe(sample.coverage === "complete" ? "complete" : "partial");
+        if (sample.coverage === "unavailable") {
+          expect(usage?.turns.map(({ coverage }) => coverage)).toEqual([
+            { state: "unavailable", reason: "codex-token-usage-not-reported" },
+          ]);
+          expect(usage?.totals.requests).toEqual({ state: "unavailable", value: null, observationCount: 0 });
+        } else {
+          const quantityState = sample.coverage === "partial" ? "partial" : "available";
+          expect(usage?.totals).toMatchObject({
+            requests: { state: quantityState, value: 2, observationCount: 2 },
+            inputTokens: { state: quantityState, value: 225 - sample.firstCache - sample.lastCache },
+            outputTokens: { state: quantityState, value: 25 },
+          });
+          expect(usage?.turns.map(({ coverage }) => coverage)).toEqual([
+            sample.coverage === "partial"
+              ? { state: "partial", reason: "codex-native-retry-usage-not-reported" }
+              : { state: "complete" },
+          ]);
+        }
+        expect(usage?.modelGroups).toMatchObject({
+          basis: "reported-sends",
+          state: "unavailable",
+          reason: "physical-call-identity-not-recorded",
+        });
+        expect(usage?.totalCosts).toMatchObject({ state: "unavailable", values: [] });
+      }),
+      { seed: 171, numRuns: 8, examples: [[usageCases[2]], [usageCases[1]]] },
+    );
+  });
+
+  // @feature docs/feature/experiments/README.md#partial-reuse
+  test("preserves the execution identity recorded before the Codex usage coverage correction", () => {
+    expect(executionIdentityDigest).toBe("4f1fd948d36b81d1de7285e04b7e47d1ab5d53fa65dd4cef378da90dc82b5b1e");
   });
 
   // @feature docs/feature/adapters/README.md#protocol-normalization

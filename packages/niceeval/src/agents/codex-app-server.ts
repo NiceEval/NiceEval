@@ -222,6 +222,7 @@ function evidence(
   frames: readonly unknown[],
   parseSuccess: boolean,
   events: readonly StreamEvent[],
+  usage: Usage | undefined,
 ): TurnEvidenceCoverage {
   if (frames.length === 0) {
     const reason = "Codex app-server protocol output was unavailable; tool trace was not observed.";
@@ -235,7 +236,15 @@ function evidence(
     const reason = "Some Codex app-server protocol frames could not be parsed.";
     return { events: { status: "partial", reason }, actions: { status: "partial", reason } };
   }
-  return unclassifiedToolActionsCoverage(events) ?? {};
+  const coverage = unclassifiedToolActionsCoverage(events) ?? {};
+  const retried = frames.some((value) => {
+    const frame = record(value);
+    return frame?.method === "error" && record(frame.params)?.willRetry === true;
+  });
+  if (retried) return { ...coverage, usage: { status: "partial", reason: "codex-native-retry-usage-not-reported" } };
+  if (usage === undefined)
+    return { ...coverage, usage: { status: "unavailable", reason: "codex-token-usage-not-reported" } };
+  return coverage;
 }
 
 async function resolveBin(sandbox: SandboxAgentContext["sandbox"]): Promise<string> {
@@ -395,7 +404,7 @@ function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor
       ),
     ],
     usage: parsed.usage,
-    evidenceCoverage: evidence(frames, true, parsed.events),
+    evidenceCoverage: evidence(frames, true, parsed.events, parsed.usage),
   };
 }
 
@@ -436,7 +445,7 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, 
     status: status === "failed" ? "failed" : "completed",
     events: parsed.events,
     usage: parsed.usage,
-    evidenceCoverage: evidence(frames, true, parsed.events),
+    evidenceCoverage: evidence(frames, true, parsed.events, parsed.usage),
   };
 }
 
