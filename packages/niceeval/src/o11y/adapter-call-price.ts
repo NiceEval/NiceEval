@@ -104,7 +104,10 @@ function tokensFor(call: AdapterUsageCall, bucket: (typeof AdapterCallPriceBucke
 }
 
 /** @internal Shared rates for the four mutually exclusive token buckets. */
-export function rateFor(profile: SelectedProfile, bucket: (typeof AdapterCallPriceBuckets)[number]): string | null {
+export function rateFor(
+  profile: Pick<SelectedProfile, "ratesPerMTok">,
+  bucket: (typeof AdapterCallPriceBuckets)[number],
+): string | null {
   switch (bucket) {
     case "input":
       return profile.ratesPerMTok.input;

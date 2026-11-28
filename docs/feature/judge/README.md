@@ -65,3 +65,7 @@ TypeSafe System One 使用自己的 `/systemone` 协议。它支持 `score`、`c
 ### 预检与重试 {#precheck-and-retry}
 
 观察实际发送、Attempt 和反馈。预检失败的相关 Attempt 各自结算，其他工作仍可调度，重试等待时间遵守有效边界。动作包括变换凭据、响应状态、Retry-After 与取消时点。
+
+### 费用来源 {#usage-price-source}
+
+观察已发布调用的费用、价证和缺口。供应商报告费用优先，配置价其次，内置目录再次。动作包括变换请求模型名、配置费率和供应商报告金额。

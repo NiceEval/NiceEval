@@ -15,7 +15,16 @@ import {
 } from "../record/family/adapter-usage/pricing.ts";
 import { configuredProfile, rateFor } from "./adapter-call-price.ts";
 
-function tokensFor(call: JudgeUsageCall, bucket: (typeof AdapterCallPriceBuckets)[number]): number | null {
+type CallPriceTokens = Pick<JudgeUsageCall, "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheWriteTokens">;
+type JudgePriceReceiptInput = typeof JudgePriceReceiptSchema.Encoded;
+type JudgePricingProfile = JudgePriceReceipt["pricing"];
+export type BuiltinCallPriceProfile = Pick<JudgePricingProfile, "basis" | "currency" | "requestModel" | "selector"> &
+  Parameters<typeof rateFor>[0] & {
+    readonly match: "builtin-catalog";
+    readonly source: Omit<Extract<JudgePricingProfile["source"], { kind: "builtin-catalog" }>, "profileDigest">;
+  };
+
+function tokensFor(call: CallPriceTokens, bucket: (typeof AdapterCallPriceBuckets)[number]): number | null {
   switch (bucket) {
     case "input":
       return call.inputTokens;
@@ -28,14 +37,35 @@ function tokensFor(call: JudgeUsageCall, bucket: (typeof AdapterCallPriceBuckets
   }
 }
 
+export function estimateCallPrice(tokens: CallPriceTokens, profile: Parameters<typeof rateFor>[0]) {
+  const charges: JudgePriceReceiptInput["charges"][number][] = [];
+  const missing: JudgePriceReceipt["missing"][number][] = [];
+  for (const bucket of AdapterCallPriceBuckets) {
+    const count = tokensFor(tokens, bucket);
+    const rate = rateFor(profile, bucket);
+    if (count === null) missing.push({ bucket, reason: "tokens-unknown" });
+    else if (count === 0) charges.push({ bucket, tokens: count, ratePerMTok: rate, amount: "0" });
+    else if (rate === null) missing.push({ bucket, reason: "rate-unknown" });
+    else
+      charges.push({
+        bucket,
+        tokens: count,
+        ratePerMTok: rate,
+        amount: multiplyCanonicalDecimalPerMillion(rate, count),
+      });
+  }
+  return { charges, missing, amount: addCanonicalDecimals(charges.map((charge) => charge.amount)) };
+}
+
 export function createJudgeCallPriceReceipts(
   calls: readonly JudgeUsageCall[],
   pricing: Readonly<Record<string, PriceOverride>> | undefined,
+  builtinPrice?: (model: string) => BuiltinCallPriceProfile | undefined,
 ): readonly JudgePriceReceipt[] {
   return calls.flatMap((call): readonly JudgePriceReceipt[] => {
     // A reported zero is a complete reported observation, not a missing price.
     if (call.cost !== null) return [];
-    const selected = configuredProfile(call.requestModel, pricing);
+    const selected = configuredProfile(call.requestModel, pricing) ?? builtinPrice?.(call.requestModel);
     if (selected === undefined) return [];
     const digestInput = {
       basis: selected.basis,
@@ -46,17 +76,7 @@ export function createJudgeCallPriceReceipts(
       match: selected.match,
       ratesPerMTok: selected.ratesPerMTok,
     };
-    const charges: Array<Record<string, unknown>> = [];
-    const missing: Array<Record<string, unknown>> = [];
-    for (const bucket of AdapterCallPriceBuckets) {
-      const tokens = tokensFor(call, bucket);
-      const rate = rateFor(selected, bucket);
-      if (tokens === null) missing.push({ bucket, reason: "tokens-unknown" });
-      else if (tokens === 0) charges.push({ bucket, tokens, ratePerMTok: rate, amount: "0" });
-      else if (rate === null) missing.push({ bucket, reason: "rate-unknown" });
-      else
-        charges.push({ bucket, tokens, ratePerMTok: rate, amount: multiplyCanonicalDecimalPerMillion(rate, tokens) });
-    }
+    const { charges, missing, amount } = estimateCallPrice(call, selected);
     if (charges.length === 0) return [];
     const decoded = Schema.decodeUnknownResult(
       JudgePriceReceiptSchema,
@@ -65,7 +85,7 @@ export function createJudgeCallPriceReceipts(
       kind: "judge-call-price-estimate",
       callId: call.callId,
       state: missing.length === 0 ? "complete" : "partial",
-      amount: addCanonicalDecimals(charges.map((charge) => String(charge.amount))),
+      amount,
       currency: "USD",
       source: { kind: "estimated", id: selected.source.id },
       pricing: {

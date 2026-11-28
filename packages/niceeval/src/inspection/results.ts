@@ -2,6 +2,7 @@ import { RunPluginIdentitySchema } from "../record/model/run-context.ts";
 import { projectLifecyclePhase } from "./lifecycle.ts";
 import { RUN_ACTIVITY_PHASES } from "../record/family/protocol-values.ts";
 import { AttemptNotesSchema, AttemptNoteSchema } from "../record/family/attempt-note/schema.ts";
+import { SimulatedUserCostSummarySchema } from "../record/family/attempt-cost/schema.ts";
 import { CacheReadReportSchema } from "../o11y/cache-read.ts";
 import * as Schema from "effect/Schema";
 import {
@@ -1233,14 +1234,7 @@ const CostGapSchema = Schema.Struct({
 export type CostGap = Schema.Schema.Type<typeof CostGapSchema>;
 const TotalUsageCostsSchema = Schema.Struct({
   // Inspection JSON observes key presence and cannot encode an explicit undefined value.
-  simulatedUser: Schema.optionalKey(
-    Schema.Struct({
-      source: Schema.Literal("simulated-user"),
-      state: Schema.Literals(["complete", "partial", "unpriced"]),
-      amountUSD: Schema.NullOr(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
-      calls: NonNegativeSafeIntegerSchema,
-    }),
-  ),
+  simulatedUser: Schema.optionalKey(SimulatedUserCostSummarySchema),
   state: Schema.Literals(["complete", "partial", "unavailable"]),
   values: Schema.Array(
     Schema.Struct({
@@ -1329,6 +1323,7 @@ const JudgeUsageUnavailableSchema = Schema.Union([
 const JudgeUsageSummaryFields = {
   state: Schema.Literals(["complete", "partial"]),
   coverage: Schema.Literal("physical-transmissions"),
+  builtinCatalogCalls: Schema.optionalKey(NonNegativeSafeIntegerSchema),
   collection: CollectionStateSchema,
   totals: Schema.Struct({
     requests: ModelGroupTokenTotalSchema,
@@ -1346,6 +1341,8 @@ const JudgeUsageAvailableSummarySchema = Schema.Struct(JudgeUsageSummaryFields).
       requests.value === requests.observationCount &&
       requests.state === (usage.state === "complete" ? "available" : "partial") &&
       usage.totals.costs.totalCalls === requests.value &&
+      (usage.builtinCatalogCalls ?? 0) <=
+        usage.totals.costs.values.reduce((count, value) => count + value.estimatedCalls, 0) &&
       (usage.state === "complete" || usage.totals.costs.state !== "complete") &&
       [usage.totals.inputTotalTokens, usage.totals.outputTokens, usage.totals.totalTokens].every(
         (total) =>
@@ -1378,6 +1375,7 @@ const JudgeUsageSchema = Schema.Union([
         Schema.is(JudgeUsageAvailableSummarySchema)({
           state: usage.state,
           coverage: usage.coverage,
+          ...(usage.builtinCatalogCalls === undefined ? {} : { builtinCatalogCalls: usage.builtinCatalogCalls }),
           collection: usage.collection,
           totals: usage.totals,
         }) &&

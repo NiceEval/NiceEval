@@ -104,7 +104,9 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 - 每次已准入的 `reply` 持久化一条模拟用户执行活动：所回答的 Turn、模型实际收到的提问、提交的回答、请求与响应、耗时与失败原因。失败且未发送下一轮时也保留该活动。
 - `show @<locator> execution` 在源 Turn 之后、回答驱动的新 Turn 之前显示它。活动使用独立 producer / actor，不把 pi 工具、内部历史、压缩或模型用量归入被测 Agent 的事件、工具断言或 `t.trace`。
 - `show @<locator> <stable-id>` 经 `attempt.trace.detail` 读取封存证据，展开模拟用户的 pi 对话（收到的提问、assistant 消息与提交）；分页与容量限制沿用 Inspection，不从宿主现场重建。审计不包含凭据。
-- 模型用量不进入 Judge 用量账本，也不进入 `t.usage`：模拟用户的调用不是 Assertion，不能伪造 entry 去满足账本关联。每次 `reply` 的执行活动自带用量：pi 报告的每条 assistant 消息与压缩摘要的 input / output tokens，以及按 Judge Provider 显式估价得到的金额（没有估价时为 unpriced）；失败请求的用量同样保留。
+- 模型用量不进入 Judge 用量账本，也不进入 `t.usage`：模拟用户的调用不是 Assertion，不能伪造 entry 去满足账本关联。每次 `reply` 的执行活动自带用量：pi 报告的每条 assistant 消息与压缩摘要都保留 input 和 output tokens，失败请求也保留已取得的用量。
+  费用优先采用供应商报告金额（含零），其次使用配置费率，最后查[内置目录](../../judge/architecture.md#计价)。
+  审计保存计价来源。内置来源记录目录 ID、快照时间和匹配键。
 - Attempt 的费用汇总把模拟用户作为独立费用类别 `simulated-user` 计入，和 application、judge 并列显示；未使用模拟用户的 Attempt 没有这个类别。
 - 不给每个 Eval 单独增加身份输入。instructions 写在 Eval 源码里，随源码闭包进入 Eval 指纹；生效的 Judge runtime 已经属于既有配置身份，换模型照常让旧结果失效。未使用模拟用户的 Eval 身份不变。
 - 模拟用户的系统提示模板、`reply_to_agent` schema、回答语义与失败分类属于 NiceEval 运行时行为，只进入使用模拟用户的 Eval 的身份：源码闭包出现 `defineSimulatedUser(` 或 `.simulatedUser(` 时，身份载荷追加 `simulatedUser: { behavior, piCodingAgent, piAi }`，未使用者的载荷逐字不变。改变上述行为时提高 `behavior`，不更换全局 domain。`behavior` 从 1 开始，对应按失败发生在哪一层分类的版本；此前没有这个字段的模拟用户结果因此失效，这是预期的行为变化。

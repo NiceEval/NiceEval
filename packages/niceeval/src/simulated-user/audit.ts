@@ -5,11 +5,29 @@ import type { AdapterExecutionTraceCollector } from "../runner/adapter-execution
 import { displayTextHasForbiddenCharacter } from "../record/family/execution-traces/schema.ts";
 
 const Count = Schema.Number.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0));
+const SnapshotTime = Count.check(Schema.isGreaterThan(0));
 export const SimulatedUserGenerationSchema = Schema.Struct({
   kind: Schema.Literals(["turn", "compaction"]),
   inputTokens: Schema.NullOr(Count),
   outputTokens: Schema.NullOr(Count),
   costUSD: Schema.NullOr(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+  priceSource: Schema.optionalKey(
+    Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("reported"), id: Schema.String }),
+      Schema.Struct({
+        kind: Schema.Literal("configured-profile"),
+        id: Schema.String,
+        asOf: Schema.NullOr(SnapshotTime),
+        selector: Schema.String,
+      }),
+      Schema.Struct({
+        kind: Schema.Literal("builtin-catalog"),
+        id: Schema.String,
+        asOf: SnapshotTime,
+        selector: Schema.String,
+      }),
+    ]),
+  ),
 });
 export type SimulatedUserGeneration = Schema.Schema.Type<typeof SimulatedUserGenerationSchema>;
 export const SimulatedUserActivitySchema = Schema.Struct({
@@ -98,11 +116,7 @@ export async function captureSimulatedUserActivity(
           sourceTurnId: activity.sourceTurnId,
           targetTurnId: activity.targetTurnId,
           durationMs: activity.durationMs,
-          usage: activity.generations.map((generation) => ({
-            inputTokens: generation.inputTokens,
-            outputTokens: generation.outputTokens,
-            costUSD: generation.costUSD,
-          })),
+          usage: activity.generations.map(({ kind: _kind, ...usage }) => usage),
         },
         evidence: [
           {

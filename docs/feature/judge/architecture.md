@@ -274,7 +274,7 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 
 ### 用量、审计与预算
 
-- 用量直接取 pi coding agent 会话报告的 usage（含压缩摘要请求），按受管 Provider 的显式估价计价，记入 Judge 用量（operation `agent`）。HTTP 尝试另存安全的状态事实，形状见[受管 pi 传输](library.md#managed-pi-transport)；没有 usage 的尝试不伪造 token 或费用。
+- 用量直接取 pi coding agent 会话报告的 usage（含压缩摘要请求），按[计价规则](#计价)计算费用，记入 Judge 用量（operation `agent`）。HTTP 尝试另存安全的状态事实，形状见[受管 pi 传输](library.md#managed-pi-transport)；没有 usage 的尝试不伪造 token 或费用。
 - 审计保存 pi session 的完整内容：开场消息、每条 user / assistant 消息、工具调用参数与有限结果、pi 的压缩条目（摘要文本、压缩前 token），以及每道题的提交。它就是评审实际看到的对话，不是另行重建的请求副本。
 - `maxTurns` 计每道题的 assistant 轮次，替代 maxCalls。整次会话的期限取定义的 `timeoutMs` 与 Attempt 剩余期限的较小值。
 - 审计不设字节上限，也不计入 Attempt 的文字材料与 audit 总账：完整的 pi 会话经受管 Content 分块保存，读取由 Inspection 分页。只有存储写入本身失败才影响结果，归为 errored；不因会话大小判 unavailable，也不截断对话。
@@ -639,16 +639,19 @@ TypeSafe systemone 读取 usage.input_tokens 为 inputTotalTokens，usage.output
 金额允许有限非负 number 或 canonical decimal string，number 先走既有精确定点转换；reported 0 永远优先。
 这些路径以协议资料和真实 fixture 为证，不按 hostname 或模型前缀推导 provider。
 
-### 显式估价
+### 计价
 
-复用 defineConfig.pricing 的 selector、rates、digest、source、缺桶与定点算法，按 requestModel 选择并封存证明。
-选择请求模型表示作者明确接受该配置价格基准，不宣称回退模型实际售价。不得使用未封存的内置价格或读取时重新定价。
+用量入账时依次选择供应商报告费用、`defineConfig.pricing` 的显式估价、内置目录估价。报告的零费用也优先。
+按 `requestModel` 匹配配置表中的精确键或 `provider/*`。查内置目录时依次匹配原名、去供应商前缀的名称、再去日期后缀的名称。
+内置目录已为 Agent 用量和上下文窗口提供模型数据。Judge 缺价会使批次费用系统性低估，目录可补齐已有费率的调用。
 
-Judge validator 将 proof.pricing.requestModel 绑定 call.requestModel，不能沿用应用 validator 与 call.model 的比较。
-每 call 至多一条 proof，存在 reported cost 时禁止同 call 的 estimate；proof bucket 与已证明的互斥 token 逐项对应。
+每个调用至多一条价证。Judge 价证的 `pricing.requestModel` 必须等于调用的 `requestModel`。
+配置价证保留 `configured-profile` 来源。内置价证的 `pricing.source.kind` 为 `builtin-catalog`，记录目录来源与快照时间。
+两者都保存命中的 `selector`、分桶费率和价格摘要。内置价证以 `builtin-catalog` 标明匹配方式。
+费率描述所选目录或配置的基准价格，实际服务模型仍由供应商回执证明。
 
-缺 reported 才估价；缺桶或缺费率保留 partial，不能用 known subtotal 通过预算。已有 reported 不追加估价。
-内部共用纯金额/分桶算法，Judge proof kind 为 judge-call-price-estimate，应用 proof kind 和历史字节不变。
+计价使用已证明的互斥 token 桶和定点金额。缺桶或缺费率保留部分估价，已知小计不能用来通过预算判断。
+读取只消费已封存价证。目录内容和价证不进入 `executionIdentityDigest`。新增来源沿用现有 Record 格式。
 
 ### 容量与封存
 
@@ -658,7 +661,7 @@ collector 使用 defineRecordAttachment 正式编码通道。账本不设物理�
 只有存储写入本身失败使账本无法封存，这时所属 Attempt 显式失败，不发布缺少已发生费用的账本。
 新的已执行 Attempt 即使创建应用失败也发布空账本；未执行或跳过的 Attempt 不虚构 collector。
 
-费用完整只表示已登记 inference 回执或显式估价范围内完整，不是账户账单；网关附加服务费不属于该投影。
+费用完整只表示已登记 inference 回执或已封存估价范围内完整，不是账户账单；网关附加服务费不属于该投影。
 响应映射只依赖明确协议与真实回执，不按 hostname 或模型前缀推导 Provider。
 公共投影、预览与总计见 [Inspection](../inspection/architecture.md#judge-用量投影)。
 

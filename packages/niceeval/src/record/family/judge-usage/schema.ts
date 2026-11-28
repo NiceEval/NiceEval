@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { builtinModelKeys } from "../../../o11y/builtin-model-key.ts";
 import { AssertionEntryIdSchema } from "../../../assertions/record/codec.ts";
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import {
@@ -132,15 +133,23 @@ const PriceReceiptShapeSchema = Schema.Struct({
   pricing: Schema.Struct({
     basis: Schema.Literal("catalog-reference"),
     currency: Schema.Literal("USD"),
-    source: Schema.Struct({
-      kind: Schema.Literal("configured-profile"),
-      id: Identity,
-      asOf: Schema.NullOr(PositiveSafeIntegerSchema),
-      profileDigest: Digest,
-    }),
+    source: Schema.Union([
+      Schema.Struct({
+        kind: Schema.Literal("configured-profile"),
+        id: Identity,
+        asOf: Schema.NullOr(PositiveSafeIntegerSchema),
+        profileDigest: Digest,
+      }),
+      Schema.Struct({
+        kind: Schema.Literal("builtin-catalog"),
+        id: Identity,
+        asOf: PositiveSafeIntegerSchema,
+        profileDigest: Digest,
+      }),
+    ]),
     requestModel: JudgeUsageModelSchema,
     selector: JudgeUsageModelSchema,
-    match: Schema.Literals(["exact", "provider-wildcard"]),
+    match: Schema.Literals(["exact", "provider-wildcard", "builtin-catalog"]),
     ratesPerMTok: Schema.Struct({
       input: NullableRate,
       output: NullableRate,
@@ -304,14 +313,18 @@ function validCall(call: JudgeUsageCall): boolean {
 
 function validPriceReceipt(receipt: JudgePriceReceipt): boolean {
   const profile = receipt.pricing;
-  const expectedSelector =
-    profile.match === "exact"
-      ? profile.requestModel
-      : profile.requestModel.includes("/")
-        ? `${profile.requestModel.slice(0, profile.requestModel.indexOf("/"))}/*`
-        : undefined;
+  function validSelector(): boolean {
+    if (profile.source.kind === "builtin-catalog")
+      return profile.match === "builtin-catalog" && builtinModelKeys(profile.requestModel).includes(profile.selector);
+    if (profile.match === "exact") return profile.selector === profile.requestModel;
+    return (
+      profile.match === "provider-wildcard" &&
+      profile.requestModel.includes("/") &&
+      profile.selector === `${profile.requestModel.slice(0, profile.requestModel.indexOf("/"))}/*`
+    );
+  }
   if (
-    profile.selector !== expectedSelector ||
+    !validSelector() ||
     receipt.source.id !== profile.source.id ||
     profile.source.profileDigest !==
       adapterCallPricingProfileDigest({

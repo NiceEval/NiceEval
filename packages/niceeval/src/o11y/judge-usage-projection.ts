@@ -16,6 +16,9 @@ import { compareJudgeUsageCalls } from "./usage-contract.ts";
 /** The ledger is already validated; independent metrics retain their own coverage. */
 export function projectJudgeUsage(ledger: JudgeUsageAttachment, page = 0): JudgeUsage {
   const receipts = new Map(ledger.priceReceipts.map((receipt) => [receipt.callId, receipt]));
+  const builtinCatalogCalls = ledger.priceReceipts.filter(
+    ({ pricing }) => pricing.source.kind === "builtin-catalog",
+  ).length;
   const costCalls = ledger.calls.map((call): { readonly effectiveCost: EffectiveCallCost | undefined } => {
     const receipt = receipts.get(call.callId);
     function effectiveCost(): EffectiveCallCost | undefined {
@@ -63,6 +66,7 @@ export function projectJudgeUsage(ledger: JudgeUsageAttachment, page = 0): Judge
   return {
     state: ledger.collection.state,
     coverage: "physical-transmissions",
+    ...(builtinCatalogCalls === 0 ? {} : { builtinCatalogCalls }),
     collection: ledger.collection,
     ...callPage(
       [...ledger.calls].sort(compareJudgeUsageCalls),
@@ -91,6 +95,7 @@ export function summarizeJudgeUsage(usage: JudgeUsage): JudgeUsageSummary {
   return {
     state: usage.state,
     coverage: usage.coverage,
+    ...(usage.builtinCatalogCalls === undefined ? {} : { builtinCatalogCalls: usage.builtinCatalogCalls }),
     collection: usage.collection,
     totals: usage.totals,
   };
@@ -132,7 +137,7 @@ export function projectTotalUsageCosts(
           {
             currency: "USD",
             value: canonicalDecimalFromNumber(simulatedUser.amountUSD)!,
-            source: "estimated" as const,
+            source: simulatedUser.costBasis ?? "estimated",
           },
         ]),
   ]);
@@ -173,6 +178,12 @@ export function combineTotalUsageCosts(
   const values = sumCostValues(totals.flatMap((total) => total.values));
   const sources = totals.flatMap((total) => (total.simulatedUser === undefined ? [] : [total.simulatedUser]));
   const amounts = sources.flatMap((source) => (source.amountUSD === null ? [] : [source.amountUSD]));
+  const builtinCatalogCalls = sources.reduce((sum, source) => sum + (source.builtinCatalogCalls ?? 0), 0);
+  const costSources = sources.flatMap(({ amountUSD, costBasis }) =>
+    amountUSD === null ? [] : [costBasis ?? "estimated"],
+  );
+  const reported = costSources.some((source) => source !== "estimated");
+  const estimated = costSources.some((source) => source !== "reported");
   function simulatedUserState() {
     if (sources.every((source) => source.state === "complete")) return "complete" as const;
     return amounts.length > 0 ? ("partial" as const) : ("unpriced" as const);
@@ -185,6 +196,8 @@ export function combineTotalUsageCosts(
           state: simulatedUserState(),
           amountUSD: amounts.length === 0 ? null : amounts.reduce((sum, amount) => sum + amount, 0),
           calls: sources.reduce((sum, source) => sum + source.calls, 0),
+          ...(reported ? { costBasis: estimated ? "mixed" : "reported" } : {}),
+          ...(builtinCatalogCalls === 0 ? {} : { builtinCatalogCalls }),
         };
   return {
     state: totalCostState(missingSources.length, values.length),

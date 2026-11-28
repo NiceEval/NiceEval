@@ -22,8 +22,11 @@ import {
   safePiFailureMessage,
   PiFailure,
 } from "../judge/pi-failure.ts";
-import { createManagedPiSession } from "../judge/pi-runtime.ts";
-import { pricingEstimate } from "../o11y/cost.ts";
+import { createManagedPiSession, type PiUsageReceipt } from "../judge/pi-runtime.ts";
+import { configuredProfile } from "../o11y/adapter-call-price.ts";
+import { builtinCallPrice } from "../o11y/builtin-call-price.ts";
+import { estimateCallPrice } from "../o11y/judge-call-price.ts";
+import { normalizeJudgeUsageResponse } from "../o11y/judge-usage-receipt.ts";
 import type { PriceOverride } from "../types.ts";
 import type { SimulatedUserConversation } from "./binding.ts";
 import { simulatedUserToolSchema } from "./answers.ts";
@@ -32,6 +35,7 @@ import { SimulatedUserError, type SimulatedUserDefinition } from "./definition.t
 type GenerationInput = Parameters<SimulatedUserConversation["generate"]>[0];
 type AssistantMessage = Extract<AgentSession["messages"][number], { readonly role: "assistant" }>;
 type PiUsage = AssistantMessage["usage"];
+type UsageTokens = Parameters<typeof estimateCallPrice>[0];
 
 /** The coding-agent session owns requests, history, recovery and cancellation. */
 export function createSimulatedUserConversation(
@@ -93,8 +97,12 @@ export function createSimulatedUserConversation(
   const abort = () => {
     void session?.abort().catch(() => undefined);
   };
-  const record = (kind: "turn" | "compaction", usage: PiUsage | undefined) => {
-    if (current === undefined) return;
+  const record = (
+    kind: "turn" | "compaction",
+    usage: PiUsage | undefined,
+    receipts: readonly PiUsageReceipt[] = [],
+  ) => {
+    if (current === undefined || profile === undefined) return;
     if (usage !== undefined) {
       const invalidUsage = piUsageFailure(usage);
       if (invalidUsage !== undefined) {
@@ -103,27 +111,53 @@ export function createSimulatedUserConversation(
         return;
       }
     }
-    const estimate =
-      usage === undefined
-        ? undefined
-        : pricingEstimate(
-            profile!.model,
-            {
-              inputTokens: usage.input,
-              outputTokens: usage.output,
-              cacheReadTokens: usage.cacheRead,
-              cacheCreationTokens: usage.cacheWrite,
-            },
-            pricing,
-          );
+    const parsed = receipts.map(({ body }) => normalizeJudgeUsageResponse(profile.provider, body));
+    const selected = configuredProfile(profile.model, pricing) ?? builtinCallPrice(profile.model);
+    function price(reported: (typeof parsed)[number]["cost"] | undefined, tokens: UsageTokens) {
+      if (reported?.currency === "USD") {
+        const costUSD = Number(reported.amount);
+        if (Number.isFinite(costUSD)) return { costUSD, priceSource: reported.source };
+      }
+      if (selected !== undefined) {
+        const rates = selected.ratesPerMTok;
+        const estimate = estimateCallPrice(tokens, {
+          ratesPerMTok:
+            selected.source.kind === "configured-profile"
+              ? { ...rates, cacheRead: rates.cacheRead ?? rates.input, cacheWrite: rates.cacheWrite ?? rates.input }
+              : rates,
+        });
+        const costUSD = Number(estimate.amount);
+        if (estimate.missing.length === 0 && Number.isFinite(costUSD))
+          return { costUSD, priceSource: { ...selected.source, selector: selected.selector } };
+      }
+      return { costUSD: null };
+    }
+    if (parsed.length > 1) {
+      for (const receipt of parsed) {
+        current.generations.push({
+          kind,
+          inputTokens: receipt.inputTotalTokens,
+          outputTokens: receipt.outputTokens,
+          ...price(receipt.cost, receipt),
+        });
+      }
+      return;
+    }
+    const raw = parsed[0];
+    const measuredUsage =
+      usage?.totalTokens === 0 && raw?.inputTotalTokens == null && raw?.outputTokens == null ? undefined : usage;
+    const tokens = {
+      inputTokens: measuredUsage?.input ?? null,
+      outputTokens: measuredUsage?.output ?? null,
+      cacheReadTokens: measuredUsage?.cacheRead ?? null,
+      cacheWriteTokens: measuredUsage?.cacheWrite ?? null,
+    };
     current.generations.push({
       kind,
-      inputTokens: usage === undefined ? null : usage.input + usage.cacheRead + usage.cacheWrite,
-      outputTokens: usage?.output ?? null,
-      costUSD:
-        estimate?.state === "available" && estimate.receipt.priceSource.kind === "configured-override"
-          ? estimate.receipt.amountUSD
-          : null,
+      inputTokens:
+        measuredUsage === undefined ? null : measuredUsage.input + measuredUsage.cacheRead + measuredUsage.cacheWrite,
+      outputTokens: tokens.outputTokens,
+      ...price(raw?.cost, tokens),
     });
   };
   const tool = (): ToolDefinition => ({
@@ -163,6 +197,7 @@ export function createSimulatedUserConversation(
     if (closed) throw new SimulatedUserError("simulated-user-invalid-turn", "closed");
     input.signal.throwIfAborted();
     if (session === undefined) {
+      let managed: Awaited<ReturnType<typeof createManagedPiSession>>;
       let paths: ReturnType<typeof resolvePiCodingAgent>;
       try {
         paths = resolvePiCodingAgent();
@@ -176,7 +211,7 @@ export function createSimulatedUserConversation(
         throw failPi(piDefect(cause));
       }
       try {
-        const managed = await createManagedPiSession({
+        managed = await createManagedPiSession({
           paths,
           profile,
           apiKey,
@@ -220,12 +255,18 @@ export function createSimulatedUserConversation(
       unsubscribe = session.subscribe((event) => {
         if (event.type === "tool_execution_end" && event.toolName === "reply_to_agent" && event.isError) invalid = true;
         if (event.type === "message_end" && event.message.role === "assistant") {
-          record("turn", event.message.usage);
+          record("turn", event.message.usage, managed.readUsageReceipts(event.message.usage));
         }
-        if (event.type === "compaction_start") compacting = true;
+        if (event.type === "compaction_start") {
+          compacting = true;
+          managed.startCompaction();
+        }
         if (event.type === "compaction_end") {
           compacting = false;
-          if (event.result !== undefined) record("compaction", event.result.usage);
+          const usage = event.result?.usage;
+          managed.finishCompaction(usage);
+          if (event.result !== undefined)
+            record("compaction", usage, usage === undefined ? undefined : managed.readUsageReceipts(usage));
         }
       });
     } else {

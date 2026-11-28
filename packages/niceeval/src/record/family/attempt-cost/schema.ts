@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { NonNegativeSafeIntegerSchema, SafeTextSchema } from "../common.ts";
@@ -36,15 +36,17 @@ const EstimatedCostFactSchema = Schema.Struct({
 });
 
 /** Raw Attempt-owned cost facts; comparison selection is intentionally absent. */
+export const SimulatedUserCostSummarySchema = Schema.Struct({
+  source: Schema.Literal("simulated-user"),
+  state: Schema.Literals(["complete", "partial", "unpriced"]),
+  amountUSD: Schema.NullOr(USD),
+  calls: NonNegativeSafeIntegerSchema,
+  costBasis: Schema.optional(Schema.Literals(["reported", "estimated", "mixed"])),
+  builtinCatalogCalls: Schema.optionalKey(NonNegativeSafeIntegerSchema),
+});
+
 export const AttemptCostAttachmentSchema = Schema.Struct({
-  simulatedUser: Schema.optional(
-    Schema.Struct({
-      source: Schema.Literal("simulated-user"),
-      state: Schema.Literals(["complete", "partial", "unpriced"]),
-      amountUSD: Schema.NullOr(USD),
-      calls: NonNegativeSafeIntegerSchema,
-    }),
-  ),
+  simulatedUser: Schema.optional(SimulatedUserCostSummarySchema),
   observed: Schema.optional(ObservedCostFactSchema),
   estimated: Schema.optional(EstimatedCostFactSchema),
 });

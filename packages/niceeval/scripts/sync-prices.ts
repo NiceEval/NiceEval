@@ -40,11 +40,57 @@ function niceEvalPrice(model, source) {
   };
 }
 
+function catalogRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validRate(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function validateCatalog(catalog) {
+  if (
+    !catalogRecord(catalog) ||
+    catalog.$source !== "models.dev" ||
+    !Number.isSafeInteger(catalog.$asOf) ||
+    catalog.$asOf <= 0
+  )
+    throw new Error("Vendored prices need a models.dev source and a positive snapshot timestamp");
+  if (!catalogRecord(catalog.prices) || Object.keys(catalog.prices).length === 0)
+    throw new Error("Vendored prices need at least one model price");
+  for (const [model, price] of Object.entries(catalog.prices)) {
+    if (
+      model.trim().length === 0 ||
+      !catalogRecord(price) ||
+      !validRate(price.in) ||
+      !validRate(price.out) ||
+      ("cacheRead" in price && !validRate(price.cacheRead)) ||
+      ("cacheWrite" in price && !validRate(price.cacheWrite))
+    )
+      throw new Error(`Invalid vendored price for ${model}`);
+    for (const key of Object.keys(price)) {
+      if (!["in", "out", "cacheRead", "cacheWrite"].includes(key))
+        throw new Error(`Unknown vendored price field ${model}.${key}`);
+    }
+  }
+  if (!catalogRecord(catalog.contextWindows) || Object.keys(catalog.contextWindows).length === 0)
+    throw new Error("Vendored prices need at least one model context window");
+  for (const [model, limit] of Object.entries(catalog.contextWindows)) {
+    if (model.trim().length === 0 || !Number.isSafeInteger(limit) || limit <= 0)
+      throw new Error(`Invalid vendored context window for ${model}`);
+  }
+}
+
+const current = await readFile(OUTPUT, "utf8");
+const catalog = JSON.parse(current);
+if (check) {
+  validateCatalog(catalog);
+  process.exit(0);
+}
+
 const response = await fetch(LITELLM_PRICES_URL);
 if (!response.ok) throw new Error(`Unable to fetch LiteLLM prices: HTTP ${response.status}`);
 const upstream = await response.json();
-const current = await readFile(OUTPUT, "utf8");
-const catalog = JSON.parse(current);
 const modelsResponse = await fetch(MODELS_DEV_URL);
 if (!modelsResponse.ok) throw new Error(`Unable to fetch models.dev metadata: HTTP ${modelsResponse.status}`);
 const modelProviders = await modelsResponse.json();
@@ -128,7 +174,5 @@ catalog.$priceOverlays = {
 // An unchanged snapshot retains its timestamp so refresh and --check are stable.
 if (`${JSON.stringify(catalog, null, 2)}\n` !== current) catalog.$asOf = Date.now();
 const generated = `${JSON.stringify(catalog, null, 2)}\n`;
-if (check && generated !== current) {
-  throw new Error("Vendored prices are stale; run `pnpm --filter niceeval sync:prices`");
-}
-if (!check) await writeFile(OUTPUT, generated);
+validateCatalog(catalog);
+if (generated !== current) await writeFile(OUTPUT, generated);

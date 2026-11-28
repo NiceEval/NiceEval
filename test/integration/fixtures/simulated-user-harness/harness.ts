@@ -133,7 +133,7 @@ export function openAIProvider(baseUrl: string, extra: Record<string, unknown> =
 export function respondStream(
   res: ServerResponse,
   payload: { model: string },
-  options: { readonly toolArguments?: unknown; readonly text?: string; readonly id: string },
+  options: { readonly toolArguments?: unknown; readonly text?: string; readonly id: string; readonly reportedCost?: number },
 ): void {
   const calls =
     options.toolArguments === undefined
@@ -159,7 +159,12 @@ export function respondStream(
           finish_reason: calls.length ? "tool_calls" : "stop",
         },
       ],
-      usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 },
+      usage: {
+        prompt_tokens: 11,
+        completion_tokens: 7,
+        total_tokens: 18,
+        ...(options.reportedCost === undefined ? {} : { cost: options.reportedCost }),
+      },
     })}\n\ndata: [DONE]\n\n`,
   );
 }

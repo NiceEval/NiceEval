@@ -66,7 +66,8 @@ HTTP 200 但响应在给出任何模型输出之前就以错误结束（错误�
 受管传输在同一 Assertion 的 `timeoutMs` 内最多重试 2 次：指数退避，起始 2 秒；服务端给出 `retry-after` 时等待该值，单次等待上限 60 秒。
 剩余期限不够再等一次时立即结束，判 `unavailable` 并留存最后一次的失败原因。HTTP 400 等协议错误不重试，沿用 `errored`。
 每次重试都是独立的物理请求，照常登记用量与失败。普通 Judge 与受管 ScoreMatch 遵守这条规则；Agent Judge 见下文[评审 agent](#评审-agent)。
-现有 `defineConfig.pricing` 可对请求模型提供显式估价；真实报告费用（含零）优先，不在读取时重新定价。
+每次调用优先采用供应商报告费用（含零），其次按请求模型使用 `defineConfig.pricing`，最后查内置价格目录。
+入账时封存估价依据，读取时沿用已发布费用。
 `t.usage` 仍只表示被测应用用量，Adapter 无需替裁判上报用量。
 
 Query、Show 与 View 从同一已封存账本读取 Judge 数量、tokens、费用和完整度，应用费用与总费用分别呈现。

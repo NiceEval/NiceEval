@@ -4,6 +4,7 @@ import type { JudgeUsageAttachment, JudgeUsageCall } from "../record/family/judg
 import type { PriceOverride } from "../runner/types.ts";
 import { normalizeJudgeUsageResponse } from "./judge-usage-receipt.ts";
 import { createJudgeCallPriceReceipts } from "./judge-call-price.ts";
+import { builtinCallPrice } from "./builtin-call-price.ts";
 
 type TransmissionInput = Pick<
   JudgeUsageCall,
@@ -156,7 +157,7 @@ export class JudgeUsageCollector {
     return {
       collection: completeCollection,
       calls,
-      priceReceipts: createJudgeCallPriceReceipts(calls, this.pricing),
+      priceReceipts: createJudgeCallPriceReceipts(calls, this.pricing, builtinCallPrice),
     };
   }
 

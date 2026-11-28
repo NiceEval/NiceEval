@@ -173,7 +173,7 @@ describe("Managed pi retries use HTTP and stream failures within one caller budg
     }
     if (mode === "stream-persistent" || mode === "stream-partial") {
       expect(result.human).toContain("HTTP 200");
-      expect(result.human).toContain(`gateway declined generation ${result.count}`);
+      expect(result.human.replace(/\s+/gu, " ")).toContain(`gateway declined generation ${result.count}`);
       if (actor === "judge") expect(result.evidence).toContain('"state":"unavailable"');
     }
   });

@@ -1040,7 +1040,7 @@ CLI 不探测 locale，只输出由 Inspection CLI presenter 直接拥有的英�
 所有 number 计数为非负安全整数。TokenTotal 沿用 available/partial/unavailable、value:number|null、observationCount。
 
 CostTotals 沿用应用的费用字段：state、source、values、totalCalls；每币种保留 coveredCalls、totalCalls 与 reported/estimated 计价依据。
-JudgePriceReceipt 复用现有价格证明字段，只把 kind 定为 judge-call-price-estimate；不能出现 application 用途字段。
+JudgePriceReceipt 的 kind 为 `judge-call-price-estimate`，包含 Judge 的请求模型及其[封存计价来源](../judge/architecture.md#计价)。
 
 ```ts
 type JudgeUsage =
@@ -1049,6 +1049,7 @@ type JudgeUsage =
   | {
       state: "complete" | "partial";
       coverage: "physical-transmissions";
+      builtinCatalogCalls?: number;
       collection: CollectionState;
       calls: readonly JudgeUsageCall[];
       callsTruncated: boolean;
@@ -1065,7 +1066,8 @@ type JudgeUsage =
 ```
 
 JudgeUsageCall 的穷尽形状见 [Judge 账本定义](../judge/architecture.md#持久形状)。公开调用预览最多 128 条，按 entryIndex、logicalOrdinal、transmissionOrdinal 排序。
-priceReceipts 仅返回预览调用的证明，全部证明仍留在附件。所有 totals 必须从全账本计算。
+priceReceipts 仅返回预览调用的证明，全部证明仍留在附件。totals 与 builtinCatalogCalls 从全账本计算。
+存在内置价证时，builtinCatalogCalls 返回有内置价证的调用数。
 
 调用加对应价证按 canonical UTF-8 总字节选择完整前缀，每页最多 128 KiB；单条调用连同价证超过页大小时独占一页，不因规模被跳过。
 分页不删 totals、完整度或已知金额，也不因规模返回预算错误。
@@ -1082,6 +1084,14 @@ type JudgeUsageSummary =
 
 interface TotalCosts {
   state: "complete" | "partial" | "unavailable";
+  simulatedUser?: {
+    source: "simulated-user";
+    state: "complete" | "partial" | "unpriced";
+    amountUSD: number | null;
+    calls: number;
+    costBasis?: "reported" | "estimated" | "mixed";
+    builtinCatalogCalls?: number;
+  };
   values: readonly {
     currency: string;
     value: string;
@@ -1094,7 +1104,7 @@ interface TotalCosts {
 interface CostGap {
   source: "application" | "judge" | "simulated-user";
   reason:
-    | "no-pricing-profile"          // 有 token，但 defineConfig.pricing 没有匹配这些模型的价格
+    | "no-pricing-profile"          // 有 token，但没有匹配到该调用可使用的价格
     | "provider-cost-not-reported"  // adapter 没有交付逐次调用的费用或可计价的调用证据
     | "token-buckets-incomplete"    // 有价格，但缺计价所需的 token 分桶
     | "usage-not-recorded";         // 没有用量记录
@@ -1126,7 +1136,10 @@ missingSources 固定 application、judge、simulated-user 顺序，无重复。
 Missing sources 下写出来源与原因短语，同类原因聚合计数。reason 为 `no-pricing-profile` 时，同一行给出首页缺价的模型并用 totalModelCount 写明总数，`--json` 按 continuation 取全量；并给出
 `Pricing: add prices for <models> to defineConfig({ pricing })` 与定价文档链接；其它原因说明补不上的是哪类证据，不建议填价。
 完整空 Judge 账本显示 No Judge calls；缺账本显示 Judge usage unavailable；有调用但缺费用显示 Cost unavailable。
-明确零费用显示币种、0、已知费用调用数和全部调用数；Judge 明细保留物理请求数、输入/输出/总 token 与各自完整度。
+明确零费用显示币种、0、已知费用调用数和全部调用数。Judge 明细保留物理请求数、输入、输出和总 token 及各自完整度。
+
+内置目录估价在文本用量中标为 `Built-in catalog estimate`。Judge 的 JSON 价证使用 `pricing.source.kind: "builtin-catalog"`。
+模拟用户的 JSON 摘要提供含内置估价的调用数，执行活动保留每次生成的计价来源。
 
 `show @<locator> usage` 区分模型配置、实际调用、应用费用、Judge 缺口与总费用已知小计。
 Application usage 并列显示物理调用缓存率和 `Cached input share (turn-observed)`。JSON 字段分别为 `cacheRead` 与 `turnCacheRead`。

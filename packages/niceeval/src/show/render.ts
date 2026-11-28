@@ -2512,7 +2512,7 @@ function usageTotalEntries(totals: UsageTotals): readonly { readonly key: string
 function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanelContentBlock[] {
   const complete = costs.state === "complete";
   const reasons = {
-    "no-pricing-profile": "No configured prices for recorded model token usage",
+    "no-pricing-profile": "No applicable prices for recorded model token usage",
     "provider-cost-not-reported": "Provider cost or priceable call evidence was not reported",
     "token-buckets-incomplete": "Sealed prices lack required token buckets",
     "usage-not-recorded": "Usage was not recorded completely",
@@ -2531,6 +2531,14 @@ function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanel
                 key: "simulated-user",
                 value: `${costs.simulatedUser.amountUSD === null ? "Unpriced" : `USD ${costs.simulatedUser.amountUSD}`} · ${costs.simulatedUser.calls} requests · ${costs.simulatedUser.state}`,
               },
+              ...(costs.simulatedUser.builtinCatalogCalls === undefined
+                ? []
+                : [
+                    {
+                      key: "Built-in catalog estimate",
+                      value: `${costs.simulatedUser.builtinCatalogCalls} simulated-user calls`,
+                    },
+                  ]),
             ]),
         ...(costs.missingSources.length === 0
           ? []
@@ -2727,6 +2735,9 @@ function modelUsageBlocks(
               { key: "Output tokens", value: metric(projectMetric(value.judgeUsage.totals.outputTokens)) },
               { key: "Total tokens", value: metric(projectMetric(value.judgeUsage.totals.totalTokens)) },
               { key: "Cost", value: factPhrase(value.judgeUsage.totals.costs.state) },
+              ...(value.judgeUsage.builtinCatalogCalls === undefined
+                ? []
+                : [{ key: "Built-in catalog estimate", value: `${value.judgeUsage.builtinCatalogCalls} Judge calls` }]),
               ...value.judgeUsage.totals.costs.values.map((cost) => ({
                 key: cost.currency,
                 value: `${cost.value} (${cost.coveredCalls}/${value.judgeUsage.state === "complete" || value.judgeUsage.state === "partial" ? value.judgeUsage.totals.costs.totalCalls : "unknown"} covered; ${cost.source})`,

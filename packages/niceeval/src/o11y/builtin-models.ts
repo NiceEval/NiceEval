@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import * as Schema from "effect/Schema";
+import { builtinModelKeys } from "./builtin-model-key.ts";
 
 // Third-party JSON input boundary: the bundled catalog omits prices for unreported token buckets.
 export interface BuiltinPrice {
@@ -10,11 +11,15 @@ export interface BuiltinPrice {
 }
 
 interface BuiltinModelCatalog {
+  readonly sourceId?: string;
+  readonly asOf?: number;
   readonly prices: Readonly<Record<string, BuiltinPrice>>;
   readonly contextWindows: Readonly<Record<string, number>>;
 }
 
 const CatalogInputSchema = Schema.Struct({
+  $source: Schema.optionalKey(Schema.String),
+  $asOf: Schema.optionalKey(Schema.Number),
   prices: Schema.optionalKey(
     Schema.NullOr(
       Schema.Record(
@@ -37,7 +42,12 @@ const decodeCatalog = Schema.decodeUnknownSync(
 export const builtinModelCatalog: BuiltinModelCatalog = (() => {
   try {
     const value = decodeCatalog(readFileSync(new URL("./prices.json", import.meta.url), "utf8"));
-    return { prices: value.prices ?? {}, contextWindows: value.contextWindows ?? {} };
+    return {
+      ...(value.$source === undefined ? {} : { sourceId: value.$source }),
+      ...(value.$asOf === undefined ? {} : { asOf: value.$asOf }),
+      prices: value.prices ?? {},
+      contextWindows: value.contextWindows ?? {},
+    };
   } catch {
     return { prices: {}, contextWindows: {} };
   }
@@ -49,9 +59,7 @@ export function lookupBuiltinModel<T>(
   table: Readonly<Record<string, T>>,
   model: string,
 ): { readonly value: T; readonly selector: string } | undefined {
-  const bare = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
-  const undated = bare.replace(/-\d{8}$/u, "").replace(/-\d{4}-\d{2}-\d{2}$/u, "");
-  for (const selector of [model, bare, undated]) {
+  for (const selector of builtinModelKeys(model)) {
     if (Object.hasOwn(table, selector)) return { value: table[selector]!, selector };
   }
   return undefined;

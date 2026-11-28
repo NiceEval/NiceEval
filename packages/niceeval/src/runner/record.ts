@@ -136,6 +136,8 @@ function createAttemptCostAttachment(result: EvalResult): AttemptCostAttachment 
   const activities = simulatedUserActivitiesForResult(result);
   const calls = activities.flatMap((activity) => activity.generations);
   const priced = calls.filter((call): call is typeof call & { readonly costUSD: number } => call.costUSD !== null);
+  const reportedCalls = priced.filter((call) => call.priceSource?.kind === "reported").length;
+  const builtinCatalogCalls = priced.filter((call) => call.priceSource?.kind === "builtin-catalog").length;
   function simulatedUserCostState() {
     if (calls.length === 0 || priced.length === calls.length) return "complete" as const;
     if (priced.length > 0) return "partial" as const;
@@ -155,6 +157,8 @@ function createAttemptCostAttachment(result: EvalResult): AttemptCostAttachment 
             state: simulatedUserCostState(),
             amountUSD: simulatedUserAmount(),
             calls: calls.length,
+            ...(reportedCalls === 0 ? {} : { costBasis: reportedCalls === priced.length ? "reported" : "mixed" }),
+            ...(builtinCatalogCalls === 0 ? {} : { builtinCatalogCalls }),
           },
         }),
     ...(result.usage?.costUSD === undefined

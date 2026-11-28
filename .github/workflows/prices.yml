@@ -4,68 +4,104 @@ on:
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:
-  pull_request:
-    paths:
+  push:
+    branches: [main]
+    paths: &price-paths
       - ".github/workflows/prices.yml"
       - "packages/niceeval/package.json"
       - "packages/niceeval/scripts/sync-prices.ts"
+      - "packages/niceeval/src/o11y/builtin-model-key.ts"
       - "packages/niceeval/src/o11y/prices.json"
+  pull_request:
+    paths: *price-paths
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+
+env:
+  PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false"
 
 jobs:
   refresh:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     name: Refresh vendored prices
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: refresh-vendored-prices
+      cancel-in-progress: false
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v7
         with:
+          ref: main
           fetch-depth: 0
 
-      - name: Set up Node
-        uses: actions/setup-node@v7
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v3
         with:
-          node-version: 24
+          runtime: node@24
+          install: false
 
-      - name: Sync LiteLLM price overlay
-        run: node packages/niceeval/scripts/sync-prices.ts
+      - name: Refresh model catalog
+        run: pnpm -C packages/niceeval sync:prices
 
-      - name: Open or update price refresh pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Validate and publish catalog changes
         run: |
-          if git diff --quiet -- packages/niceeval/src/o11y/prices.json; then
+          catalog=packages/niceeval/src/o11y/prices.json
+          if git diff --quiet -- "$catalog"; then
             exit 0
           fi
-          branch=automation/model-price-refresh
+
+          pnpm -C packages/niceeval check:prices
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import catalog from "./packages/niceeval/src/o11y/prices.json" with { type: "json" };
+          import { builtinModelKeys } from "./packages/niceeval/src/o11y/builtin-model-key.ts";
+
+          const { prices } = catalog;
+          const pricedKeys = Object.keys(prices).filter((key) => prices[key].in > 0 && prices[key].out > 0);
+          const bareSamples = pricedKeys.filter((key) => !key.includes("/")).slice(0, 8);
+          const scopedSamples = pricedKeys.filter((key) => key.includes("/")).slice(0, 8);
+          assert.ok(bareSamples.length > 0, "Expected a bare model key with positive token rates");
+          assert.ok(scopedSamples.length > 0, "Expected a scoped model key with positive token rates");
+
+          const select = (model) => builtinModelKeys(model).find((key) => Object.hasOwn(prices, key));
+          for (const key of [...bareSamples, ...scopedSamples]) assert.equal(select(key), key);
+          for (const key of bareSamples) {
+            const alias = `niceeval-price-smoke/${key}-1970-01-01`;
+            assert.equal(select(alias), key);
+          }
+          JS
+
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git switch -C "$branch"
-          git add packages/niceeval/src/o11y/prices.json
-          git commit -m "chore: refresh builtin model prices"
-          git push --force origin "HEAD:refs/heads/$branch"
-          gh pr view "$branch" >/dev/null 2>&1 || gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "Refresh builtin model prices" \
-            --body "Automated refresh of the vendored model-price catalog."
+          git add -- "$catalog"
+          git commit -m "chore(prices): refresh builtin model prices"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "::warning::Price refresh push to main failed (attempt $attempt of 3)."
+          done
+          echo "::error::Could not push refreshed model prices to main after 3 attempts."
+          exit 1
 
   verify:
-    if: github.event_name == 'pull_request'
-    name: Verify vendored prices
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    name: Verify vendored price format
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up Node
-        uses: actions/setup-node@v7
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v3
         with:
-          node-version: 24
+          runtime: node@24
+          install: false
 
-      - name: Check LiteLLM price overlay
-        run: node packages/niceeval/scripts/sync-prices.ts --check
+      - name: Check model catalog format
+        run: pnpm -C packages/niceeval check:prices
