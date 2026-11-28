@@ -64,8 +64,7 @@ export interface FeedbackRenderer {
    */
   onTick?(event: FeedbackTickEvent, state: RunFeedbackState): void | Promise<void>;
 
-  /** attempt 生命周期事件(见 `AttemptLifecycleEvent`):human 用它驱动 active slot 的内容;
-   *  json 不实现 —— 机器流不逐条展示 active 状态(见 cli.md 的信息分级表)。 */
+  /** Attempt 生命周期事件。Human 更新面板，JSON 追加阶段变化和 Adapter detail。 */
   onLifecycle?(event: AttemptLifecycleEvent, state: RunFeedbackState): void | Promise<void>;
 
   /**

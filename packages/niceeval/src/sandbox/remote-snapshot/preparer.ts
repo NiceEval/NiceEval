@@ -774,10 +774,13 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       if (reservation.lost) return degraded("lease-lost", "Snapshot publication lease was lost");
       const outcome =
         created._tag === "Failure"
-          ? degraded(
-              "snapshot-uncertain",
-              `Snapshot request outcome is uncertain; its ledger entry is retained; stage ${created.failure.operation}; ${created.failure.reason}`,
-            )
+          ? {
+              ...degraded(
+                "snapshot-uncertain",
+                `Snapshot request outcome is uncertain; its ledger entry is retained; stage ${created.failure.operation}; ${created.failure.reason}`,
+              ),
+              ...(created.failure.causes === undefined ? {} : { causes: created.failure.causes }),
+            }
           : created.success._tag === "Rejected"
             ? degraded(
                 "snapshot-rejected",

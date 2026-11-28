@@ -390,6 +390,7 @@ function materializePreparationNode(
               reason: capture.reason,
               detail: capture.detail,
               operationId: step.operationId,
+              ...(capture.causes === undefined ? {} : { causes: capture.causes }),
             };
           const result = { outcome: "prepared" as const, artifact: capture.artifact };
           if (

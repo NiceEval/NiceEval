@@ -469,7 +469,12 @@ export type BeforeCacheLookup =
 
 export type BeforeCacheCapture =
   | { readonly _tag: "Published"; readonly artifact: BeforeCacheArtifact }
-  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
+  | {
+      readonly _tag: "Degraded";
+      readonly reason: BeforeCacheDegradedReason;
+      readonly detail: string;
+      readonly causes?: readonly DiagnosticCause[];
+    };
 
 export type BeforeCacheMaterialized =
   | { readonly _tag: "Materialized"; readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart }

@@ -404,7 +404,9 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 连续 30 秒没有永久事件时输出单行 `progress` 心跳，只更新全局计数与耗时，不重复倒出庞大的静态数组以节约调用方 token。心跳带 `preparing`：当前正在 lookup、执行或发布的准备图节点数；没有时为 0。
 
 派发前准备的每个节点在开始、换阶段与结算时各输出一行 `prepare` 事件，字段为：`node`（本 Invocation 内稳定的节点序号）、`pairings`（依赖它的 `{ experimentId, evalId }`，超过 8 个时截断并给出 `pairingsOmitted`）、`action`（`{ index, total, id }`，与 Human activity 的 `i/n` 一致）、`phase`（`lookup`、`waiting`、`staging`、`action`、`publish`、`settled` 之一）、`elapsedMs`，结算时另带 `outcome`（`hit`、`published`、`continued`、`degraded`、`failed`）与 degraded/failed 的具名原因。`continued` 表示非发布点执行完毕、staging 交给子节点。命令参数、env 值与 secret 不进入该事件。
-当 Attempt 产生工具调用、自述说明（commentary）或阶段推进时，实时发射单行紧凑的 `activity` 增量事件，直率交付实际命令与说明，不进行假性遮蔽或截断。
+Attempt 开始、阶段变化、工具调用或自述说明（commentary）各实时输出一行 `activity`。
+事件包含 `experimentId`（如有）、`evalId`、从零开始的 `attempt` 和 `phase`。
+工具和自述另带 `detail`，保留 Adapter 报告的正文并移除 Runner 已登记的凭据。
 
 progress 与 diagnostic 形状服务当前 Invocation，不是 Run 事实解码协议。机器调用方以进程退出状态和最后的 receipt 判断命令是否结束，再用 `createdRunIds` 与 `publicationCutoff` 读取业务数据。
 

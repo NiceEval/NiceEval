@@ -2,6 +2,7 @@
 // @concord-implements docs/feature/sandbox/architecture/providers/instabox.md#远端-snapshot-driver
 import { createHash } from "node:crypto";
 import { Clock, Effect, Result, Schedule, Schema } from "effect";
+import type { DiagnosticCause } from "../../shared/types.ts";
 import type { MaterializedSandboxCase } from "../case-types.ts";
 import type { InstaboxProviderPlan } from "../instabox.ts";
 import { BeforeCacheSnapshotError, type BeforeCacheSnapshotDriver } from "../remote-snapshot/driver.ts";
@@ -11,6 +12,7 @@ import {
   InstaboxPreparationError,
   instaboxReadRequest,
   isRetryableInstaboxReadError,
+  preparationFailure,
 } from "./provisioning.ts";
 
 const Snapshot = Schema.Struct({
@@ -33,9 +35,18 @@ const api = () => {
 const boundary = <A>(operation: string, run: (signal: AbortSignal) => Promise<A>) =>
   Effect.tryPromise({ try: run, catch: () => fail(operation) });
 
-const findByName = Effect.fnUntraced(function* (client: InstaboxApi, name: string) {
+const findByName = Effect.fnUntraced(function* (
+  client: InstaboxApi,
+  name: string,
+  onRequestFailure?: (cause: unknown) => void,
+) {
   // The official SnapshotList is complete and has no pagination fields.
-  const result = yield* instaboxReadRequest((signal) => client.json(SnapshotList, "/snapshots", { signal }));
+  const result = yield* instaboxReadRequest((signal) =>
+    client.json(SnapshotList, "/snapshots", { signal }).catch((cause: unknown) => {
+      onRequestFailure?.(cause);
+      throw cause;
+    }),
+  );
   const matches = result.snapshots.filter((snapshot) => snapshot.name === name);
   if (matches.length > 1) return yield* fail("find-ambiguous");
   return matches[0];
@@ -99,10 +110,13 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxProviderP
     const budgetMs = Math.min(snapshotReadyLimitMs, expiresAt - now - INSTABOX_MACHINE_DELETE_TIMEOUT_MS);
     let operation = "create";
     let lastStatus: typeof Snapshot.Type.status | "absent" | "unknown" = "unknown";
+    let postCauses: readonly DiagnosticCause[] = [];
+    let readCauses: readonly DiagnosticCause[] = [];
     const publicationFailure = (detail: string) =>
       new BeforeCacheSnapshotError({
         operation,
         reason: `Instabox ${detail} (last observed snapshot status: ${lastStatus})`,
+        causes: [...postCauses, ...readCauses],
       });
     if (budgetMs <= 0) return yield* publicationFailure("source lifetime left no snapshot budget");
     return yield* Effect.gen(function* () {
@@ -129,6 +143,7 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxProviderP
                   _tag: "Rejected" as const,
                   reason: `Instabox rejected the snapshot request (HTTP ${cause.status})`,
                 };
+              postCauses = preparationFailure("snapshot POST", cause).diagnosticCauses;
               throw cause;
             }
           },
@@ -137,10 +152,16 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxProviderP
       );
       if (Result.isSuccess(created) && created.success._tag === "Rejected") return created.success;
       let snapshot = Result.isSuccess(created) ? created.success.snapshot : undefined;
+      if (snapshot !== undefined)
+        postCauses = [
+          { code: "snapshot-post-accepted", summary: `Instabox snapshot POST accepted with status ${snapshot.status}` },
+        ];
       if (snapshot === undefined) {
         operation = "find-after-post";
         while (snapshot === undefined) {
-          snapshot = yield* findByName(client, name).pipe(
+          snapshot = yield* findByName(client, name, (cause) => {
+            readCauses = preparationFailure("snapshot reconciliation GET", cause).diagnosticCauses;
+          }).pipe(
             Effect.retry(publicationReadRetry),
             Effect.mapError(() => publicationFailure("could not reconcile snapshot request by name")),
           );
@@ -157,7 +178,12 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxProviderP
       while (snapshot.status === "pending") {
         yield* Effect.sleep("1 second");
         const path = `/snapshots/${encodeURIComponent(snapshotId)}`;
-        snapshot = yield* instaboxReadRequest((signal) => client.json(Snapshot, path, { signal })).pipe(
+        snapshot = yield* instaboxReadRequest((signal) =>
+          client.json(Snapshot, path, { signal }).catch((cause: unknown) => {
+            readCauses = preparationFailure("snapshot status GET", cause).diagnosticCauses;
+            throw cause;
+          }),
+        ).pipe(
           Effect.retry(publicationReadRetry),
           Effect.mapError(() => publicationFailure("could not read snapshot status")),
         );

@@ -1805,7 +1805,7 @@ export type AttemptLifecycleEvent =
       nativeInstanceId: string | undefined;
     }
   | { type: "attempt:phase"; at: number; identity: AttemptRef; phase: LifecyclePhase }
-  | { type: "attempt:progress"; at: number; identity: AttemptRef; detail: string }
+  | { type: "attempt:progress"; at: number; identity: AttemptRef; detail: string; machineDetail?: string }
   | {
       type: "attempt:complete";
       at: number;

@@ -249,6 +249,14 @@ function activeDetailText(text: string, sensitiveValues: Iterable<string>): stri
   return `${prefix}${suffix}`;
 }
 
+function machineActivityText(text: string, sensitiveValues: ReadonlySet<string>): string {
+  const redacted = redactSensitiveText(text, sensitiveValues);
+  if (sensitiveValues.size === 0) return redacted;
+  const cleaned = redacted.replace(ACTIVE_ESCAPE_SEQUENCE, "").replace(ACTIVE_CONTROL_CHARACTER, "");
+  const checked = redactSensitiveText(cleaned, sensitiveValues);
+  return checked === cleaned ? redacted : checked;
+}
+
 function assertionOperandRedactor(sensitiveValues: ReadonlySet<string>): ((value: string) => string) | undefined {
   if (sensitiveValues.size === 0) return undefined;
   return (value) => redactSensitiveText(value, sensitiveValues);
@@ -683,11 +691,16 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
       const scopedFeedback: ScopedFeedback = {
         progress: (u) => {
           const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
+          const machineDetail =
+            sendActive && /^(?:tool|commentary):/u.test(u.message)
+              ? machineActivityText(u.message, sensitiveValues)
+              : undefined;
           reportAttemptLifecycle({
             type: "attempt:progress",
             at: Date.now(),
             identity,
             detail: activeDetailText(`${u.message}${suffix}`, sensitiveValues),
+            ...(machineDetail === undefined ? {} : { machineDetail }),
           });
         },
         diagnostic: recordDiagnostic,
@@ -3356,8 +3369,11 @@ async function runAttemptBody(
               detail: preparationFailure.detail,
               causes: undefined,
             }));
-        const restoreEffects = nodes.filter((node) => node.causes?.length).length;
+        const restoreEffects = nodes.filter(
+          (node) => node.reason !== "snapshot-uncertain" && node.reason !== "snapshot-rejected" && node.causes?.length,
+        ).length;
         for (const node of nodes) {
+          const publicationFailure = node.reason === "snapshot-uncertain" || node.reason === "snapshot-rejected";
           // Persist the named reason and node in the existing diagnostic summary:
           // arbitrary feedback data is intentionally not retained by this family.
           recordBeforeCacheDiagnostic(
@@ -3370,15 +3386,12 @@ async function runAttemptBody(
                 `; Before ${node.owner} / ${node.actionId}` +
                 ("key" in node ? `; node ${node.key}` : "") +
                 "." +
-                (node.causes !== undefined && restoreEffects > 1
+                (!publicationFailure && node.causes !== undefined && restoreEffects > 1
                   ? ` One restore failure affects ${restoreEffects} actions.`
                   : "") +
                 " The remaining before actions will run on the usable sandbox state.",
               data: {
-                operation:
-                  node.reason === "snapshot-uncertain" || node.reason === "snapshot-rejected"
-                    ? "before-cache.publish"
-                    : "before-cache.prepare",
+                operation: publicationFailure ? "before-cache.publish" : "before-cache.prepare",
                 operationId: preparationFailure.operationId,
                 reason: node.reason,
                 actionId: node.actionId,

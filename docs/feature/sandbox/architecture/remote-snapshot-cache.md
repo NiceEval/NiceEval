@@ -286,6 +286,8 @@ replacement scope 使用声明位置与声明方的实际内容摘要，不附�
 
 core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`createSnapshot` 返回错误时，远端可能已经创建、或稍后才创建一份名为 `niceeval-<artifactId>` 的 snapshot。core 在同一事务把该行改为 `deleting`、`snapshot_id` 留空，节点结算为 `degraded(snapshot-uncertain)`。这份登记让它不会变成来历不明的快照（OPS-7）：回收时按名称查询再删除。
 
+该节点的执行诊断保留 Provider 提供的安全原因，例如创建请求是否受理、最后观察到的状态与失败的查询步骤。
+
 driver 等待 Ready 的预算独立于 `snapshotSettleMs`。Instabox 保持源 staging 到 Ready、终态失败、取消或预算耗尽。等待上限为 20 分钟，受源 Machine 剩余寿命和回收预留时间约束。达到上限时按不确定结果保留回收登记，并按节点结算从可用祖先或 Base 重放。
 
 ## 回收

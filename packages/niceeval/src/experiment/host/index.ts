@@ -68,6 +68,9 @@ export {
   type ExpPlanDocument,
 } from "./cli/plan-protocol.ts";
 export {
+  decodeExpActivityEvent,
+  ExpActivityEventSchema,
+  type ExpActivityEvent,
   decodeExpPrepareEvent,
   ExpPrepareEventSchema,
   type ExpPrepareEvent,

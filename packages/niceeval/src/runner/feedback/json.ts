@@ -14,9 +14,7 @@
 // - 事件形状按 `ExpEvent` 判别联合(判别字段 `event`)逐个实现,字段名复用 Record 词表
 //   (locator/evalId/experimentId/phase/verdict),不为事件流发明第二套命名。
 //
-// 不实现 `clearDynamic`/`redrawDynamic`/`activity`/`onLifecycle`:JSON 流没有「动态区域」概念,
-// active phase 仅随心跳给出快照，不逐次输出 provisioning retry/backoff、不逐条打印 passed attempt —— 这些
-// 目标行为由「不实现对应可选钩子」天然满足(见 renderer.ts 的接口注释)。
+// JSON 通过 `onLifecycle` 实时追加 Attempt 阶段和 Adapter activity。
 //
 // 为什么 diagnostic/budget-exhausted/interrupted/reporter-error 仍然去重(只在首次出现时追加)
 // 而 failure/error 不做 suppression:cli.md「什么动态更新,什么逐条追加」表把两者分成不同的行——
@@ -26,6 +24,7 @@
 
 import type { FeedbackRenderer } from "./renderer.ts";
 import type { FeedbackIO } from "./io.ts";
+import { encodeAttemptKey } from "../types.ts";
 import type {
   DurableFeedbackEvent,
   InvocationCompletion,
@@ -36,6 +35,7 @@ import type {
 } from "../types.ts";
 import type { JsonValue, Verdict } from "../../shared/types.ts";
 import type {
+  ExpActivityEvent,
   ExpTerminalSummary,
   ExpKeptEvent,
   ExpDiagnosticEvent,
@@ -185,6 +185,7 @@ export interface ReceiptEvent {
 /** `niceeval exp --json` 唯一公开事件词表；新增事件必须先进入已采纳文档与这个闭合联合。 */
 export type ExpEvent =
   | StartEvent
+  | ExpActivityEvent
   | ExpPrepareEvent
   | ProgressEvent
   | FailureEvent
@@ -235,6 +236,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
   // 由 appendDurable 无条件更新——"plan" 本身就是第一次永久事件,天然把这个时钟从 0 开始计。
   let lastCheckpointAtMs = 0;
   const preparing = new Set<number>();
+  const reportedPhases = new Map<string, LifecyclePhase>();
   // "summary" 与 "receipt" 是 coordinator.finish() 里连续 emit 的两个独立永久事件(中间不会插入
   // 其它事件)。先暂存 summary，receipt 到达时再写 eval 结论行与唯一的最终 receipt。
   let pendingSummary: InvocationSummary | undefined;
@@ -444,18 +446,27 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
       }
     },
 
+    onLifecycle(event, state) {
+      const key = encodeAttemptKey(event.identity);
+      if (event.type === "attempt:complete" || event.type === "attempt:early-exit") {
+        reportedPhases.delete(key);
+        return;
+      }
+      const active = state.active.get(key);
+      if (active === undefined) return;
+      if (event.type === "attempt:start" || event.type === "attempt:phase") {
+        if (reportedPhases.get(key) === active.phase) return;
+        reportedPhases.set(key, active.phase);
+        writeEvent(io, { event: "activity", ...active.identity, phase: active.phase });
+      } else if (event.type === "attempt:progress" && event.machineDetail !== undefined) {
+        writeEvent(io, { event: "activity", ...active.identity, phase: active.phase, detail: event.machineDetail });
+      }
+    },
+
     onTick(event, state) {
       const idle = event.at - lastCheckpointAtMs;
       if (idle < JSON_HEARTBEAT_IDLE_MS) return;
       noteCheckpoint(event.at);
-      const active = [...state.active.values()].sort((left, right) => {
-        for (const key of ["experimentId", "evalId"] as const) {
-          const a = left.identity[key] ?? "";
-          const b = right.identity[key] ?? "";
-          if (a !== b) return a < b ? -1 : 1;
-        }
-        return left.identity.attempt - right.identity.attempt;
-      });
       writeEvent(io, {
         event: "progress",
         elapsedMs: event.elapsedMs,
@@ -471,17 +482,8 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
         failed: state.failed,
         errored: state.errored,
         skipped: state.skipped,
-        active: active.slice(0, 64).map((attempt) => ({
-          ...attempt.identity,
-          phase: attempt.phase,
-          elapsedMs: Math.max(0, event.at - attempt.startedAt),
-        })),
-        activeOmitted: Math.max(0, active.length - 64),
       });
     },
-
-    // 没有 clearDynamic/redrawDynamic/activity/onLifecycle:见文件顶部注释——JSON 流不维护
-    // 动态区域、不逐次输出 provisioning retry/backoff 或 passed attempt；active phase 由心跳快照给出。
   };
 }
 

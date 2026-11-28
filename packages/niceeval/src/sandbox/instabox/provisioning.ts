@@ -54,13 +54,18 @@ export function provisionKind(error: unknown): SandboxProvisionErrorKind {
 }
 
 type PreparationPhase = "snapshot lookup" | "allocation" | "startup wait" | "readiness" | "SSH grant" | "probe";
+type SnapshotPublicationPhase = "snapshot POST" | "snapshot reconciliation GET" | "snapshot status GET";
 
 export class InstaboxPreparationError extends Error {
-  readonly phase: PreparationPhase;
+  readonly phase: PreparationPhase | SnapshotPublicationPhase;
   readonly detail: InstaboxErrorDetail;
   readonly kind: SandboxProvisionErrorKind;
 
-  constructor(phase: PreparationPhase, detail: InstaboxErrorDetail, kind: SandboxProvisionErrorKind = "unknown") {
+  constructor(
+    phase: InstaboxPreparationError["phase"],
+    detail: InstaboxErrorDetail,
+    kind: SandboxProvisionErrorKind = "unknown",
+  ) {
     const facts = [
       detail.status === undefined ? undefined : `HTTP ${detail.status}`,
       detail.code,
@@ -116,7 +121,7 @@ export class InstaboxPreparationError extends Error {
 }
 
 export function preparationFailure(
-  phase: PreparationPhase,
+  phase: InstaboxPreparationError["phase"],
   cause: unknown,
   kind = provisionKind(cause),
 ): InstaboxPreparationError {

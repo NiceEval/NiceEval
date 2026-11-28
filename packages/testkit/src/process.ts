@@ -13,6 +13,8 @@ import {
 } from "./inspection-protocol.js";
 import { decodeRunDocument, type RunDocument, type RunListDocument } from "./run-protocol.js";
 import {
+  decodeExpActivityEvent,
+  type ExpActivityEvent,
   decodeExpPrepareEvent,
   type ExpPrepareEvent,
   decodeExpKeptEvent,
@@ -71,6 +73,18 @@ const ExpProgressEventSchema = Schema.declare<ExpProgressEvent>(
     }
   },
   { title: "niceeval.exp progress event" },
+);
+
+const ExpActivityEventSchema = Schema.declare<ExpActivityEvent>(
+  (input): input is ExpActivityEvent => {
+    try {
+      decodeExpActivityEvent(input);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { title: "exp activity event" },
 );
 
 const ExpPrepareEventSchema = Schema.declare<ExpPrepareEvent>(
@@ -209,6 +223,7 @@ const ExpLockWaitEventSchema = Schema.Struct({
 /** `niceeval exp --json` 的公开原始事件联合；Testkit 不改变字段或判定。 */
 export const ExpEventSchema = Schema.Union([
   ExpStartEventSchema,
+  ExpActivityEventSchema,
   ExpProgressEventSchema,
   ExpPrepareEventSchema,
   ExpFailureEventSchema,

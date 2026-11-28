@@ -109,7 +109,22 @@ export function decodeExpPrepareEvent(input: unknown): ExpPrepareEvent {
   return Schema.decodeUnknownSync(ExpPrepareEventSchema, { errors: "all", onExcessProperty: "error" })(input);
 }
 
-/** Bounded, transient snapshot; it does not assert Attempt publication. */
+/** An Attempt's transient phase or Adapter detail emitted during `exp --json`. */
+export const ExpActivityEventSchema = Schema.Struct({
+  event: Schema.Literal("activity"),
+  experimentId: Schema.optional(Schema.String),
+  evalId: Schema.String,
+  attempt: NonNegativeIntegerSchema,
+  phase: Schema.String,
+  detail: Schema.optional(Schema.String),
+});
+export type ExpActivityEvent = Schema.Schema.Type<typeof ExpActivityEventSchema>;
+
+export function decodeExpActivityEvent(input: unknown): ExpActivityEvent {
+  return Schema.decodeUnknownSync(ExpActivityEventSchema, { errors: "all", onExcessProperty: "error" })(input);
+}
+
+/** Transient Invocation counts at a heartbeat. */
 export const ExpProgressEventSchema = Schema.Struct({
   event: Schema.Literal("progress"),
   elapsedMs: NonNegativeNumberSchema,
@@ -123,16 +138,6 @@ export const ExpProgressEventSchema = Schema.Struct({
   failed: NonNegativeIntegerSchema,
   errored: NonNegativeIntegerSchema,
   skipped: NonNegativeIntegerSchema,
-  active: Schema.Array(
-    Schema.Struct({
-      experimentId: Schema.optional(Schema.String),
-      evalId: Schema.String,
-      attempt: NonNegativeIntegerSchema,
-      phase: Schema.String,
-      elapsedMs: NonNegativeNumberSchema,
-    }),
-  ).check(Schema.makeFilter((value) => value.length <= 64)),
-  activeOmitted: NonNegativeIntegerSchema,
 });
 /** An exp stream event decoded by the package-owned decoder; do not reinterpret its Schema with a different Effect runtime. */
 export type ExpProgressEvent = Schema.Schema.Type<typeof ExpProgressEventSchema>;
