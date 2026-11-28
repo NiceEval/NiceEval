@@ -10,6 +10,13 @@ import { reportUpstreamFailure, upstreamHttpFailureStatus } from "./upstream-fai
 import type { SandboxAgentSendContext } from "./types.ts";
 
 type RecordValue = globalThis.Record<string, unknown>;
+export const CLAUDE_API_KEY_ENV = "ANTHROPIC_API_KEY";
+export const CLAUDE_OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN";
+export interface ClaudeCodeAuthentication {
+  readonly source: typeof CLAUDE_API_KEY_ENV | typeof CLAUDE_OAUTH_TOKEN_ENV;
+  readonly value: string;
+}
+
 type PendingQuestion = {
   readonly requestId: string;
   readonly index: number;
@@ -36,6 +43,36 @@ type ClaudeState = {
 const slot = createSessionKey<ClaudeState>("claude-code/stream-json-native");
 function record(value: unknown): RecordValue | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as RecordValue) : undefined;
+}
+
+const REPORTED_AUTH_SOURCES = new Set<unknown>([
+  CLAUDE_API_KEY_ENV,
+  CLAUDE_OAUTH_TOKEN_ENV,
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+  "CCR_OAUTH_TOKEN_FILE",
+  "apiKeyHelper",
+  "/login managed key",
+  "claude.ai",
+  "profile",
+  "none",
+  "bedrock",
+  "vertex",
+  "foundry",
+  "anthropicAws",
+  "anthropicGoogleCloud",
+  "mantle",
+  "gateway",
+]);
+
+function reportedAuthSource(payload: unknown): unknown {
+  const account = record(record(payload)?.account);
+  if (!account || account.apiProvider !== "firstParty") return account?.apiProvider;
+  // The initialize receipt can report both fields. In print mode the bearer token
+  // and API key take precedence over OAuth (Claude Code authentication precedence).
+  if (account.tokenSource === "ANTHROPIC_AUTH_TOKEN") return account.tokenSource;
+  if (account.apiKeySource !== undefined && account.apiKeySource !== "none") return account.apiKeySource;
+  return account.tokenSource ?? (typeof account.subscriptionType === "string" ? "claude.ai" : undefined);
 }
 
 function claudeApiStatus(value: unknown): number | undefined {
@@ -210,11 +247,23 @@ async function createState(
   ctx: SandboxAgentContext,
   args: readonly string[],
   env: Readonly<Record<string, string>>,
+  authentication: ClaudeCodeAuthentication,
 ): Promise<ClaudeState> {
   const resources = attemptResources(ctx);
   if (!resources) throw new Error("Claude Code structured transport requires an Attempt resource registry");
+  const otherSource = authentication.source === CLAUDE_API_KEY_ENV ? CLAUDE_OAUTH_TOKEN_ENV : CLAUDE_API_KEY_ENV;
+  const processEnv: Record<string, string> = {
+    ...env,
+    [authentication.source]: authentication.value,
+    CLAUDE_CODE_ENTRYPOINT: "sdk-ts",
+    CLAUDE_AGENT_SDK_VERSION: "0.3.226",
+  };
+  delete processEnv[otherSource];
   const driver = await ManagedJsonlDriver.start(ctx.sandbox, "claude-code", resources, {
     argv: [
+      "env",
+      "-u",
+      otherSource,
       await resolveBin(ctx),
       "--output-format",
       "stream-json",
@@ -228,7 +277,7 @@ async function createState(
       ...args,
     ],
     cwd: ctx.sandbox.workdir,
-    env: { ...env, CLAUDE_CODE_ENTRYPOINT: "sdk-ts", CLAUDE_AGENT_SDK_VERSION: "0.3.226" },
+    env: processEnv,
   });
   const requestId = "niceeval-initialize";
   await driver.write({ type: "control_request", request_id: requestId, request: { subtype: "initialize" } });
@@ -243,6 +292,15 @@ async function createState(
   const response = record(record(initialized.frame)?.response);
   if (response?.subtype !== "success") {
     throw new Error(`Claude Code initialization failed: ${String(response?.error ?? "invalid control response")}`);
+  }
+  const source = reportedAuthSource(response.response);
+  if (source !== authentication.source) {
+    await driver.shutdown();
+    const reported = REPORTED_AUTH_SOURCES.has(source) ? String(source) : "unknown";
+    throw makeSendFailure({
+      acceptance: "rejected",
+      message: `Claude Code authentication mismatch: expected ${authentication.source}, reported ${reported}.`,
+    });
   }
   return {
     driver,
@@ -370,10 +428,11 @@ export async function sendClaudeCodeNative(
   ctx: SandboxAgentSendContext,
   args: readonly string[],
   env: Readonly<Record<string, string>>,
+  authentication: ClaudeCodeAuthentication,
 ): Promise<Turn> {
   let state = ctx.session.get(slot);
   if (!state) {
-    state = await createState(ctx, args, env);
+    state = await createState(ctx, args, env, authentication);
     ctx.session.set(slot, state);
   }
   const from = state.cursor;

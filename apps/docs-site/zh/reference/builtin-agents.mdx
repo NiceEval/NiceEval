@@ -39,7 +39,7 @@ description: "查看 claude-code、codex、bub 与 Antigravity CLI 适配器的�
 
 - 连接方式：Sandbox 里 spawn `claude --print --dangerously-skip-permissions`，读回 `~/.claude/projects/**/*.jsonl` 最新一份 transcript。
 - 会话续接：`ctx.session.id` 有值时追加 `--resume <id>`；transcript 解出的会话 id 经 `ctx.session.capture()` 写回。
-- 鉴权：`ANTHROPIC_API_KEY`，可选 `ANTHROPIC_BASE_URL`；配置项见下方 `ClaudeCodeConfig`。
+- 鉴权可选 `ANTHROPIC_API_KEY` 或 `CLAUDE_CODE_OAUTH_TOKEN`。两种方式均可设置 `ANTHROPIC_BASE_URL`，配置项见下方 `ClaudeCodeConfig`。
 - `tracing` 通过 claude CLI 原生 OTLP trace spans（beta）配置，协议为 `http/protobuf`。在 env 中设置 `CLAUDE_CODE_ENABLE_TELEMETRY` 与 `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`（须显式开启的 beta 开关），即可把 endpoint 交给 CLI。trace decoding 显示 interaction / llm_request / tool 层级的瀑布图。
 
 ### codex
@@ -82,7 +82,16 @@ const agent = antigravityAgent();
 apiKey?: string | undefined;
 ```
 
-Anthropic API key。省略时读 ANTHROPIC_API_KEY env。
+Anthropic API key，对应 `ANTHROPIC_API_KEY`。与 `oauthToken` 二选一。两者都省略时先读宿主 `ANTHROPIC_API_KEY`。
+
+#### `oauthToken`
+
+```ts
+oauthToken?: string | undefined;
+```
+
+`claude setup-token` 生成的长期 OAuth token，用 Claude 订阅额度运行。
+未显式配置鉴权且宿主没有 API key 时，读宿主 `CLAUDE_CODE_OAUTH_TOKEN`。
 
 #### `baseUrl`
 
@@ -101,6 +110,7 @@ env?: Readonly<globalThis.Record<string, string>> | undefined;
 
 Claude Code 进程的额外环境变量。值只保留在运行时，不进入结果沿用身份。
 会改变行为的非敏感值应同时写入 Experiment flags 或所属 Plugin 的身份。
+`ANTHROPIC_API_KEY` 和 `CLAUDE_CODE_OAUTH_TOKEN` 是保留键。传入 `oauthToken` 时也不能设置 `CLAUDE_CODE_SIMPLE`。
 
 #### `maxTurns`
 

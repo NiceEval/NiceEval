@@ -57,7 +57,14 @@ function startProcess({ argv, env }: ManagedProcessStart, keyEnv: string): Manag
           emit({ id: frame.id, result: { thread: { id: "fixture-session" } } });
         }
       } else if (frame.type === "control_request") {
-        emit({ type: "control_response", response: { request_id: frame.request_id, subtype: "success" } });
+        emit({
+          type: "control_response",
+          response: {
+            request_id: frame.request_id,
+            subtype: "success",
+            response: { account: { apiProvider: "firstParty", apiKeySource: keyEnv, tokenSource: "none" } },
+          },
+        });
       } else if (frame.type === "user") {
         emit({ type: "assistant", session_id: "fixture-session", message: { content: [{ type: "text", text: "turn " + key }] } });
         emit({ type: "result", session_id: "fixture-session", subtype: "success" });

@@ -182,7 +182,14 @@ function managedProcess(scenario: Scenario): ManagedProcess {
           return;
         }
       } else if (request.type === "control_request") {
-        emit({ type: "control_response", response: { request_id: request.request_id, subtype: "success" } });
+        emit({
+          type: "control_response",
+          response: {
+            request_id: request.request_id,
+            subtype: "success",
+            response: { account: { apiProvider: "firstParty", apiKeySource: "ANTHROPIC_API_KEY", tokenSource: "none" } },
+          },
+        });
         return;
       } else if (request.type !== "user") {
         return;

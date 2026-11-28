@@ -39,7 +39,7 @@ When you need `t.respond()` / `t.requireInputRequest()`: if the system under tes
 
 - Connection: spawns `claude --print --dangerously-skip-permissions` in the Sandbox and reads the newest transcript at `~/.claude/projects/**/*.jsonl`.
 - Session continuation: when `ctx.session.id` has a value, appends `--resume <id>`; the session ID decoded from the transcript is written back with `ctx.session.capture()`.
-- Authentication: `ANTHROPIC_API_KEY`, optionally `ANTHROPIC_BASE_URL`. See `ClaudeCodeConfig` below for options.
+- Use `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` for authentication. Both methods support `ANTHROPIC_BASE_URL`. See `ClaudeCodeConfig` below for options.
 - `tracing` uses the claude CLI's native beta OTLP trace spans over `http/protobuf`. Set `CLAUDE_CODE_ENABLE_TELEMETRY` and `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA` in the environment—the explicit beta opt-in—to give the endpoint to the CLI. Trace decoding displays an interaction / llm_request / tool hierarchy waterfall.
 
 ### codex
@@ -82,7 +82,15 @@ const agent = antigravityAgent();
 apiKey?: string | undefined;
 ```
 
-The Anthropic API key. When omitted, read `ANTHROPIC_API_KEY` from the environment.
+The Anthropic API key, passed to Claude Code as `ANTHROPIC_API_KEY`. Choose either `apiKey` or `oauthToken`. If you omit both options, the Adapter checks the host's `ANTHROPIC_API_KEY` first.
+
+#### `oauthToken`
+
+```ts
+oauthToken?: string | undefined;
+```
+
+A long-lived OAuth token from `claude setup-token` that uses your Claude subscription. If you omit both authentication options and the host has no API key, the Adapter reads `CLAUDE_CODE_OAUTH_TOKEN` from the host.
 
 #### `baseUrl`
 
@@ -98,7 +106,7 @@ A custom API base URL, for a proxy or internal endpoint. When omitted, read `ANT
 env?: Readonly<globalThis.Record<string, string>> | undefined;
 ```
 
-Extra environment variables for the Claude Code process. Values remain only at runtime and do not enter result carry identity. A non-sensitive value that changes behavior must also appear in Experiment Flags or the owning Plugin's identity.
+Extra environment variables for the Claude Code process. Values remain only at runtime and do not enter result carry identity. A non-sensitive value that changes behavior must also appear in Experiment Flags or the owning Plugin's identity. The Adapter reserves `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`. Leave `CLAUDE_CODE_SIMPLE` unset here when passing `oauthToken`.
 
 #### `maxTurns`
 

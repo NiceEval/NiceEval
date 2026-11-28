@@ -29,8 +29,20 @@ Marketplace 连接不代表启用其中所有插件，每项必须显式给出 P
 MCP 的 stdio 形态写进用户级 `~/.claude.json` 的 `mcpServers` 条目；HTTP 形态写成 `{ "type": "http", "url": …, "headers": … }`。
 安装全部完成后要跑的用户脚本走 `before` Hook，见 [Adapter · 安装后运行脚本](../../coding-agent-extensions.md#安装后运行脚本postsetup)。
 
-接入与成本三个字段：`apiKey` 是 Anthropic API key，省略时读 `ANTHROPIC_API_KEY` env var。
-`baseUrl` 是自定义 API 端点（代理 / 内网网关），省略时读 `ANTHROPIC_BASE_URL`，两者都没有则用 Anthropic 官方端点。
+鉴权二选一。`apiKey` 是 Anthropic API key，以 `ANTHROPIC_API_KEY` 交给 CLI。
+`oauthToken` 是 `claude setup-token` 生成的长期 OAuth token，以 `CLAUDE_CODE_OAUTH_TOKEN` 交给 CLI，用 Claude 订阅额度运行，不需要 API key。
+同时显式给出两者时构造即以 `TypeError` 拒绝。两者都省略时，先读宿主 `ANTHROPIC_API_KEY`，没有再读宿主 `CLAUDE_CODE_OAUTH_TOKEN`；都没有则在 send 前报错并点名这两个变量。
+宿主两个变量都存在时沿用 API key，想用订阅就显式传 `oauthToken`。
+
+Sandbox 里只设置选中的那一个变量，另一个不出现在 CLI 环境中，避免 CLI 自己按优先级换成另一种计费。
+Adapter 的 `env` 配置里写这两个变量时构造即报错；选 `oauthToken` 又在 `env` 里设 `CLAUDE_CODE_SIMPLE`（`--bare`，不读 OAuth）也构造即报错。
+项目级 `.claude/settings*.json` 的 `env` 与组织 managed policy 仍能在 CLI 内改写鉴权，它们属于被测工作区或外部策略，Adapter 不扫描。
+Adapter 以 CLI 初始化时报告的实际鉴权来源为准：来源与选中的鉴权不一致时，该 send 在发出第一条用户消息前失败，错误写出期望与实际的来源，不让 Attempt 在另一种计费下继续运行。
+
+token 与 key 都登记为 Attempt 敏感值，不进入任何身份、manifest 或 Record 正文；换 token 或在两种鉴权之间切换不改变执行身份，沿用规则不受影响。
+订阅鉴权下 Runner 的价目估算仍按 API 价格折算，只作参考，不代表订阅的实际扣费，见[用量与成本口径](cost.md)。
+
+`baseUrl` 是自定义 API 端点（代理 / 内网网关），省略时读 `ANTHROPIC_BASE_URL`，两者都没有则用 Anthropic 官方端点。它与两种鉴权都能组合，端点是否接受 OAuth token 由端点决定。
 `maxTurns` 限制单次 send 最多跑几个 tool-use 轮次（透传 `--max-turns`），用于给 eval 成本设上限，省略时用 CLI 原生默认（无限制）。
 模型选择不在这里——它归 experiment 的 `model` 维度。
 

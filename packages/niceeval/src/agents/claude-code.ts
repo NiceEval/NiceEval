@@ -4,7 +4,7 @@ import { attachCodingAgentExtensions } from "./plugin-extensions.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { Effect } from "effect";
 import { makeSandboxAgent } from "../define.ts";
-import { requireEnv, getEnv } from "../util.ts";
+import { getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import { cloneRepo, installSkills } from "./skills.ts";
 import { verifyMarketplaceName } from "./marketplace.ts";
@@ -28,7 +28,8 @@ import type { Agent, AgentInstallationManifest, McpServer, Sandbox, SkillSpec } 
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { requireManagedProcessCapability } from "../sandbox/backend.ts";
 import { attemptResources } from "../context/attempt-resources.ts";
-import { sendClaudeCodeNative } from "./claude-code-native.ts";
+import { CLAUDE_API_KEY_ENV, CLAUDE_OAUTH_TOKEN_ENV, sendClaudeCodeNative } from "./claude-code-native.ts";
+import type { ClaudeCodeAuthentication } from "./claude-code-native.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Claude Code 的 agent adapter(沙箱型)。
@@ -69,8 +70,13 @@ export interface ClaudeCodePluginSpec {
 }
 
 export interface ClaudeCodeConfig {
-  /** Anthropic API key。省略时读 ANTHROPIC_API_KEY env。 */
+  /** Anthropic API key，对应 `ANTHROPIC_API_KEY`。与 `oauthToken` 二选一。两者都省略时先读宿主 `ANTHROPIC_API_KEY`。 */
   apiKey?: string | undefined;
+  /**
+   * `claude setup-token` 生成的长期 OAuth token，用 Claude 订阅额度运行。
+   * 未显式配置鉴权且宿主没有 API key 时，读宿主 `CLAUDE_CODE_OAUTH_TOKEN`。
+   */
+  oauthToken?: string | undefined;
   /**
    * 自定义 API base URL(代理 / 内网端点)。省略时读 ANTHROPIC_BASE_URL env;
    * 两者都没有则用 Anthropic 官方端点(claude CLI 默认行为)。
@@ -79,6 +85,7 @@ export interface ClaudeCodeConfig {
   /**
    * Claude Code 进程的额外环境变量。值只保留在运行时，不进入结果沿用身份。
    * 会改变行为的非敏感值应同时写入 Experiment flags 或所属 Plugin 的身份。
+   * `ANTHROPIC_API_KEY` 和 `CLAUDE_CODE_OAUTH_TOKEN` 是保留键。传入 `oauthToken` 时也不能设置 `CLAUDE_CODE_SIMPLE`。
    */
   env?: Readonly<globalThis.Record<string, string>> | undefined;
   /**
@@ -125,15 +132,38 @@ export interface ClaudeCodeConfig {
   after?: readonly SandboxCommand[] | undefined;
 }
 
+function resolveAuthentication(config: Pick<ClaudeCodeConfig, "apiKey" | "oauthToken">): ClaudeCodeAuthentication {
+  if (config.apiKey !== undefined) return { source: CLAUDE_API_KEY_ENV, value: config.apiKey };
+  if (config.oauthToken !== undefined) return { source: CLAUDE_OAUTH_TOKEN_ENV, value: config.oauthToken };
+  const apiKey = getEnv(CLAUDE_API_KEY_ENV);
+  if (apiKey !== undefined) return { source: CLAUDE_API_KEY_ENV, value: apiKey };
+  const oauthToken = getEnv(CLAUDE_OAUTH_TOKEN_ENV);
+  if (oauthToken !== undefined) return { source: CLAUDE_OAUTH_TOKEN_ENV, value: oauthToken };
+  throw new Error(
+    `Claude Code needs ${CLAUDE_API_KEY_ENV} or ${CLAUDE_OAUTH_TOKEN_ENV}. Set one in the environment or configure apiKey or oauthToken.`,
+  );
+}
+
 // @concord-code
 // @concord-implements docs/feature/adapters/README.md
 // @concord-implements docs/feature/adapters/library/sdk/claude-code/README.md
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   assertAgentLifecycleNames(config, "claudeCodeAgent");
   assertMarketplaceRefsPinnable(config?.plugins ?? []);
-  const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
+  const { apiKey, oauthToken } = config ?? {};
+  if (apiKey !== undefined && oauthToken !== undefined) {
+    throw new TypeError("claudeCodeAgent accepts either apiKey or oauthToken.");
+  }
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
+  for (const name of [CLAUDE_API_KEY_ENV, CLAUDE_OAUTH_TOKEN_ENV]) {
+    if (Object.hasOwn(agentEnv, name)) {
+      throw new TypeError(`claudeCodeAgent env contains reserved key ${name}. Configure apiKey or oauthToken instead.`);
+    }
+  }
+  if (oauthToken !== undefined && Object.hasOwn(agentEnv, "CLAUDE_CODE_SIMPLE")) {
+    throw new TypeError("claudeCodeAgent oauthToken cannot be combined with CLAUDE_CODE_SIMPLE in env.");
+  }
   const { install, installer } = createNpmCliInstaller({
     identity: {
       agent: "claude-code",
@@ -285,18 +315,17 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
                 if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
                 if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
 
-                const apiKey = getApiKey();
+                const authentication = resolveAuthentication({ apiKey, oauthToken });
                 const env: globalThis.Record<string, string> = {
                   ...agentEnv,
-                  ANTHROPIC_API_KEY: apiKey,
                   // Eval runs must not silently change CLI version after the sandbox artifact was built.
                   DISABLE_AUTOUPDATER: "1",
                   ...ctx.telemetry?.env,
                 };
                 const baseUrl = getBaseUrl();
                 if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
-                remember(env.ANTHROPIC_API_KEY, ...Object.keys(agentEnv).map((key) => env[key]));
-                return sendClaudeCodeNative(input, ctx, args, env);
+                remember(authentication.value, ...Object.keys(agentEnv).map((key) => env[key]));
+                return sendClaudeCodeNative(input, ctx, args, env, authentication);
               },
               catch: (cause) => cause,
             }),

@@ -14,7 +14,7 @@ On this page, `settingsFile` and `configFile` are both resolved relative to the 
 
 ### claude-code
 
-- **Authentication**: `ANTHROPIC_API_KEY`, which the `apiKey` factory option can override; optionally `ANTHROPIC_BASE_URL`, through the `baseUrl` factory option.
+- Use `apiKey` for the Anthropic API or pass a long-lived token from `claude setup-token` as `oauthToken` to use your Claude subscription. If you omit both options, the Adapter checks the host's `ANTHROPIC_API_KEY` first and then `CLAUDE_CODE_OAUTH_TOKEN`. Before sending the first message, the Adapter checks the authentication source Claude Code reports. Both methods support a custom endpoint through `baseUrl` or `ANTHROPIC_BASE_URL`.
 - **Install an MCP server**: use `mcpServers`. During `setup`, it writes to the top-level `mcpServers` field in the user-level `~/.claude.json` in the Sandbox. The two shapes are distinguished by fields. A local stdio process uses `command`, optionally with `args` / `env`. A remote Streamable HTTP endpoint uses `url`, optionally with `headers`, which are written verbatim to request headers and commonly contain `Authorization`; it is written as a `{ "type": "http", "url": …, "headers": … }` entry. The `url` must be reachable inside the Sandbox. If the service runs on your machine, first expose it as a public address through a tunnel such as cloudflared or tailscale.
 - **Install a Skill**: use `skills: SkillSpec[]`. A local Skill is `{ kind: "local", path }`, a file or directory read from the project root. A Repo Skill is `{ kind: "repo", source, ref, skills }`, which can pin a commit or tag and enable only part of a multi-Skill repository. They are installed at project-level `.claude/skills/<name>/` in the Sandbox, where the claude CLI discovers them natively. The Adapter normalizes a native `Skill` invocation into a `skill.loaded` raw event instead of also recording it as a tool call. The public assert-first API currently has no dedicated Skill assertion, and it cannot be disguised as `calledTool("Skill", ...)`.
 - **Install a native Plugin**: use `plugins: ClaudeCodePluginSpec[]`. Each item declares a Marketplace connection (`name` / `source` / optional `ref`) and the Plugin name inside it. This type belongs only to claude-code and cannot be passed to codex. An Experiment that reuses a Sandbox needs no extra residual cleanup: before every Attempt, the named Marketplace registration and installed Plugin are reinstalled from the declared `source` / `ref`.
@@ -150,7 +150,7 @@ export default defineExperiment({
 
 | | claude-code | codex | bub |
 |---|---|---|---|
-| Authentication environment variable | `ANTHROPIC_API_KEY` | `CODEX_API_KEY` + optional `CODEX_BASE_URL` | `BUB_API_KEY` + `BUB_API_BASE` |
+| Authentication environment variable | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | `CODEX_API_KEY` + optional `CODEX_BASE_URL` | `BUB_API_KEY` + `BUB_API_BASE` |
 | Additional Agent process environment | ❌ | ✅ `env` | ❌ |
 | MCP server | ✅ `mcpServers` (stdio + HTTP) | ✅ `mcpServers` (stdio + HTTP) | ❌ |
 | Skill | ✅ `skills: SkillSpec[]` (native discovery) | ✅ `skills: SkillSpec[]` (+ discovery instruction) | ✅ `skills: SkillSpec[]` (+ discovery instruction) |

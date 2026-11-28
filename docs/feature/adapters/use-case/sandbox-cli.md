@@ -69,6 +69,7 @@ CLI 准备失败属于执行错误；无法取得可信终态时也走执行错�
 ## 相关契约
 
 - [Codex CLI](../library/sdk/codex-cli/README.md)：内置安装、鉴权与进度。
+- [Claude Code](../library/sdk/claude-code/README.md) 说明如何用 Anthropic API key 或 Claude 订阅鉴权。
 - [Sandbox Agent](../library/sandbox-agent.md)：准备、执行与失败边界。
 - [Sandbox Library](../../sandbox/library/README.md)：Docker 起点。
 - [Experiment 选择 Adapter](../../experiments/library/README.md#选择-adapter) 与 [CLI](../../experiments/cli/README.md#命令)：运行入口。
