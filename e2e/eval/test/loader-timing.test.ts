@@ -7,7 +7,6 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 
 // @feature docs/feature/eval/README.md
-// @issue docs/issues/loaders-without-host.md
 test.concurrent("无宿主读取后同进程发现仍登记共享文件，发现结束后具名拒绝运行期读取", async () => {
   await evalE2E.case("loader-timing", async ({ paths: { projectRoot } }) => {
     for (const dir of ["evals", "experiments"]) {
