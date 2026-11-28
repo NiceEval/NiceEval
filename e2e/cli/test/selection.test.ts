@@ -13,9 +13,10 @@ test("Eval 前缀只选择命中的 Eval", async () => {
 
     expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
     const plan = decodeExpPlanDocument(receipt.json());
-    expect(plan).not.toHaveProperty("format");
-    expect(plan).not.toHaveProperty("schemaVersion");
-    expect(plan.matrix.map((row) => row.evalId)).toEqual(["greet/hello"]);
+    expect(plan).toMatchObject({ format: "niceeval.exp-plan", schemaVersion: 5 });
+    expect(plan.matrix.map(({ experimentId, displayName, evalId }) => [experimentId, displayName, evalId])).toEqual([
+      ["normal", "normal", "greet/hello"],
+    ]);
   });
 });
 // @use-case docs/feature/experiments/use-case/selection-dry-preview.md

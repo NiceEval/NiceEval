@@ -989,7 +989,6 @@ function buildReceiptLines(
   state: RunFeedbackState,
   panel: { mode: PanelMode; width: number },
 ): string[] {
-  const rows: PanelRow[] = [];
   const runs = event.receipt.createdRunIds;
   const experimentIds = new Map([...state.runIdsByExperiment].map(([experimentId, runId]) => [runId, experimentId]));
   const mappings = runs.flatMap((runId) => {
@@ -998,37 +997,45 @@ function buildReceiptLines(
       ? []
       : [`${experimentDisplayLabel(experimentOutputFields(experimentId, state.displayNames))} → ${runId}`];
   });
-  rows.push(...runs.map((runId): PanelRow => ({ kind: "line", text: runId })));
-  rows.push({ kind: "line", text: `publicationCutoff ${event.receipt.publicationCutoff}` });
+  const receiptRows: PanelRow[] = [
+    ...runs.map((runId): PanelRow => ({ kind: "line", text: runId })),
+    { kind: "line", text: `publicationCutoff ${event.receipt.publicationCutoff}` },
+  ];
+  const nextRows: PanelRow[] = [];
   const first = runs[0];
-  if (first !== undefined) {
-    rows.push({ kind: "line", text: `show: niceeval show run:${first}` });
-    rows.push({ kind: "line", text: `view: niceeval view run:${first}` });
+  if (first === undefined) {
+    nextRows.push({ kind: "line", text: "No Runs were created for this invocation." });
+  } else {
+    nextRows.push({ kind: "line", text: `show: niceeval show run:${first}` });
+    nextRows.push({ kind: "line", text: `view: niceeval view run:${first}` });
     if (runs.length > 1) {
-      rows.push({
+      nextRows.push({
         kind: "line",
         text: `+${runs.length - 1} more — niceeval run list --invocation ${event.receipt.invocationId}`,
       });
     }
   }
-  if (runs.length === 0) {
-    rows.push({ kind: "line", text: "No Runs were created for this invocation." });
-  }
+  const sections = [
+    { title: "RECEIPT", rows: receiptRows },
+    { title: "NEXT", rows: nextRows },
+  ];
   return [
     ...mappings,
-    ...renderPanel({
-      title: `NEXT`,
-      meta: undefined,
-      footerCommand: undefined,
-      rows,
-      width: panel.width,
-      mode: rows.some(
-        (row) => row.kind === "line" && stringWidth(row.text) > panelContentWidth(panel.width, panel.mode),
-      )
-        ? "plain"
-        : panel.mode,
-      capWidth: true,
-    }),
+    ...sections.flatMap(({ title, rows }) =>
+      renderPanel({
+        title,
+        meta: undefined,
+        footerCommand: undefined,
+        rows,
+        width: panel.width,
+        mode: rows.some(
+          (row) => row.kind === "line" && stringWidth(row.text) > panelContentWidth(panel.width, panel.mode),
+        )
+          ? "plain"
+          : panel.mode,
+        capWidth: true,
+      }),
+    ),
   ];
 }
 

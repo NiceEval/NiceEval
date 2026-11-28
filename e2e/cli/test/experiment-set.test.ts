@@ -1,4 +1,3 @@
-import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -61,13 +60,20 @@ test.concurrent("精确选择离散实验并在同一次 Invocation 共享全局
       "--json",
     ]);
     expect(result.exitCode, result.diagnostic()).toBe(1);
-    for (const event of result.expEvents()) {
+    const [start, ...followingEvents] = result.expEvents();
+    if (start?.event !== "start") throw new Error(result.diagnostic());
+    expect(start).not.toHaveProperty("protocol");
+    for (const event of followingEvents) {
       expect(event).not.toHaveProperty("protocol");
       expect(event).not.toHaveProperty("format");
       expect(event).not.toHaveProperty("schemaVersion");
     }
     expect(result.expReceipt().createdRunIds).toHaveLength(2);
-    expect(only(result.expEvents(), (event) => event.event === "start")).toMatchObject({ configs: 2, concurrency: 1 });
+    expect(start).toMatchObject({ format: "niceeval.exp", schemaVersion: 1, configs: 2, concurrency: 1 });
+    expect(start.experiments.map(({ experimentId, displayName }) => [experimentId, displayName]).sort()).toEqual([
+      ["deliberate-fail", "deliberate-fail"],
+      ["normal", "normal"],
+    ]);
     expect([...new Set(result.expEvalEvents().map((event) => event.experimentId))].sort()).toEqual([
       "deliberate-fail",
       "normal",

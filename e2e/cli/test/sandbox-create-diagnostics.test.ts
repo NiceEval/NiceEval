@@ -8,7 +8,7 @@ import { cliE2E } from "./context.ts";
 test.concurrent.each([
   ["snapshot", /snapshot lookup/i],
   ["snapshot-body", /snapshot lookup/i],
-  ["allocation", /allocation could not be reconciled/i],
+  ["allocation", /^Instabox allocation failed:/u],
   ["grant", /SSH grant/i],
 ] as const)("show identifies a sandbox creation timeout during %s", async (stage, operation) => {
   await cliE2E.case(`instabox-timeout-${stage}`, {}, async ({ commands: { niceeval }, paths }) => {
@@ -39,6 +39,9 @@ export default defineExperiment({
     const error = trace.attemptTrace().trace.diagnostics.items.find((item) => item.kind === "execution-error");
     expect(error?.summary).toMatch(operation);
     expect(error?.summary).toMatch(/timed out|timeout/i);
-    if (stage === "allocation") expect(error?.summary).toContain("deletion deadline");
+    if (stage === "allocation") {
+      expect(error?.summary).toContain("Acceptance could not be reconciled.");
+      expect(error?.summary).toContain("deletion deadline");
+    }
   });
 });

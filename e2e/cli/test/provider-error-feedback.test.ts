@@ -14,11 +14,12 @@ const PRIMARY_ERROR_TAIL = "request req_docker_primary_789";
 const SECONDARY_ERROR_HEAD = "409 Conflict · DOCKER_BUILD_DENIED";
 const SECONDARY_ERROR_TAIL = "request req_docker_secondary_987";
 
-function readNext(output: string, runIds: readonly string[]): string {
-  const next = output.slice(output.lastIndexOf("NEXT")).trim();
-  const [, printedIds, cutoff, commands] = /^NEXT (.+?) publicationCutoff (\{[^}]+\}) (.+)$/u.exec(next) ?? [];
+function readReceiptAndNext(output: string, runIds: readonly string[]): string {
+  const footer = output.slice(output.lastIndexOf("RECEIPT")).trim();
+  const [, printedIds, cutoff, commands] =
+    /^RECEIPT (.+?) publicationCutoff (\{[^}]+\}) NEXT (.+)$/u.exec(footer) ?? [];
   if (printedIds === undefined || cutoff === undefined || commands === undefined)
-    throw new Error(`Invalid NEXT panel: ${next}`);
+    throw new Error(`Invalid RECEIPT and NEXT panels: ${footer}`);
   const ids = printedIds.split(" ");
   expect([...ids].sort()).toEqual(runIds);
   expect(JSON.parse(cutoff)).toEqual({
@@ -180,12 +181,12 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
           .sort();
       const shortRuns = runsFor(true);
       expect(shortRuns).toHaveLength(1);
-      const shortNext = readNext(shortOutput, shortRuns);
+      const shortNext = readReceiptAndNext(shortOutput, shortRuns);
       expect(shortNext).toBe(`show: niceeval show run:${shortRuns[0]} view: niceeval view run:${shortRuns[0]}`);
 
       const providerRuns = runsFor(false);
       expect(providerRuns).toHaveLength(6);
-      const providerNext = readNext(compact, providerRuns);
+      const providerNext = readReceiptAndNext(compact, providerRuns);
       const nextCommands =
         /^show: niceeval show run:([0-9a-f-]+) view: niceeval view run:\1 \+5 more — niceeval run list --invocation (\S+)$/u;
       expect(providerNext).toMatch(nextCommands);

@@ -28,6 +28,7 @@ test.concurrent("JSON activity 标识当前 Eval、Attempt 和执行阶段", asy
         expect(receipt.expEvents()).toContainEqual({
           event: "activity",
           experimentId: "pipe-progress",
+          displayName: "pipe-progress",
           evalId: "pipe/progress",
           attempt: 0,
           phase: "eval.run",
