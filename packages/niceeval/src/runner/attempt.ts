@@ -3946,7 +3946,7 @@ async function runAttemptBody(
 
     // 构造 t,跑 test
     enterPhase("eval.run");
-    log(`driving agent...`);
+    log("running eval...");
     let evalSendOrdinal = 0;
     const moduleProjection = evalModules(evalDef);
     const transferPlans =
