@@ -471,7 +471,21 @@ t.judge({ source: expected, summary: turn.reply }, factualSummary)
   .label("事实一致");
 ```
 
-Judge 材料可以是大小有上限的 JSON 值，也可以是 `judgeImage()` 生成的图片，登记时就会保存一份快照。
+Judge 材料可以是 JSON 值，也可以是 `judgeImage()` 生成的图片，登记时就会保存一份快照。
+
+`defineJudge` 的两个预算都可选，每项 Judge 各算各的：
+
+- `maxMaterialBytes`：这一项材料的字节上限。不写时没有固定的字节上限，材料只要放得进所选模型的上下文；放不下时这一项为 `unavailable`。写了就是额外的上限，超出时同样为 `unavailable`，不会截掉一部分再评分。
+- `maxCalls`：这一项最多调用模型几次，默认 4。
+
+审计没有字节上限，也不在同一个 Attempt 的多项 Judge 之间累计。每次实际请求、返回和最终结果都会完整保存，一个评估用例里登记多少项 Judge，都不会因为审计总量超限而出错。下面的例子登记 34 项、每项约 60 KB 的材料，不需要配置任何审计预算：
+
+```ts
+const long = "日志行\n".repeat(6_000);
+for (let i = 0; i < 34; i++) {
+  t.judge({ log: long, step: i }, defineJudge({ rubric: `第 ${i} 步的日志没有报错。` })).score(1);
+}
+```
 
 Judge 用哪个模型按顺序决定：先取项目配置的 `judgeProvider`，再应用评估用例的 `judge`，最后应用 Experiment 的 `judge`。后一层给的是完整 Provider 时，会整体替换服务和执行配置；只给模型字符串时，只换掉已选 Provider 的模型。评估用例的 `judge` 只决定这道题用哪个模型或 Provider，不限制能用哪些匹配条件。
 
