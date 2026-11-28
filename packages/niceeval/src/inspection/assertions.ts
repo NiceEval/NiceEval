@@ -42,6 +42,7 @@ import { readScoreMatchAudit } from "../assertions/score-match-audit.ts";
 import type { ScoreMatchAuditImageContent } from "../assertions/score-match-audit.ts";
 import type { InspectionFactSource } from "./source.ts";
 import type { InspectionAgentTurnsRead } from "./trace.ts";
+import { toolCommandPreview, toolCommandText, type InspectionToolCommandPreview } from "./tool-command.ts";
 
 const CONTENT_PAGE_SIZE = 64;
 
@@ -742,8 +743,11 @@ type MatcherSourceLocator =
   | Readonly<{ readonly kind: "tool-occurrence"; readonly toolOccurrenceId: string }>
   | Readonly<{ readonly kind: "event"; readonly eventId: string }>;
 
-interface MatcherFilterRow {
-  readonly kind: "tool" | "event" | "legacy-source-row";
+type MatcherFilterRowSubject =
+  | { readonly kind: "tool"; readonly tool: string; readonly command: InspectionToolCommandPreview }
+  | { readonly kind: "event" | "legacy-source-row" };
+
+type MatcherFilterRow = MatcherFilterRowSubject & {
   readonly rowId: string;
   readonly number: string;
   readonly phase: "at-evaluation" | "outside-evaluation-snapshot" | "historical";
@@ -762,7 +766,7 @@ interface MatcherFilterRow {
     readonly difference: InspectionJson | undefined;
   }>;
   readonly conversationTarget: MatcherConversationTarget;
-}
+};
 
 function factValue(value: null | boolean | number | string): InspectionJson {
   return closeJson({ kind: "value" as const, value });
@@ -983,6 +987,7 @@ function toolDetail(
   eventsById: ReadonlyMap<string, ObservedEventLedgerRow>,
 ):
   | Readonly<{
+      readonly subject: Extract<MatcherFilterRowSubject, { readonly kind: "tool" }>;
       readonly summary: string;
       readonly detail: InspectionJson;
       readonly target: MatcherConversationTarget;
@@ -992,11 +997,15 @@ function toolDetail(
   if (start?.event.kind !== "tool-start") return undefined;
   const event = start.event;
   const finish = occurrence.finish === undefined ? undefined : eventsById.get(occurrence.finish.eventId);
+  const command = toolCommandPreview(event.command, event.toolOccurrenceId);
   return {
-    summary: event.tool,
+    subject: { kind: "tool", tool: event.tool, command },
+    // A usable logical command reads as its argv; every other tool call reads as its tool name.
+    summary: command.kind === "command" && command.state === "available" ? command.argv.preview : event.tool,
     get detail() {
       return factFields([
         { label: "name", value: factValue(event.tool) },
+        { label: "command", value: factValue(toolCommandText(command)) },
         { label: "input", value: factValue(event.inputSummary) },
         { label: "status", value: factValue(finish?.event.kind === "tool-finish" ? finish.event.outcome : "pending") },
         { label: "output", value: factValue(finish?.event.kind === "tool-finish" ? finish.event.outputSummary : null) },
@@ -1077,6 +1086,7 @@ function currentMatcherRows(
               (row.event.kind === "message" || row.event.kind === "tool-start" || row.event.kind === "tool-finish"),
           )
           .map((row) => ({
+            subject: { kind: "event" as const },
             locator: { kind: "event" as const, eventId: row.eventId },
             inSnapshot: snapshotContainsEvent(input.snapshot, row),
             summary: eventSummary(row),
@@ -1094,6 +1104,7 @@ function currentMatcherRows(
           }
           return [
             {
+              subject: material.subject,
               locator: {
                 kind: "tool-occurrence" as const,
                 toolOccurrenceId: row.toolOccurrenceId,
@@ -1128,7 +1139,7 @@ function currentMatcherRows(
       };
     }
     return {
-      kind: input.subject,
+      ...row.subject,
       rowId: matcherLocatorKey(row.locator),
       number: String(index + 1),
       phase: row.inSnapshot ? ("at-evaluation" as const) : ("outside-evaluation-snapshot" as const),

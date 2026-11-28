@@ -2,6 +2,7 @@
 // @concord-implements docs/feature/inspection/README.md
 // @concord-implements docs/feature/insight/README.md
 import { projectLifecyclePhase } from "./lifecycle.ts";
+import { toolCommandBytes, toolCommandDetail, toolCommandPreview } from "./tool-command.ts";
 import { repriceRecordedUsage, type InspectionRepricingInput, type InspectionRepricingResult } from "./repricing.ts";
 import {
   effectiveCostTotals,
@@ -38,9 +39,11 @@ import { ExecutionTraceRecordLimits } from "../record/family/execution-traces/sc
 import type { AgentTurnOutcome } from "../record/family/protocol-values.ts";
 import type { RecordAttachmentOwner } from "../record/model/core.ts";
 import type { SourceReceiptLimitation } from "../record/family/source-receipt/index.ts";
+import type { ToolOccurrenceId } from "../record/family/source-receipt/model.ts";
 import type { PersistedContentMetadata, SealedAttachmentMetadata } from "../record/sqlite/index.ts";
 import type { InspectionJson } from "./codec.ts";
-import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
+import { encodeBase64Bytes, InspectionSha256, utf8ByteLength } from "./bytes.ts";
+import { InspectionExecutionTraceError } from "./execution-trace-record.ts";
 import {
   INSPECTION_RESULT_PAGE_BYTES,
   INSPECTION_USAGE_CALL_PAGE_BYTES,
@@ -590,6 +593,55 @@ export function projectAttemptTraceDetail(
   return detail;
 }
 
+export function projectToolCommandEvidence(
+  attachment: TraceAttachmentInput | undefined,
+  toolOccurrenceId: ToolOccurrenceId,
+  evidenceId: string,
+  offset: number,
+  limit: number,
+): Extract<InspectionTraceDetailResult, { readonly kind: "execution-evidence" }> | undefined {
+  if (attachment === undefined) return undefined;
+  const turns = readAgentTurns(attachment);
+  if (turns.state !== "available") return undefined;
+  for (const [turnIndex, turn] of turns.value.segments.entries()) {
+    const itemIndex = turn.items.findIndex(
+      (item) => item.kind === "tool-start" && item.toolOccurrenceId === toolOccurrenceId,
+    );
+    const item = turn.items[itemIndex];
+    if (item?.kind !== "tool-start") continue;
+    const logical = item.command?.kind === "command" ? item.command.logical : undefined;
+    if (logical?.state !== "available") return undefined;
+    const bytes = toolCommandBytes(logical);
+    if (offset > bytes.byteLength) {
+      throw new InspectionExecutionTraceError(
+        "inspection-request-invalid",
+        "Tool argv evidence offset is out of range.",
+      );
+    }
+    const maximumEnd = Math.min(offset + limit, bytes.byteLength);
+    let end = maximumEnd;
+    while (end > offset && end < bytes.byteLength && (bytes[end]! & 0xc0) === 0x80) end--;
+    if (end === offset) end = maximumEnd;
+    return {
+      kind: "execution-evidence",
+      evidenceId,
+      eventId: item.itemId,
+      traceId: "agent-turns",
+      key: "command-argv",
+      label: "Tool command argv",
+      artifactId: attachment.physical.attachmentId,
+      artifactSha256: attachment.physical.canonicalDigest,
+      pointer: `/segments/${turnIndex}/items/${itemIndex}/command/logical`,
+      targetSha256: new InspectionSha256().update(bytes).digestHex(),
+      targetByteLength: bytes.byteLength,
+      offset,
+      base64: encodeBase64Bytes(bytes.subarray(offset, end)),
+      nextOffset: end < bytes.byteLength ? end : null,
+    };
+  }
+  return undefined;
+}
+
 function projectTypedTraceIdentityIndex(
   agentTurns: ReturnType<typeof readAgentTurns>,
   commands: ReturnType<typeof readSandboxCommands>,
@@ -651,6 +703,7 @@ function projectTypedConversationItem(
         ...base,
         kind: "tool-call",
         tool: item.tool,
+        command: toolCommandPreview(item.command, item.toolOccurrenceId),
         input: input.value,
         inputTruncated: input.truncated,
         toolOccurrenceId: item.toolOccurrenceId,
@@ -724,7 +777,7 @@ export function projectTraceTurnDetail(
     kind: "turn",
     turnId,
     turn: traceTurnIdentity(turn),
-    items: turn.items.map((item) => projectFullConversationItem(item, turn)),
+    items: turn.items.map((item) => projectFullConversationItem(item, turn, 1_024)),
   };
 }
 
@@ -855,6 +908,7 @@ function projectFullConversationItem(
     readonly outcome: AgentTurnOutcome;
     readonly sessionId: string | undefined;
   },
+  toolCommandInlineBytes?: number,
 ): Extract<InspectionTraceDetailResult, { readonly kind: "item" }>["item"] {
   const truncation = (field: string) => item.textTruncations?.[field];
   const base = {
@@ -873,6 +927,7 @@ function projectFullConversationItem(
         sequence: item.sessionSequence,
         toolOccurrenceId: item.toolOccurrenceId,
         tool: item.tool,
+        command: toolCommandDetail(item.command, item.toolOccurrenceId, toolCommandInlineBytes),
         input: item.inputSummary,
         ...(truncation("inputSummary") === undefined ? {} : { inputTruncation: truncation("inputSummary") }),
       };

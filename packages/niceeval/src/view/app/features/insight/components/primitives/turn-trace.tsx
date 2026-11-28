@@ -13,6 +13,8 @@ import {
   type ConversationTurn,
 } from "./conversation.tsx";
 import { resolveLocalizedText, type ReportLocale, type ValueProps } from "./shared.ts";
+import { rowStateLabel } from "./matcher-filter-debugger.tsx";
+import { useAssertionTraceRow, useTraceReveal } from "./matcher-trace-overlay.tsx";
 
 export type TurnTraceProps = ValueProps<
   ConversationContent | undefined,
@@ -582,16 +584,19 @@ function TraceEventRow({ event, locale }: { event: TraceEvent; locale: ReportLoc
   const turnLabel = resolveLocalizedText(event.turn.label, locale);
   const duration = turnDuration(event.turn);
   const status = statusFor(event.entry, locale);
+  const assertionState = useAssertionTraceRow(event.entry.anchor);
+  const reveal = useTraceReveal();
   const interaction = useTraceInteraction();
-  const hidden =
+  const hiddenByFilter =
     (interaction.callsCollapsed && event.toolLike) ||
     (interaction.query !== "" &&
       !`${event.entry.kind} ${event.summary} ${event.raw}`
         .toLocaleLowerCase()
         .includes(interaction.query.toLocaleLowerCase()));
+  const revealed = reveal?.anchor !== undefined && reveal.anchor === event.entry.anchor;
   return (
     <article
-      hidden={hidden}
+      hidden={hiddenByFilter && !revealed}
       className={cx(
         "niceeval-trace-event-row",
         event.toolLike && "niceeval-trace-event-row--tool",
@@ -613,7 +618,14 @@ function TraceEventRow({ event, locale }: { event: TraceEvent; locale: ReportLoc
         <span className="niceeval-trace-event-kind" data-lane={event.lane}>
           {event.entry.kind}
         </span>
-        <span className="niceeval-trace-event-summary">{event.summary || "—"}</span>
+        <span className="niceeval-trace-event-summary">
+          {event.summary || "—"}
+          {assertionState === undefined ? null : (
+            <small className="niceeval-trace-assertion-state" data-state={assertionState}>
+              {rowStateLabel(assertionState, locale)}
+            </small>
+          )}
+        </span>
         <span
           className="niceeval-trace-event-meta"
           title={
@@ -647,7 +659,9 @@ function TraceTurn({
   const failed = events.some((event) => event.entry.failed === true);
   const interaction = useTraceInteraction();
   const [collapsed, setCollapsed] = useState(false);
-  const isCollapsed = interaction.turnsCollapsed || collapsed;
+  const reveal = useTraceReveal();
+  const revealed = reveal?.anchor !== undefined && events.some((event) => event.entry.anchor === reveal.anchor);
+  const isCollapsed = (interaction.turnsCollapsed || collapsed) && !revealed;
   return (
     <section
       className={cx(
@@ -661,7 +675,10 @@ function TraceTurn({
         <button
           type="button"
           className="niceeval-trace-turn-toggle"
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => {
+            reveal?.setAnchor(undefined);
+            setCollapsed(!collapsed);
+          }}
           aria-expanded={!isCollapsed}
           title={text(locale, "Collapse turn", "折叠轮次")}
         >
@@ -706,17 +723,27 @@ export function TurnTrace({ data, locale, className }: TurnTraceProps): ReactEle
   const [callsCollapsed, setCallsCollapsed] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | undefined>(undefined);
+  const reveal = useTraceReveal();
   if (data === undefined || data.turns.length === 0) return null;
   const events = traceEventsOf(data, locale);
   const interaction = {
     duration,
     setDuration,
     turnsCollapsed,
-    setTurnsCollapsed,
+    setTurnsCollapsed: (value: boolean) => {
+      reveal?.setAnchor(undefined);
+      setTurnsCollapsed(value);
+    },
     callsCollapsed,
-    setCallsCollapsed,
+    setCallsCollapsed: (value: boolean) => {
+      reveal?.setAnchor(undefined);
+      setCallsCollapsed(value);
+    },
     query,
-    setQuery,
+    setQuery: (value: string) => {
+      reveal?.setAnchor(undefined);
+      setQuery(value);
+    },
     selected,
     setSelected,
   };

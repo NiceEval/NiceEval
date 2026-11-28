@@ -73,3 +73,9 @@ facts reader。每次读取先确定 selection 和 exact `PublicationCutoff`，�
 ### 可移植轨迹 {#portable-trace}
 
 观察公开轨迹摘要、证据 locator 与精确读回。搬迁前后摘要有界且身份和所指证据一致。动作包括执行多层操作，搬迁 Record 并重新查询。
+
+### 工具命令续读 {#tool-command-readback}
+
+观察 conversation 与 matcher ledger 中同一工具调用的命令分类、argv 预览和证据 locator。
+命令预览最多使用 1 KiB，超出时交付省略字节数和全文入口。较长详情通过现有 evidence 续读逐页返回已封存的逻辑 argv。
+动作包括读取不同归一方式和缺失原因，使用跨页参数，并拼接各页验证参数顺序和内容。

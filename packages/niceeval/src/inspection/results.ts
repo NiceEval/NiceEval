@@ -1,3 +1,4 @@
+import { InspectionToolCommandDetailSchema, InspectionToolCommandPreviewSchema } from "./tool-command.ts";
 import { RunPluginIdentitySchema } from "../record/model/run-context.ts";
 import { projectLifecyclePhase } from "./lifecycle.ts";
 import { RUN_ACTIVITY_PHASES } from "../record/family/protocol-values.ts";
@@ -702,6 +703,7 @@ export const InspectionTraceItemSchema = Schema.Union([
     ...TraceItemBase,
     kind: Schema.Literal("tool-call"),
     tool: Schema.String,
+    command: InspectionToolCommandPreviewSchema,
     input: Schema.String,
     inputTruncated: Schema.Boolean,
     toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema),
@@ -907,6 +909,7 @@ export const InspectionTraceDetailItemSchema = Schema.Union([
     kind: Schema.Literal("tool-call"),
     toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema),
     tool: Schema.String,
+    command: InspectionToolCommandDetailSchema,
     input: Schema.String,
     inputTruncation: Schema.optional(TraceTextTruncationSchema),
   }),

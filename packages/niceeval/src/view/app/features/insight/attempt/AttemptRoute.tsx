@@ -5,9 +5,11 @@ import { useTranslation } from "react-i18next";
 
 import { AttemptDialog } from "./AttemptDialog.tsx";
 import { AttemptDetails } from "./details/index.tsx";
+import { MatcherTraceOverlay } from "../components/primitives/matcher-trace-overlay.tsx";
 import type { Locale } from "../shell/types.ts";
 import { useCurrentGeneration } from "../data/index.ts";
 import { attemptQueryOptions } from "./data/load.ts";
+import "./matcher-evidence.css";
 
 export function AttemptRoute({
   locator,
@@ -25,14 +27,9 @@ export function AttemptRoute({
   const locale: Locale = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
   return (
     <AttemptDialog title={t("attempt.title")} onClose={onClose}>
-      <AttemptDetails
-        key={`${locator}:${aspect}:${id}`}
-        model={model}
-        locale={locale}
-        aspect={aspect}
-        selectedId={id}
-        className=""
-      />
+      <MatcherTraceOverlay key={`${locator}:${aspect}:${id}`}>
+        <AttemptDetails model={model} locale={locale} aspect={aspect} selectedId={id} className="" />
+      </MatcherTraceOverlay>
     </AttemptDialog>
   );
 }

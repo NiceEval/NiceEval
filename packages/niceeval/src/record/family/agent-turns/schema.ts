@@ -50,6 +50,37 @@ const ToolOccurrenceRelationSchema = Schema.Union([
   }),
 ]);
 
+// The Adapter's command classification. Omitted when the Adapter did not classify the tool operation.
+const AgentTurnToolCommandSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("not-command") }),
+  Schema.Struct({
+    kind: Schema.Literal("command"),
+    logical: Schema.Union([
+      Schema.Struct({
+        state: Schema.Literal("available"),
+        normalization: Schema.Literals(["identity", "pnpm-exec", "npx"]),
+        executable: SafeTextSchema,
+        args: Schema.Array(SafeTextSchema),
+      }),
+      Schema.Struct({
+        state: Schema.Literal("opaque"),
+        reason: Schema.Literal("original-opaque"),
+        originalReason: Schema.Literals([
+          "redacted",
+          "truncated",
+          "compound-shell",
+          "dynamic-shell",
+          "unsupported-protocol",
+        ]),
+      }),
+      Schema.Struct({
+        state: Schema.Literal("opaque"),
+        reason: Schema.Literals(["unsupported-wrapper-form", "ambiguous-wrapper-target", "multiple-executions"]),
+      }),
+    ]),
+  }),
+]);
+
 export const CurrentAgentTurnItemSchema = Schema.Union([
   Schema.Struct({
     ...CurrentAgentTurnItemBase,
@@ -63,6 +94,7 @@ export const CurrentAgentTurnItemSchema = Schema.Union([
     toolOccurrenceId: ToolOccurrenceIdSchema,
     tool: SourceNativeToolNameSchema,
     inputSummary: SafeTextSchema,
+    command: Schema.optional(AgentTurnToolCommandSchema),
   }),
   Schema.Struct({
     ...CurrentAgentTurnItemBase,

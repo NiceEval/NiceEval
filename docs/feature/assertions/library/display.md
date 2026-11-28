@@ -38,7 +38,10 @@ generic input 的 scalar 直接显示。array 默认只显示 `Array(n)`，展�
 
 组合 matcher 在 Query summary 中按原声明层级展开。每个 `and`、`or`、`not` 与叶子 matcher 都携带自己的 sealed 状态，因此父组合命中时仍能辨认没有命中的分支。完整候选集合进入 source-owned ledger，不复制成另一棵通用 candidate tree。
 
-tool ledger 的人类编号按原始 canonical order 固定为 T1、T2；event ledger 使用 E1、E2。普通工具行显示实际工具名，可用的逻辑命令行显示已闭合 argv preview。编号只用于稳定定位，不能替代 `toolOccurrenceId` 或 `eventId`；过滤、排序和展开都不重新编号。
+tool ledger 的人类编号按原始 canonical order 固定为 T1、T2。event ledger 使用 E1、E2。
+普通工具行显示实际工具名。可用的逻辑命令行显示 argv 预览、实际工具名和归一方式。
+预览超限时标明省略字节数，展开后可打开全文的分页入口。opaque 命令显示原因，未知分类显示“未分类”。
+编号只用于稳定定位。过滤、排序和展开都不重新编号。
 
 命令 preview 只消费已闭合、已按已知 sensitive value 脱敏的逻辑投影，并遵守统一显示上限；读取端不从自由文本猜测或清洗 secret。内部 identity 只作为技术 locator，不作为行标题。调用名称、input、output、status 与命令 token 等子 matcher 随 View locale 使用界面用语，并内联显示有界的 expected、observed 或 unavailable reason。
 

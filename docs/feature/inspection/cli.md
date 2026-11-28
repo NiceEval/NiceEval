@@ -218,6 +218,8 @@ ledger。
 
 每行交付 detail、evaluation、locator 与 exact/unavailable conversation target。cut 后新增行标为
 `outside-snapshot`。
+tool 行另交付实际工具名 `tool` 与下文的 `InspectionToolCommand`。可用逻辑命令行的 `summary` 是 `argv` 预览，其余 tool 行的 `summary` 是工具名。
+detail 列出 `name`、`command`、`input`、`status` 与 `output`。命令详情显示同一有界预览，超限时由 `argv.evidenceId` 定位全文。
 它还交付 identity proof、overlay retention、source limitations 与 ordered matcher steps。
 
 只有以下证据全部一致时，identity 才是 `exact`：
@@ -246,6 +248,28 @@ niceeval show @<locator> execution
 
 outline 显示通用领域事件及内建 Agent 投影，保留 producer、主体、时间、摘要、范围与完整性。
 conversation 和 command 继续保留各自的专用信息。长文本只给有界 preview；identity index 同样有界并报告遗漏。
+
+conversation 的 tool-call 项带 `command`，读回 Adapter 封存的[命令投影](../adapters/architecture/events.md#命令投影的持久化)：
+
+```ts
+type InspectionToolCommand =
+  | { readonly kind: "unclassified" }
+  | { readonly kind: "not-command" }
+  | { readonly kind: "command"; readonly state: "opaque"; readonly reason: string }
+  | {
+      readonly kind: "command";
+      readonly state: "available";
+      readonly normalization: "identity" | "pnpm-exec" | "npx";
+      readonly argv: PreviewText & { readonly evidenceId?: string };
+    };
+```
+
+`argv` 是逻辑 executable 与 args 按 POSIX shell 引号规则拼成的文本，最多预览 1 KiB，截在码点边界。`omittedBytes` 按 UTF-8 字节计算。
+opaque 的 `reason` 是逻辑原因；逻辑原因为 `original-opaque` 时改用 Adapter 给的原始原因（如 `compound-shell`）。
+tool occurrence 与 item detail 的 tool-call 对短命令交付完整的 `executable` 与 `args`。逻辑 argv 的 JSON 超过 16 KiB 时交付 `preview` 和 `content` 引用。
+将 `argv.evidenceId` 或 `content.evidenceId` 传给 `niceeval show @<locator> <evidenceId> --json`。
+依次使用 `links` 中的 `next-page` 命令，解码并拼接各页 `base64` 字节，直到 `nextOffset` 为 `null`。
+拼接结果是包含 `state`、`normalization`、`executable` 与有序 `args` 的 UTF-8 JSON。
 
 通用事件项带 `display`，是 Adapter 写入时封存的展示块的有界预览：
 

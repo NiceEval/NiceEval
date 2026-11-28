@@ -531,7 +531,7 @@ export function AttemptDetails({
     (query) => query.data as InspectionSuccessDocumentFor<"attempt.trace.detail">,
   );
   const trace = traceQuery.data!;
-  const assertions = projectAssertions(assertionDocuments);
+  const assertions = projectAssertions(assertionDocuments, model.locator);
   const conversation = projectConversation(trace, traceDetails, model.locator);
   const commands = projectCommands(trace, traceDetails, model.locator);
   const diagnostics = projectDiagnostics(trace);

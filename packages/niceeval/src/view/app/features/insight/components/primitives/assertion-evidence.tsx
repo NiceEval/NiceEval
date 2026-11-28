@@ -8,6 +8,7 @@ import {
   matcherFilterDebuggerText,
   type MatcherFilterDebuggerContent,
 } from "./matcher-filter-debugger.tsx";
+import { useAssertionTraceOverlay } from "./matcher-trace-overlay.tsx";
 
 export interface AssertionEvidenceContent {
   readonly source: ClosedAssertionFactValue;
@@ -1004,6 +1005,7 @@ function MatchNode({
   toolField = false,
   fieldChildren = false,
   open = false,
+  onOpenChange,
   children,
 }: {
   readonly label: string;
@@ -1016,6 +1018,7 @@ function MatchNode({
   /** Direct children are fields of one tool or event occurrence and use interface labels. */
   readonly fieldChildren?: boolean;
   readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
   readonly children: ReactElement | undefined;
 }): ReactElement {
   function nodeDisplayLabel(): string {
@@ -1080,7 +1083,17 @@ function MatchNode({
       </div>
     );
   return (
-    <details className={`niceeval-match-node${root ? " niceeval-match-node--root" : ""}`} open={open}>
+    <details
+      className={`niceeval-match-node${root ? " niceeval-match-node--root" : ""}`}
+      open={open}
+      onToggle={
+        onOpenChange === undefined
+          ? undefined
+          : (event) => {
+              if (event.target === event.currentTarget) onOpenChange(event.currentTarget.open);
+            }
+      }
+    >
       <summary aria-label={accessibleLabel}>{summary}</summary>
       {body}
     </details>
@@ -1139,6 +1152,7 @@ function web(
   locale: ReportLocale,
   labelText: string | undefined,
   state: MatchState,
+  onOpenChange: (open: boolean) => void,
 ): ReactElement {
   const diagnostic = diagnosticView(content.explanation);
   const name = matcherName(content.check) ?? labelText ?? label(locale, "Match", "检查");
@@ -1172,6 +1186,7 @@ function web(
         root
         toolCandidateIndex={undefined}
         toolField={false}
+        onOpenChange={onOpenChange}
       >
         <div className="niceeval-match-body">
           {content.matcherDebugger === undefined ? (
@@ -1222,5 +1237,6 @@ export function assertionEvidenceText(content: AssertionEvidenceContent): string
 }
 
 export function AssertionEvidence({ content, label: labelText, state, locale }: AssertionEvidenceProps): ReactElement {
-  return web(content, locale, labelText, state ?? "unavailable");
+  const onOpenChange = useAssertionTraceOverlay(content.matcherDebugger);
+  return web(content, locale, labelText, state ?? "unavailable", onOpenChange);
 }

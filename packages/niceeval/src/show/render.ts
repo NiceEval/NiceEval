@@ -50,6 +50,7 @@ import type { InspectionProjectResult } from "../inspection/project-result.ts";
 import type { IdentityExplanation } from "../runner/manifest.ts";
 import { countedSummaries, factPhrase, recordedTextSummary, structuredSummary } from "./human-summary.ts";
 import { structuredIdentityPaths } from "../runner/identity-summary.ts";
+import { normalizationSuffix, toolCommandText } from "../inspection/tool-command.ts";
 
 const TERMINAL_OPTIONS = Object.freeze({ width: 80, mode: "plain" as const });
 
@@ -2011,6 +2012,16 @@ function formatUsageLimitation(value: UsageLimitation): string {
   return formatProjectionLimitation(value);
 }
 
+function commandPreviewText(command: Extract<TraceItem, { readonly kind: "tool-call" }>["command"]): string {
+  if (command.kind !== "command" || command.state !== "available") {
+    return toolCommandText(command);
+  }
+  const via = normalizationSuffix(command.normalization);
+  return command.argv.omittedBytes === 0
+    ? `${command.argv.preview}${via}`
+    : `${command.argv.preview}… (+${command.argv.omittedBytes} bytes, full argv evidence ${command.argv.evidenceId})${via}`;
+}
+
 function traceItemBlocks(item: TraceItem): readonly TerminalBlock[] {
   const entries: { key: string; value: string }[] = [
     { key: "Kind", value: factPhrase(item.kind) },
@@ -2025,6 +2036,7 @@ function traceItemBlocks(item: TraceItem): readonly TerminalBlock[] {
     case "tool-call":
       entries.push(
         { key: "Tool", value: item.tool },
+        { key: "Command", value: commandPreviewText(item.command) },
         {
           key: "Tool occurrence",
           value: item.toolOccurrenceId ?? "not recorded",
@@ -2320,6 +2332,8 @@ function traceDetailItemBlocks(item: TraceDetailItem, title = `Item ${item.itemI
     case "tool-call":
       entries.push(
         { key: "Tool", value: item.tool },
+        { key: "Command", value: toolCommandText(item.command) },
+        ...("content" in item.command ? [{ key: "Full argv evidence", value: item.command.content.evidenceId }] : []),
         {
           key: "Tool occurrence",
           value: item.toolOccurrenceId ?? "not recorded",

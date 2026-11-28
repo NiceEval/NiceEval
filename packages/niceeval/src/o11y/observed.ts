@@ -1,7 +1,9 @@
 import { redactJsonEvidence, type RedactEvidenceText } from "../sandbox/redaction.ts";
 import { randomBytes } from "node:crypto";
+import { isObject } from "effect/Predicate";
 
-import type { StreamEvent } from "./types.ts";
+import type { OriginalCommandOpaqueReason, StreamEvent } from "./types.ts";
+import { LOGICAL_COMMAND_NORMALIZER } from "./command-projection.ts";
 import {
   entityIdFromEntropy,
   makeSafeText,
@@ -29,6 +31,32 @@ export type ToolOccurrenceRelation =
       readonly reason: "orphan-finish" | "ambiguous-operation";
     };
 
+/**
+ * Durable copy of the Adapter's command classification for one tool-start.
+ * Tokens are redacted like every other Turn text and never truncated; an absent
+ * classification is omitted from the item and reads back as unclassified.
+ */
+export type ObservedToolCommand =
+  | { readonly kind: "not-command" }
+  | { readonly kind: "command"; readonly logical: ObservedLogicalCommand };
+
+export type ObservedLogicalCommand =
+  | {
+      readonly state: "available";
+      readonly normalization: "identity" | "pnpm-exec" | "npx";
+      readonly executable: SafeText;
+      readonly args: readonly SafeText[];
+    }
+  | {
+      readonly state: "opaque";
+      readonly reason: "original-opaque";
+      readonly originalReason: OriginalCommandOpaqueReason;
+    }
+  | {
+      readonly state: "opaque";
+      readonly reason: "unsupported-wrapper-form" | "ambiguous-wrapper-target" | "multiple-executions";
+    };
+
 export interface ObservedTextTruncation {
   readonly state: "truncated";
   readonly retainedBytes: number;
@@ -53,6 +81,7 @@ export type ObservedSourceEvent =
       readonly toolOccurrenceId: ToolOccurrenceId;
       readonly tool: SourceNativeToolName;
       readonly inputSummary: SafeText;
+      readonly command?: ObservedToolCommand | undefined;
     })
   | (ObservedSourceEventBase & {
       readonly kind: "tool-finish";
@@ -368,9 +397,11 @@ export class ObservedEventIngestionCorrelator {
           } else {
             session.openByOperationId.set(event.operationId, toolOccurrenceId);
           }
+          const command = this.toolCommand(operation.command, draft, unavailableText);
           observed = {
             ...base,
             kind: "tool-start" as const,
+            ...(command === undefined ? {} : { command }),
             toolOccurrenceId,
             tool: project("tool", (projection, normalize) => this.toolName(operation.name, projection, normalize)),
             inputSummary: field("inputSummary", (projection, normalize) =>
@@ -526,6 +557,67 @@ export class ObservedEventIngestionCorrelator {
 
   private evaluationEvent(event: StreamEvent, normalizeText: RedactEvidenceText): StreamEvent {
     return deepFreezeMatcherValue(normalizeMatcherValue(event, normalizeText)) as StreamEvent;
+  }
+
+  private toolCommand(
+    projection: unknown,
+    draft: Pick<TurnDraftState, "limitations">,
+    unavailableText: string | undefined,
+  ): ObservedToolCommand | undefined {
+    if (!isObject(projection)) return undefined;
+    if (projection.kind === "not-command") return { kind: "not-command" };
+    if (projection.kind !== "command" || !isObject(projection.logical)) return undefined;
+    const logical = projection.logical;
+    if (logical.normalizer !== LOGICAL_COMMAND_NORMALIZER) return undefined;
+    if (logical.state === "available") {
+      if (typeof logical.executable !== "string" || !Array.isArray(logical.args)) return undefined;
+      const args: unknown[] = Array.from(logical.args);
+      if (!args.every((token) => typeof token === "string")) return undefined;
+      if (
+        logical.normalization !== "identity" &&
+        logical.normalization !== "pnpm-exec" &&
+        logical.normalization !== "npx"
+      ) {
+        return undefined;
+      }
+      if (unavailableText !== undefined) {
+        // The whole event is marked redacted or truncated: keep the classification, not the tokens.
+        return {
+          kind: "command",
+          logical: {
+            state: "opaque",
+            reason: "original-opaque",
+            originalReason: unavailableText === "<redacted>" ? "redacted" : "truncated",
+          },
+        };
+      }
+      return {
+        kind: "command",
+        logical: {
+          state: "available",
+          normalization: logical.normalization,
+          executable: this.text(logical.executable, draft, this.normalizeText),
+          args: args.map((token) => this.text(token, draft, this.normalizeText)),
+        },
+      };
+    }
+    if (logical.state !== "opaque") return undefined;
+    if (logical.reason === "original-opaque") {
+      return isOriginalOpaqueReason(logical.originalReason)
+        ? {
+            kind: "command",
+            logical: { state: "opaque", reason: "original-opaque", originalReason: logical.originalReason },
+          }
+        : undefined;
+    }
+    if (
+      logical.reason === "unsupported-wrapper-form" ||
+      logical.reason === "ambiguous-wrapper-target" ||
+      logical.reason === "multiple-executions"
+    ) {
+      return { kind: "command", logical: { state: "opaque", reason: logical.reason } };
+    }
+    return undefined;
   }
 
   private text(
@@ -740,4 +832,14 @@ function deepFreezeMatcherValue<Value>(value: Value): Value {
   if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
   for (const item of Object.values(value)) deepFreezeMatcherValue(item);
   return Object.freeze(value);
+}
+
+function isOriginalOpaqueReason(value: unknown): value is OriginalCommandOpaqueReason {
+  return (
+    value === "redacted" ||
+    value === "truncated" ||
+    value === "compound-shell" ||
+    value === "dynamic-shell" ||
+    value === "unsupported-protocol"
+  );
 }

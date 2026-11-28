@@ -67,6 +67,31 @@ export default defineAgent({
 应用协议是私有形状时，`toStreamEvents` 可以是项目自己的纯函数。
 它应以 fixture 测试消息顺序、并发工具配对、失败、拒绝、异常结束和 usage。
 
+每笔 tool `operation.started` 都要带 `command` 分类。应用协议给出结构化 argv 时用 `commandProjection()`；只给 shell 源码或内容被截断、脱敏时用 `opaqueCommandProjection(reason)`；确认不是命令时用 `notCommandProjection()`：
+
+```ts
+import { commandProjection, notCommandProjection } from "niceeval/adapter";
+
+function toolStarted(call: AppToolCall) {
+  return {
+    type: "operation.started" as const,
+    operationId: call.id,
+    operation: {
+      kind: "tool" as const,
+      name: call.name,
+      input: call.input,
+      command:
+        call.argv === undefined
+          ? notCommandProjection()
+          : commandProjection({ state: "available", executable: call.argv[0], args: call.argv.slice(1) }),
+    },
+  };
+}
+```
+
+分类随 Turn 持久化，`commandMatch` 据此判断，Report 的工具调用行据此显示命令 argv 与调用方式，见[命令投影的持久化](../architecture/events.md#命令投影的持久化)。
+无法分类时，Adapter 应报告 actions coverage 为 partial。`commandMatch` 对该调用给出 unavailable，core 不从工具名或 input 推断分类。
+
 ## 进程内调用
 
 进程内函数也可以包在 `defineAgent` 中，但它测到的是函数边界，而非用户真实经过的 HTTP、鉴权、序列化和部署链路。

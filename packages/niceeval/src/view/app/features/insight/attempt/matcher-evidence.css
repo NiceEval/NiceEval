@@ -1,0 +1,43 @@
+.niceeval-report .niceeval-filter-row-summary:has(.niceeval-filter-row-invocation) {
+  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) auto auto;
+}
+
+.niceeval-filter-row-invocation {
+  color: var(--soft);
+  white-space: nowrap;
+}
+
+.niceeval-filter-ledger-select {
+  margin-inline-start: 0.4rem;
+  color: inherit;
+  font: inherit;
+}
+
+.niceeval-filter-frontier {
+  display: grid;
+  gap: 6px;
+  border-inline-start: 2px solid var(--bad);
+  padding-inline-start: 8px;
+}
+
+.niceeval-trace-assertion-state {
+  display: inline-block;
+  margin-inline-start: 0.65rem;
+  color: var(--soft);
+  font: 10px/1.2 var(--font-mono);
+}
+
+.niceeval-trace-assertion-state[data-state="matched"] { color: var(--good); }
+.niceeval-trace-assertion-state[data-state="mismatched"] { color: var(--bad); }
+.niceeval-trace-assertion-state[data-state="unavailable"] { color: var(--warn); }
+
+@media (max-width: 720px) {
+  .niceeval-report .niceeval-filter-row-summary:has(.niceeval-filter-row-invocation) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .niceeval-filter-row-invocation {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+}

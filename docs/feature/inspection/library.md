@@ -52,6 +52,10 @@ Library 与 `show --json` 使用相同的 operation 和 continuation。
 在 source、cutoff 和请求一致时，可把 CLI 返回的 token 交给 Library，也可将 Library 的 token 交给 CLI。
 将每页 token 原样放入下一次 `inspect` 请求。遇到 `restart-required` 时，从第一页重新开始。
 
+工具命令预览超限时，`argv.evidenceId` 指向已封存的逻辑 argv。较长的 tool-call 详情也在 `command.content` 返回该证据身份与长度。
+用 `attempt.trace.detail` 的 `execution-evidence` selector 读取这个身份。下一页的 `offset` 使用上一页的 `nextOffset`。
+将各页 `base64` 解码并按顺序拼接后，再按 UTF-8 JSON 解码 executable、args 与归一方式。
+
 ```ts
 import { withInspectionQuery } from "niceeval/inspection/host";
 

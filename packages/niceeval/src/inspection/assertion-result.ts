@@ -2,6 +2,7 @@ import { NonNegativeSafeIntegerSchema } from "../record/family/common.ts";
 import { AssertionContentReferenceSchema } from "./assertion-content.ts";
 import { AgentJudgeAuditSchema } from "../assertions/agent-judge-audit.ts";
 import * as Schema from "effect/Schema";
+import { InspectionToolCommandPreviewSchema } from "./tool-command.ts";
 
 import {
   AssertionCollectionReceiptSchema,
@@ -321,8 +322,7 @@ const ProjectedLocatorSchema = Schema.Union([
 // Agent Turns source text is already captured under its own limits. It is not a
 // persisted assertion fact; the Inspection operation owns the response budget.
 const SourceRowFactValueSchema = createAssertionFactValueSchema(Schema.String);
-const MatcherRowSchema = Schema.Struct({
-  kind: Schema.Literals(["tool", "event", "legacy-source-row"]),
+const MatcherRowFields = {
   rowId: Schema.String,
   number: Schema.String,
   phase: Schema.Literals(["at-evaluation", "outside-evaluation-snapshot", "historical"]),
@@ -342,7 +342,17 @@ const MatcherRowSchema = Schema.Struct({
     difference: Schema.optional(AssertionFactValueSchema),
   }),
   conversationTarget: ConversationTargetSchema,
-});
+} as const;
+// Tool rows name the actual tool and its command classification; other rows carry only shared fields.
+const MatcherRowSchema = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("tool"),
+    tool: Schema.String,
+    command: InspectionToolCommandPreviewSchema,
+    ...MatcherRowFields,
+  }),
+  Schema.Struct({ kind: Schema.Literals(["event", "legacy-source-row"]), ...MatcherRowFields }),
+]);
 const MatcherSourceCollectionSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("unavailable"),

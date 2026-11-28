@@ -11,7 +11,7 @@ type StreamEvent =
   | { type: "message"; role: "assistant"; text: string; loc?: SourceLoc }
   | { type: "message"; role: "user"; text: string; loc?: SourceLoc; sourceOrder?: number }
   | { type: "operation.started"; operationId: string; operation:
-      | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+      | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName; command?: CommandProjection }
       | { kind: "subagent"; name: string; remoteUrl?: string } }
   | { type: "operation.finished"; operationId: string; kind: "tool";
       output?: JsonValue; status: "completed" | "failed" | "rejected" }
@@ -94,5 +94,18 @@ Adapter 不预计算断言结果。
 core 用相同 `operationId` 把 started 与 finished 归成一个 `LogicalToolOccurrence`。Adapter 必须保留能确认的原始名称、输入、输出与状态；不能确认的部分不补造。
 
 输入和输出材料在 occurrence 上标为 `complete`、`partial` 或 `unavailable`。`partial` 保留可见片段与缺失边界，`unavailable` 保留具名原因。finished 没有输出时不是空 JSON，也不能据此判成输出不匹配。
+
+## 命令投影的持久化
+
+tool operation 的 `command` 是 Adapter 在协议边界给出的 command／not-command 分类，构造规则见 [Command projection](evidence.md#command-projection)。
+core 把这份分类随 tool-start 写进 Agent Turns，供 Inspection 与 Report 读回，不只在断言求值期间存在：
+
+- `not-command` 原样保存。
+- 逻辑投影 opaque 时保存逻辑原因；原因是 `original-opaque` 时同时保存 Adapter 给的原始原因。
+- 逻辑投影 available 时保存归一方式（`identity`、`pnpm-exec` 或 `npx`）、executable 与有序 args。
+  每个 token 经过与其它 Turn 文本相同的已知 sensitive value 脱敏，不截断；事件整体被标为 redacted 或 truncated 时，记成以该原因 opaque 的 command。
+- Adapter 没有分类时不写这个字段，读回为 `unclassified`。旧 Record 缺少该字段时同样读回为 `unclassified`。
+
+core 不从 tool name、input 或 shell 文本补造这份投影；读者看到 `unclassified` 时，应回到 Adapter 补齐分类。
 
 HITL 停在审批时只有 started。该 occurrence 的状态是 `pending`，输出是 unavailable。`ToolMatch` 的具体比较与计数规则见 [Scoped assertions](../../assertions/library/scoped-assertions.md)。

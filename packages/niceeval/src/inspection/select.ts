@@ -77,12 +77,14 @@ import { projectPlannedAttemptMetrics, selectInspectionOverview } from "./overvi
 import type { InspectionFactSource } from "./source.ts";
 import { projectAttemptSources } from "./sources.ts";
 import { projectAttemptDiff } from "./diff.ts";
+import { toolOccurrenceForCommandEvidence } from "./tool-command.ts";
 import {
   combineInspectionUsageTotals,
   projectAttemptTiming,
   projectAttemptDiagnostics,
   projectDiagnosticDetail,
   projectTraceTurnDetail,
+  projectToolCommandEvidence,
   readInspectionAgentTurns,
   readAssertionAgentTurns,
   readCurrentAttachment,
@@ -674,15 +676,23 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
               limit: operation.selector.limit ?? 64 * 1024,
             }
           : operation.selector;
-      const assertionContent =
-        selector.kind === "execution-evidence"
-          ? projectAssertionContentDetail(resolved.origin.source, readInspectionAssertions(resolved), selector)
-          : undefined;
+      const toolOccurrenceId =
+        selector.kind === "execution-evidence" ? toolOccurrenceForCommandEvidence(selector.evidenceId) : undefined;
       let detail =
-        assertionContent ??
-        (selector.kind === "execution-event" || selector.kind === "execution-evidence"
-          ? projectExecutionTraceDetail(resolved, selector)
-          : projectAttemptTraceDetail(resolved.origin.source, traceAttachments(resolved), selector));
+        selector.kind === "execution-evidence" && toolOccurrenceId !== undefined
+          ? projectToolCommandEvidence(
+              attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
+              toolOccurrenceId,
+              selector.evidenceId,
+              selector.offset,
+              selector.limit,
+            )
+          : selector.kind === "execution-evidence"
+            ? (projectAssertionContentDetail(resolved.origin.source, readInspectionAssertions(resolved), selector) ??
+              projectExecutionTraceDetail(resolved, selector))
+            : selector.kind === "execution-event"
+              ? projectExecutionTraceDetail(resolved, selector)
+              : projectAttemptTraceDetail(resolved.origin.source, traceAttachments(resolved), selector);
       if (
         detail === undefined &&
         operation.selector.kind === "execution-event" &&
@@ -698,6 +708,7 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
       }
       if (
         detail === undefined &&
+        toolOccurrenceId === undefined &&
         (operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence")
       ) {
         detail = projectDiagnosticDetail(

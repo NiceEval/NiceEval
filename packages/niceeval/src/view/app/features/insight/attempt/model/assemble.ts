@@ -27,22 +27,31 @@ import type {
   MatcherFilterFieldContent,
   MatcherFilterNotice,
   MatcherFilterRowContent,
+  MatcherToolCommandContent,
 } from "../../components/primitives/matcher-filter-debugger.tsx";
+import { matcherRowNumber } from "../../components/primitives/matcher-filter-debugger.tsx";
 import type { SourceBlockContent, SourceContent, SourceLine } from "../../components/primitives/source-view.tsx";
 import type { ClosedAssertionFactValue, ClosedJsonValue } from "../../components/primitives/shared.ts";
 import type { WaterfallContent, WaterfallNode } from "../../components/primitives/waterfall.tsx";
+import { attemptRouteKey } from "../../shell/manifest.ts";
 
 type JsonRecord = Readonly<Record<string, unknown>>;
 
 type AssertionDocument = InspectionSuccessDocumentFor<"attempt.assertion.detail">;
 type TraceDetailDocument = InspectionSuccessDocumentFor<"attempt.trace.detail">;
 
-export function projectAssertion(document: AssertionDocument): AttemptAssertionView {
-  return closeAssertion(recordField(document, "assertion"));
+export function projectAssertion(document: AssertionDocument, locator: string): AttemptAssertionView {
+  return closeAssertion(recordField(document, "assertion"), locator);
 }
 
-export function projectAssertions(documents: readonly AssertionDocument[]): ClosedEvidenceSlice<AttemptAssertionsData> {
-  return closeAssertions(documents.map((document) => recordField(document, "assertion"))).slice;
+export function projectAssertions(
+  documents: readonly AssertionDocument[],
+  locator: string,
+): ClosedEvidenceSlice<AttemptAssertionsData> {
+  return closeAssertions(
+    documents.map((document) => recordField(document, "assertion")),
+    locator,
+  ).slice;
 }
 
 export interface TraceDetailViewModel {
@@ -134,13 +143,16 @@ export function projectArtifacts(
   };
 }
 
-function closeAssertions(details: readonly JsonRecord[]): {
+function closeAssertions(
+  details: readonly JsonRecord[],
+  locator: string,
+): {
   readonly data: AttemptAssertionsData;
   readonly slice: ClosedEvidenceSlice<AttemptAssertionsData>;
 } {
   const entries = details.flatMap((detail) => {
     try {
-      return [closeAssertion(detail)];
+      return [closeAssertion(detail, locator)];
     } catch {
       return [];
     }
@@ -169,7 +181,7 @@ function closeAssertions(details: readonly JsonRecord[]): {
   };
 }
 
-function closeAssertion(detail: JsonRecord): AttemptAssertionView {
+function closeAssertion(detail: JsonRecord, locator: string): AttemptAssertionView {
   const entry = recordField(detail, "entry");
   const display = recordField(detail, "display");
   const decision = recordField(entry, "decision");
@@ -228,7 +240,7 @@ function closeAssertion(detail: JsonRecord): AttemptAssertionView {
   const check = closeDiagnostic(recordField(detail, "check"));
   const matcherDetail = recordField(detail, "matcher");
   const matcher = closeMatcher(matcherDetail);
-  const matcherDebugger = closeMatcherDebugger(matcherDetail.debugger);
+  const matcherDebugger = closeMatcherDebugger(matcherDetail.debugger, matcherDetail.result, locator);
   const checkFact = assertionCriterionFact(criterion);
   const observedFact = assertionObservedFact(evaluation, matcher);
   const expectedFact = assertionExpectedFact(condition);
@@ -494,13 +506,17 @@ interface ClosedMatcherFilterRow {
   readonly phase: "at-evaluation" | "outside-evaluation-snapshot" | "historical";
 }
 
-function closeMatcherDebugger(value: unknown): MatcherFilterDebuggerContent | undefined {
+function closeMatcherDebugger(
+  value: unknown,
+  orderResult: unknown,
+  locator: string,
+): MatcherFilterDebuggerContent | undefined {
   if (value === null || value === undefined) return undefined;
   const debuggerView = record(value, "matcher.debugger");
   const state = matcherDebuggerState(debuggerView.state);
   const subject = matcherDebuggerSubject(debuggerView.subject);
   const source = recordField(debuggerView, "source");
-  const final = closeMatcherSourceCollection(recordField(source, "final"));
+  const final = closeMatcherSourceCollection(recordField(source, "final"), locator);
   if (state === "legacy") {
     return {
       state,
@@ -509,6 +525,8 @@ function closeMatcherDebugger(value: unknown): MatcherFilterDebuggerContent | un
       querySummary: "Matcher query was not retained",
       facts: [],
       steps: [],
+      failureFrontier: undefined,
+      overlayRetention: "unavailable",
       atEvaluation: {
         state: final.state,
         rows: final.rows.map((row) => row.content),
@@ -530,8 +548,12 @@ function closeMatcherDebugger(value: unknown): MatcherFilterDebuggerContent | un
       ? matcherCollectionQuerySummary(querySummaries[0]!)
       : querySummaries.map(matcherOrderQuerySummary).join(" → ");
   const receipt = recordField(debuggerView, "receipt");
-  const atEvaluation = closeMatcherSourceCollection(recordField(source, "atEvaluation"));
+  const atEvaluation = closeMatcherSourceCollection(recordField(source, "atEvaluation"), locator);
   const relationNotice = matcherRelationNotice(recordField(debuggerView, "identityRelation"));
+  const overlayRetention = debuggerView.overlayRetention;
+  if (overlayRetention !== "complete" && overlayRetention !== "partial" && overlayRetention !== "unavailable")
+    throw new Error("matcher.debugger overlay retention is invalid");
+  const rowsById = new Map(atEvaluation.rows.map(({ content }) => [content.key, content]));
   const notices: MatcherFilterNotice[] = [
     ...(atEvaluation.state === "partial" ? ["source-partial" as const] : []),
     ...(debuggerView.overlayRetention === "partial" ? ["overlay-partial" as const] : []),
@@ -551,8 +573,26 @@ function closeMatcherDebugger(value: unknown): MatcherFilterDebuggerContent | un
         kind: "examined" as const,
         value: matcherExaminedFact(queryKind, receipt),
       },
+      {
+        kind: "coverage",
+        value: matcherCompleteness(atEvaluation.state),
+      },
+      {
+        kind: "evaluation",
+        value: matcherReceiptState(receipt),
+      },
+      {
+        kind: "relation",
+        value: relationNotice === undefined ? { en: "Exact", "zh-CN": "准确" } : matcherCompleteness("unavailable"),
+      },
+      {
+        kind: "retention",
+        value: matcherCompleteness(overlayRetention),
+      },
     ],
-    steps: arrayField(debuggerView, "steps").map(closeMatcherStep),
+    steps: arrayField(debuggerView, "steps").map((step, index) => closeMatcherStep(step, index, rowsById)),
+    failureFrontier: closeFailureFrontier(orderResult, rowsById),
+    overlayRetention,
     atEvaluation: {
       state: atEvaluation.state,
       rows: atEvaluation.rows.map((row) => row.content),
@@ -563,16 +603,43 @@ function closeMatcherDebugger(value: unknown): MatcherFilterDebuggerContent | un
   };
 }
 
-function closeMatcherSourceCollection(value: JsonRecord): ClosedMatcherSourceCollection {
+function matcherCompleteness(state: "complete" | "partial" | "unavailable") {
+  switch (state) {
+    case "complete":
+      return { en: "Complete", "zh-CN": "完整" };
+    case "partial":
+      return { en: "Partial", "zh-CN": "部分" };
+    case "unavailable":
+      return { en: "Unavailable", "zh-CN": "不可用" };
+  }
+}
+
+function matcherReceiptState(receipt: JsonRecord) {
+  const coverage = matcherCompleteness(receipt.complete === true ? "complete" : "partial");
+  const decision =
+    receipt.decisive === true
+      ? { en: "Decisive", "zh-CN": "可确定结论" }
+      : { en: "Inconclusive", "zh-CN": "无法确定结论" };
+  const traversal =
+    receipt.exhaustive === true
+      ? { en: "Exhaustive", "zh-CN": "已穷尽" }
+      : { en: "Stopped early", "zh-CN": "提前停止" };
+  return {
+    en: `${coverage.en} · ${decision.en} · ${traversal.en}`,
+    "zh-CN": `${coverage["zh-CN"]} · ${decision["zh-CN"]} · ${traversal["zh-CN"]}`,
+  };
+}
+
+function closeMatcherSourceCollection(value: JsonRecord, locator: string): ClosedMatcherSourceCollection {
   return {
     state: matcherSourceState(value.state),
     rows: arrayField(value, "rows").map((row, index) =>
-      closeMatcherFilterRow(record(row, `matcher.debugger.source.rows[${index}]`)),
+      closeMatcherFilterRow(record(row, `matcher.debugger.source.rows[${index}]`), locator),
     ),
   };
 }
 
-function closeMatcherFilterRow(row: JsonRecord): ClosedMatcherFilterRow {
+function closeMatcherFilterRow(row: JsonRecord, locator: string): ClosedMatcherFilterRow {
   const evaluation = recordField(row, "evaluation");
   const result = matcherRowState(evaluation.result);
   const difference =
@@ -585,6 +652,7 @@ function closeMatcherFilterRow(row: JsonRecord): ClosedMatcherFilterRow {
       number: stringField(row, "number"),
       kind: matcherRowKind(row.kind),
       summary: stringField(row, "summary"),
+      toolCall: matcherRowToolCall(row, locator),
       state: result,
       fields: matcherFilterFields(closeRecordedAssertionFact(row.detail)),
       difference,
@@ -596,18 +664,53 @@ function closeMatcherFilterRow(row: JsonRecord): ClosedMatcherFilterRow {
   };
 }
 
-function closeMatcherStep(value: unknown, index: number): NonNullable<MatcherFilterDebuggerContent["steps"]>[number] {
+function closeMatcherStep(
+  value: unknown,
+  index: number,
+  rowsById: ReadonlyMap<string, MatcherFilterRowContent>,
+): MatcherFilterDebuggerContent["steps"][number] {
   const step = record(value, `matcher.debugger.steps[${index}]`);
   const conversationTarget = optionalRecord(step.conversationTarget);
+  const row = typeof step.sourceRow === "string" ? rowsById.get(step.sourceRow) : undefined;
   return {
     step: integerField(step, "step"),
     summary: closedFactText(closeRecordedAssertionFact(step.summary)),
     state: matcherStepState(step.state),
-    sourceRow: typeof step.sourceRow === "string" ? step.sourceRow : undefined,
+    sourceRow: row === undefined ? undefined : matcherRowNumber(row),
     conversationTarget:
       conversationTarget?.state === "exact" && typeof conversationTarget.anchor === "string"
         ? { anchor: conversationTarget.anchor }
         : undefined,
+  };
+}
+
+function closeFailureFrontier(
+  value: unknown,
+  rowsById: ReadonlyMap<string, MatcherFilterRowContent>,
+): MatcherFilterDebuggerContent["failureFrontier"] {
+  const result = optionalRecord(value);
+  if (result?.state !== "mismatched") return undefined;
+  const frontier = recordField(result, "failureFrontier");
+  const suffix = recordField(frontier, "suffixChecked");
+  return {
+    definite: arrayField(frontier, "longestDefinitePrefix").length,
+    possible: arrayField(frontier, "longestPossiblePrefix").length,
+    blockingStep: integerField(frontier, "firstBlockingStep"),
+    suffix: {
+      examined: integerField(suffix, "examined"),
+      mismatched: integerField(suffix, "mismatched"),
+      unavailable: integerField(suffix, "unavailable"),
+    },
+    representatives: arrayField(frontier, "representatives").flatMap((value) => {
+      const item = record(value, "matcher.result.failureFrontier.representatives[]");
+      const locator = recordField(item, "locator");
+      const anchor =
+        locator.kind === "tool-occurrence"
+          ? matcherAnchor({ kind: "tool-occurrence", toolOccurrenceId: stringField(locator, "toolOccurrenceId") })
+          : matcherAnchor({ kind: "event", eventId: stringField(locator, "eventId") });
+      const row = rowsById.get(anchor);
+      return row === undefined || row.difference === undefined ? [] : [row];
+    }),
   };
 }
 
@@ -737,6 +840,31 @@ function matcherQueryKind(value: unknown): "collection-filter" | "ordered-sequen
 function matcherSourceState(value: unknown): MatcherFilterDebuggerContent["atEvaluation"]["state"] {
   if (value === "complete" || value === "partial" || value === "unavailable") return value;
   throw new Error("matcher.debugger source state is invalid");
+}
+
+function matcherRowToolCall(row: JsonRecord, locator: string): MatcherFilterRowContent["toolCall"] {
+  if (row.kind !== "tool") return undefined;
+  const command = recordField(row, "command");
+  function content(): MatcherToolCommandContent {
+    if (command.kind === "unclassified" || command.kind === "not-command") return { kind: command.kind };
+    if (command.kind !== "command") throw new Error("matcher.debugger tool row command is invalid");
+    if (command.state === "opaque") return { kind: "opaque", reason: stringField(command, "reason") };
+    const normalization = command.normalization;
+    if (normalization !== "identity" && normalization !== "pnpm-exec" && normalization !== "npx") {
+      throw new Error("matcher.debugger tool row command normalization is invalid");
+    }
+    const argv = recordField(command, "argv");
+    return {
+      kind: "available",
+      normalization,
+      omittedBytes: integerField(argv, "omittedBytes"),
+      evidenceHref:
+        typeof argv.evidenceId === "string"
+          ? `#/attempt/${attemptRouteKey(locator)}?aspect=execution&id=${encodeURIComponent(argv.evidenceId)}`
+          : undefined,
+    };
+  }
+  return { tool: stringField(row, "tool"), command: content() };
 }
 
 function matcherRowKind(value: unknown): MatcherFilterRowContent["kind"] {

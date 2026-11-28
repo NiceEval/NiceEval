@@ -11,6 +11,8 @@ import {
   type ReportLocale,
 } from "./shared.ts";
 import { ToolEvidence, type ToolEvidenceContent } from "./tool-evidence.tsx";
+import { rowStateLabel } from "./matcher-filter-debugger.tsx";
+import { useAssertionTraceRow } from "./matcher-trace-overlay.tsx";
 
 export type CommandMatch =
   | { readonly state: "matched"; readonly commandId: string }
@@ -185,12 +187,18 @@ function assertConversationContent(data: unknown): ConversationContent | undefin
 
 function EntryRow({ entry, locale }: { entry: ConversationEntry; locale: ReportLocale }): ReactElement {
   const preview = sanitizeConversationPreview(entry.preview, locale);
+  const assertionState = useAssertionTraceRow(entry.anchor);
   const head = (
     <>
       <span className="niceeval-conversation-entry-kind" data-kind={entry.kind}>
         {entry.kind}
       </span>
       <span className="niceeval-conversation-entry-preview">{preview}</span>
+      {assertionState === undefined ? null : (
+        <small className="niceeval-trace-assertion-state" data-state={assertionState}>
+          {rowStateLabel(assertionState, locale)}
+        </small>
+      )}
     </>
   );
   const detail = entry.detail !== undefined ? renderConversationDetail(entry.detail, locale) : null;
