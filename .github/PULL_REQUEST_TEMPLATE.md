@@ -818,7 +818,9 @@ and the documentation, API, CLI, or migration impact. Link the replacement
 
 <!--
 Delete this entire section when no test, fixture, expected result, or harness
-changes and no changed product behavior deliberately remains unautomated.
+changes, no Verification receipt is needed, and no changed product behavior
+deliberately remains unautomated. A Verification receipt may stand alone when
+the PR has validation results and no test source changes.
 
 For every added or modified test file, paste review-complete final source once,
 including owner, regression, rerun, and reliability comments. Complete final
@@ -893,7 +895,7 @@ link its current Problem regression in one additional sentence.
 
 - Candidate: <Git SHA and NiceEval tarball SHA-256>
 - Red: <for a bug, old candidate or minimal mutation plus earliest failing stage; otherwise delete>
-- Green: <exact public E2E command and result>
+- Green: <exact test or validation command and result>
 - Repeatability: <required takeover matrix and cleanup result, or why this live owner uses one authorized run>
 - Fixed conditions: <checkout, lockfile, fixture, seed/clock policy, and image/provider identity>
 - Unit count: <`pnpm test` Tests, or `not applicable — no Unit changed`>

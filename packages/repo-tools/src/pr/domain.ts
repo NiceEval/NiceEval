@@ -521,7 +521,9 @@ export function validatePrBodyStructure(body: string, metadata: FinalMetadata, t
   }
   const tests = sectionsByName.get("Tests");
   if (tests) {
-    if (!/^### `e2e\/.+`$/m.test(tests)) errors.push("Tests must contain at least one test file");
+    if (!/^### `e2e\/.+`$/m.test(tests) && !subsection(tests, "Verification receipt")?.trim()) {
+      errors.push("Tests must contain at least one test file or a verification receipt");
+    }
     if (/^- (?:Owner|Covers|Purpose|Protects|Regression|Runs|Asserts):/m.test(tests))
       errors.push("Tests must use readable case narratives, not Name: value fields");
   }
@@ -952,7 +954,13 @@ function renderBody(
     const git = yield* PrGit;
     const source = yield* resolveReadableDraftPath(root, input);
     if (!(yield* fileSystem.exists(source))) {
-      return yield* Effect.fail(draftFailure(source, `draft does not exist: ${source}\nRun pnpm pr:body init first.`));
+      const customSourceHelp =
+        input.command === "check" && input.pr !== undefined && input.source === undefined
+          ? `If the PR was created with --source, pass the same path: pnpm pr:body check --pr ${input.pr} --source <draft-path>${input.remote === true ? " --remote" : ""}\n`
+          : "";
+      return yield* Effect.fail(
+        draftFailure(source, `draft does not exist: ${source}\n${customSourceHelp}Run pnpm pr:body init first.`),
+      );
     }
     const draft = yield* fileSystem.readText(source);
     if (!/<!-- niceeval:pr-body\b/.test(draft)) {
