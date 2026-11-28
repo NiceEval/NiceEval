@@ -751,7 +751,8 @@ export function makeProjectDatabasePortable(path: string): boolean {
   const gateOwner = currentProcessOwnerIdentity(gateId);
   const admissionDrainDeadline = Date.now() + 5_000;
   const waitCell = new Int32Array(new SharedArrayBuffer(4));
-  let connection = openRecordWriter(path);
+  const connection = openRecordWriter(path);
+  let portableGeneration: string;
   try {
     connection.db.exec("BEGIN IMMEDIATE");
     const metadata = currentStatement(
@@ -960,15 +961,12 @@ export function makeProjectDatabasePortable(path: string): boolean {
       connection.db,
       "SELECT storage_generation FROM ne19_record_metadata WHERE singleton=1",
     ).get() as Record<string, SQLOutputValue>;
+    portableGeneration = decodeText(generation.storage_generation, "storage_generation");
     currentStatement(
       connection.db,
       `UPDATE ne19_record_metadata SET barrier_state='portable',portable_generation=?,portable_revision=?
       WHERE singleton=1 AND barrier_state='draining' AND portable_gate_id=?`,
-    ).run(
-      decodeText(generation.storage_generation, "storage_generation"),
-      decodeInteger(clock.revision, "publication_revision"),
-      gateId,
-    );
+    ).run(portableGeneration, decodeInteger(clock.revision, "publication_revision"), gateId);
     connection.db.exec("COMMIT");
     checkpointRecordDatabase(connection);
   } catch (cause) {
@@ -978,15 +976,20 @@ export function makeProjectDatabasePortable(path: string): boolean {
     closeRecordDatabase(connection);
   }
 
-  connection = openRecordReader(path);
+  const reader = openRecordReaderAfterRuntimeAdmission(path, 0);
   try {
     const state = currentStatement(
-      connection.db,
+      reader.db,
       `SELECT barrier_state,portable_generation,portable_revision,storage_generation
       FROM ne19_record_metadata WHERE singleton=1`,
     ).get() as Record<string, SQLOutputValue> | undefined;
+    // A new admission can reopen the Record once the portable state commits.
+    // Its generation now owns portability, just as when the gate sees active work.
+    if (state !== undefined && decodeText(state.storage_generation, "storage_generation") !== portableGeneration) {
+      return false;
+    }
     const active = currentStatement(
-      connection.db,
+      reader.db,
       `SELECT
       (SELECT count(*) FROM ne19_run_resources WHERE terminal_state IS NULL)+
       (SELECT count(*) FROM ne19_runs r WHERE status!='sealed' AND
@@ -995,14 +998,14 @@ export function makeProjectDatabasePortable(path: string): boolean {
       (SELECT count(*) FROM ne19_coordination_tickets) AS count`,
     ).get() as Record<string, SQLOutputValue>;
     const invocationWork = currentStatement(
-      connection.db,
+      reader.db,
       `SELECT
       (SELECT count(*) FROM ne19_invocation_sessions WHERE state IN ('active','recovering'))+
       (SELECT count(*) FROM ne19_invocation_session_queued_attempts)+
       (SELECT count(*) FROM ne19_case_locks) AS count`,
     ).get() as Record<string, SQLOutputValue>;
     const registryWork = currentStatement(
-      connection.db,
+      reader.db,
       `SELECT
       (SELECT count(*) FROM ne19_teardown_obligations)+
       (SELECT count(*) FROM state_lease_set WHERE phase!='free')+
@@ -1010,18 +1013,17 @@ export function makeProjectDatabasePortable(path: string): boolean {
       (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`,
     ).get() as Record<string, SQLOutputValue>;
     const coordination = currentStatement(
-      connection.db,
+      reader.db,
       `SELECT writer_ticket_id,barrier_id FROM ne19_coordination_state WHERE singleton=1`,
     ).get() as Record<string, SQLOutputValue> | undefined;
     const clock = currentStatement(
-      connection.db,
+      reader.db,
       "SELECT revision FROM ne19_run_publication_clock WHERE singleton=1",
     ).get() as Record<string, SQLOutputValue> | undefined;
     if (
       state === undefined ||
       decodeText(state.barrier_state, "barrier_state") !== "portable" ||
-      decodeText(state.portable_generation, "portable_generation") !==
-        decodeText(state.storage_generation, "storage_generation") ||
+      decodeText(state.portable_generation, "portable_generation") !== portableGeneration ||
       clock === undefined ||
       decodeInteger(state.portable_revision, "portable_revision") !==
         decodeInteger(clock.revision, "publication_revision") ||
@@ -1039,7 +1041,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
       );
     }
   } finally {
-    closeRecordDatabase(connection);
+    closeRecordDatabase(reader);
   }
   return true;
 }

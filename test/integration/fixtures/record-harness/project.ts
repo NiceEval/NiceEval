@@ -13,7 +13,11 @@ export async function createRecordProject(prefix: string, options: { readonly he
     await Promise.all(["evals", "experiments", "gates", "node_modules"].map((dir) => mkdir(join(cwd, dir))));
     const gates = JSON.stringify(join(cwd, "gates"));
     await Promise.all([
-      symlink(dirname(fileURLToPath(import.meta.resolve("effect/package.json"))), join(cwd, "node_modules", "effect"), "dir"),
+      symlink(
+        dirname(fileURLToPath(import.meta.resolve("effect/package.json"))),
+        join(cwd, "node_modules", "effect"),
+        "dir",
+      ),
       writeFile(join(cwd, "package.json"), JSON.stringify({ name: "record-fixture", private: true, type: "module" })),
       writeFile(
         join(cwd, "niceeval.config.ts"),
@@ -69,7 +73,11 @@ export async function createRecordProject(prefix: string, options: { readonly he
   }
 }
 
-export async function waitForGate(cwd: string, name: "entered" | "release", timeoutMs = 15_000): Promise<void> {
+export async function waitForGate(
+  cwd: string,
+  name: "entered" | "release" | "validating",
+  timeoutMs = 15_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!existsSync(join(cwd, "gates", name))) {
     if (Date.now() >= deadline) throw new Error(`Gate ${name} was not reached`);
