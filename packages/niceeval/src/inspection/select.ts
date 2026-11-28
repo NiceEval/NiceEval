@@ -5,6 +5,7 @@
 // @concord-implements docs/feature/insight/README.md
 import { assertionCursor } from "./assertion-page.ts";
 import { inspectionLinks } from "./links.ts";
+import { inspectRunPresentation } from "./experiment-presentation.ts";
 import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import { stoppedAssertion } from "./stop.ts";
 import { projectAssertionMatrix, type MatrixInput } from "./assertion-matrix.ts";
@@ -24,6 +25,7 @@ import { encodeAttemptLocator } from "../attempt-locator.ts";
 import { attemptVerdict, attemptVerdictCauses } from "./verdict.ts";
 import type { AssertionCoverage, AssertionLimitation } from "../assertions/record/model.ts";
 import { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "../record/family/current.ts";
+import { compareCanonicalIdentity } from "../record/model/identifiers.ts";
 import type { RunResourcePage } from "../run/storage/types.ts";
 import type { RunSummary } from "../run/index.ts";
 import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, InspectionSha256, utf8ByteLength } from "./bytes.ts";
@@ -413,7 +415,7 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
           left.attempt.originRunId.localeCompare(right.attempt.originRunId) ||
           left.locator.localeCompare(right.locator),
       );
-      const metadata = resultMetadata(source, operation.kind, selected, [], [], locators(selected));
+      const metadata = resultMetadata(source, operation.kind, matching, [], [], locators(selected));
       const allAttempts = orderedUsageAttempts.map((resolved) => {
         const { state, configuredModels, modelGroups, judgeUsage, totalCosts, totals } = projectAttemptUsage(
           traceAttachments(resolved),
@@ -1224,12 +1226,18 @@ function runResourceMetadata<Kind extends InspectionOperationId>(
   supporting: readonly LoadedInspectionRun[],
 ): InspectionResultMetadata<Kind> {
   const metadata = resultMetadata(source, operation, supporting, [run.resource.runId], [], locators(supporting));
+  const { summary, issue } = inspectRunPresentation(
+    { runId: run.resource.runId, experimentId: run.resource.experimentId },
+    run.published,
+  );
   return {
     ...metadata,
     selection: {
       ...metadata.selection,
       selectedRunIds: [run.resource.runId],
+      selectedRuns: [summary],
     },
+    issues: issue === undefined ? [] : [issue],
   };
 }
 
@@ -2020,6 +2028,10 @@ function resultMetadata<Kind extends InspectionOperationId>(
 ): InspectionResultMetadata<Kind> {
   const selected = uniqueRuns(selectedInput);
   const cutoff = source.cutoff();
+  const presentation =
+    operation === "overview.get" || operation === "project.get" || operation === "experiment.get"
+      ? selected.map((run) => inspectRunPresentation({ runId: run.run.runId, experimentId: run.run.experimentId }, run))
+      : undefined;
   return {
     outcome: "success" as const,
     operation,
@@ -2032,8 +2044,15 @@ function resultMetadata<Kind extends InspectionOperationId>(
       requestedRunIds,
       selectedRunIds: selected.map(({ run }) => run.runId),
       missingRunIds,
+      ...(presentation === undefined
+        ? {}
+        : {
+            selectedRuns: presentation
+              .map(({ summary }) => summary)
+              .sort((left, right) => compareCanonicalIdentity(left.runId, right.runId)),
+          }),
     },
-    issues: [] as const,
+    issues: presentation?.flatMap(({ issue }) => (issue === undefined ? [] : [issue])) ?? [],
     evidence: {
       refs: [...new Set(evidence)].sort(),
     },

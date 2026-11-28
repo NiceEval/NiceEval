@@ -22,6 +22,7 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
   每个实验文件声明一个配置；固定 Inspection 在一个 `PublicationCutoff` 下比较同一实验组的已发布 Attempt，不在 View 打开时另选结果。
 
 移动实验文件时，固定原 `experimentId` 即可保留其采样历史。改变 ID 会开启另一个实验身份；需要明确采用旧 Run 时使用[实验改名](cli/rename.md)。
+用 [Experiment 展示名](../experiment-authoring-display-names/README.md) 为列表与 Run 指定便于浏览的名称。
 
 ## 实验组与可比边界
 
@@ -83,6 +84,7 @@ interface EvalDescriptor {
 }
 
 export default defineExperiment({
+  displayName?: string;                       // 一行展示名；省略时展示完整 Experiment ID
   description?: string;                       // 人读
   agent?: Agent;                             // 对话 Adapter 的简写;与 adapter 互斥，直接调用函数时两者皆可省略
   adapter?: Adapter;                         // 本实验使用的 Adapter 实现(直接调用函数时可省略)

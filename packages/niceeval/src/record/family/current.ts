@@ -1,4 +1,5 @@
 import { identityManifestsRecordAttachment } from "./identity-manifests/definition.ts";
+import { experimentPresentationRecordAttachment } from "./experiment-presentation/definition.ts";
 import { attemptNotesRecordAttachment } from "./attempt-note/definition.ts";
 import { judgeUsageRecordAttachment } from "./judge-usage/definition.ts";
 import { agentInstallRecordAttachment } from "./agent-install/definition.ts";
@@ -45,6 +46,7 @@ export const NiceEvalRecordAttachments = Object.freeze({
   executionTraces: executionTracesRecordCollection,
   executionTraceIndex: executionTraceIndexRecordCollection,
   identityManifests: identityManifestsRecordAttachment,
+  experimentPresentation: experimentPresentationRecordAttachment,
   sources: sourcesRecordAttachment,
   artifacts: Object.freeze({
     attempt: attemptArtifactsRecordAttachment,
@@ -77,6 +79,7 @@ export const NiceEvalCurrentRecordAttachments = Object.freeze({
   executionTraces: current(executionTracesRecordCollection),
   executionTraceIndex: current(executionTraceIndexRecordCollection),
   identityManifests: current(identityManifestsRecordAttachment),
+  experimentPresentation: current(experimentPresentationRecordAttachment),
   sources: current(sourcesRecordAttachment),
   artifacts: Object.freeze({
     attempt: current(attemptArtifactsRecordAttachment),

@@ -24,6 +24,22 @@ export default defineExperiment({
 
 {/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
 
+#### `displayName`
+
+```ts
+readonly displayName?: string | undefined;
+```
+
+一行展示名，长度为 1 到 160 个 UTF-8 字节。请去掉首尾空白和控制字符。省略时显示完整 Experiment ID。
+
+#### `description`
+
+```ts
+readonly description?: string | undefined;
+```
+
+实验说明，显示在实验列表的详情中。
+
 #### `models`
 
 ```ts
@@ -31,14 +47,6 @@ models?: Readonly<Record<string, ModelRoleSelection>> | undefined;
 ```
 
 为自定义 Adapter 的各个模型用途选择模型；不能与单模型简写同时使用。
-
-#### `description`
-
-```ts
-description?: string | undefined;
-```
-
-一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。
 
 #### `adapter`
 

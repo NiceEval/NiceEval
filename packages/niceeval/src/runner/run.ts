@@ -157,6 +157,7 @@ function feedbackWho(a: Attempt): string {
     agentName: a.run.adapter?.name ?? "",
     model: a.run.model,
     experimentId: a.run.experimentId,
+    displayName: a.run.displayName,
   });
 }
 
@@ -3493,7 +3494,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               // 的省略规则一致),且只报真正计入 results 的 attempt(上面的并发去重分支已经
               // return 掉、不会走到这里,不会为一条被丢弃的重复 attempt 误报失败)。
               if (locator) {
-                const failure = failureDetailFromResult(result, sealedEvaluation);
+                const failure = failureDetailFromResult(result, sealedEvaluation, a.run.displayName);
                 if (failure) reportFailure(failure);
               }
               yield* reportMutex.withPermits(1)(

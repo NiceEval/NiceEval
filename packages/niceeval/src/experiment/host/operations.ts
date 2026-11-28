@@ -20,7 +20,7 @@ import { ProjectStateDatabase } from "../../record/sqlite/project-state-database
 import { acceptLocators, acceptRun, planAcceptRun, planAcceptLocators } from "../../runner/accept.ts";
 import { activateFeedbackSink, type FeedbackSink } from "../../runner/feedback/sink.ts";
 import { computeExitCode } from "../../runner/feedback/json.ts";
-import { discoverEvals, discoverExperimentSelection } from "../../runner/discover.ts";
+import { DiscoveryError, discoverEvals, discoverExperimentSelection } from "../../runner/discover.ts";
 import { acquireFreshImportGeneration, type FreshImportGeneration } from "../../fresh-import.ts";
 import { resolveExperimentEvals, splitByEvaluationKind } from "../../runner/eval-selection.ts";
 import { planProjectTarget, type ProjectTargetPlan } from "../../runner/fingerprint.ts";
@@ -97,6 +97,8 @@ export function operationError(operation: ExperimentHostOperation, cause: unknow
 }
 
 function closedFailureCode(cause: ExperimentHostCause): string {
+  if (cause instanceof DiscoveryError && cause.issues.some(({ code }) => code === "experiment-display-name-invalid"))
+    return "experiment-display-name-invalid";
   if ("code" in cause && cause.code === "runner-session-open-failed")
     return closedFailureCode(normalizeExperimentHostCause(cause.cause));
   if ("code" in cause) {
@@ -310,6 +312,7 @@ function summaryOfExperiment(
 ): ExperimentHostExperimentSummary {
   return {
     id: experiment.id,
+    displayName: experiment.displayName,
     description: experiment.description,
     adapter: experiment.adapter?.name ?? null,
     models: experiment.models,
@@ -379,6 +382,7 @@ function agentRunFromExperiment(
     budget: overrides.budget ?? experiment.budget,
     selectedEvalIds,
     experimentId: experiment.id,
+    displayName: experiment.displayName,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
     experimentExecutionSource: getExperimentExecutionSource(experiment, config),
@@ -526,6 +530,7 @@ function jsonSnapshot(value: unknown): ExperimentHostJsonValue | undefined {
 }
 
 function dryPlan(
+  displayNames: ExperimentHostDryPlan["displayNames"],
   slots: readonly ExecutionReusePlanSlot[],
   readbacks: readonly ReturnType<typeof projectCurrentReuseReadback>[],
   lockedPairs: readonly string[],
@@ -567,6 +572,7 @@ function dryPlan(
     };
   });
   return {
+    displayNames,
     groups: stateGroups,
     policy: projectTargetPolicyIdentity,
     slots: projected,
@@ -724,6 +730,7 @@ export function planInvocation(
                       { concurrency: "unbounded" },
                     );
                     return dryPlan(
+                      new Map(prepared.runs.map(({ experimentId, displayName }) => [experimentId, displayName])),
                       reusePlan.slots,
                       readbacks.map(projectCurrentReuseReadback),
                       caseOwners.flatMap((owner) => (owner?.state === "locked" ? [owner.key] : [])),
@@ -956,6 +963,7 @@ export function runInvocation(
                       runIds: current.runIds,
                     },
                     experimentConcurrency: state.shape.experimentConcurrency,
+                    experiments: state.runs.map(({ experimentId, displayName }) => ({ experimentId, displayName })),
                     reused: current.reused,
                     reusedFailures: current.reusedFailures,
                   });

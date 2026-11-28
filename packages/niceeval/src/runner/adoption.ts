@@ -204,6 +204,8 @@ export interface CurrentAdoptionSlot {
 export interface CurrentAdoptionTarget {
   readonly identityManifests: IdentityManifestsAttachment | undefined;
   readonly experimentId: string;
+  /** Current discovery display value; written as the new Run's presentation snapshot. */
+  readonly displayName: string;
   readonly startedAt: UtcMillis;
   readonly expectedSlots: readonly RecordSlotIdentity[];
   readonly context: RunContext;
@@ -376,6 +378,7 @@ function runForExperiment(
     ...resolveRunTimeout(undefined, experiment.timeoutMs),
     budget: experiment.budget,
     experimentId: experiment.id,
+    displayName: experiment.displayName,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
     experimentExecutionSource: getExperimentExecutionSource(experiment, config),
@@ -680,6 +683,7 @@ export function prepareCurrentAdoptionTarget(input: {
           }),
       },
       experimentId: experiment.id,
+      displayName: experiment.displayName,
       startedAt: input.startedAt,
       context,
       expectedSlots,
@@ -1228,6 +1232,10 @@ export function commitExplicitAdoptionRunPlans(
             executionIdentityDigest: String(slot.executionIdentityDigest),
           })),
           deadlineEpochMs: Date.now() + 30_000,
+        });
+        yield* writer.attach(NiceEvalRecordAttachments.experimentPresentation, {
+          experimentId,
+          displayName: plan.target.displayName,
         });
         if (plan.target.identityManifests !== undefined)
           yield* writer.attach(NiceEvalRecordAttachments.identityManifests, plan.target.identityManifests);

@@ -966,6 +966,7 @@ export const SOURCE_FILES = [
   "src/judge/image.ts",
   "src/assertions/types.ts",
   "src/runner/types.ts",
+  "src/experiment/presentation.ts",
   "src/context/assert-first.ts",
   "src/adapter.ts",
   "src/agents/types.ts",
@@ -1164,9 +1165,14 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
         ),
       );
     case "experiment-fields":
-      return renderList(
-        extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "ExperimentAuthorFields"),
-      );
+      return renderList([
+        ...extractInterfaceMembers(
+          sources["src/experiment/presentation.ts"],
+          "src/experiment/presentation.ts",
+          "ExperimentPresentationInput",
+        ),
+        ...extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "ExperimentAuthorFields"),
+      ]);
     case "config-fields":
       return renderList(extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "Config"));
     case "agent-def":

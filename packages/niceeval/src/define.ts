@@ -5,6 +5,12 @@ import type { Adapter } from "./adapter.ts";
 import { assertRequiredModelRoles, normalizeModelRoles } from "./model-roles.ts";
 import { parseAdapterFlags } from "./adapter-flags.ts";
 import { decodeExperimentFlags } from "./experiment/flags.ts";
+import {
+  EXPERIMENT_DISPLAY_NAME_MAX_BYTES,
+  experimentDisplayName,
+  InvalidExperimentDisplayName,
+  type ExperimentDisplayName,
+} from "./experiment/presentation.ts";
 // 定义入口:把用户对象规格化成核心认得的形状。options 禁止提供 id；
 // 发现阶段读取入口的 export const id，未声明时由文件路径推导(见 runner/discover.ts)。
 
@@ -437,6 +443,7 @@ export function defineExperiment(
         );
     }
   }
+  const displayName = normalizeExperimentDisplayName(def.displayName);
   const sharedState = normalizeSharedState(def.sharedState);
   const sandboxCache = normalizeSandboxCache(def.sandboxCache, "defineExperiment");
   const {
@@ -454,6 +461,7 @@ export function defineExperiment(
     model: models?.default?.model ?? def.model,
     reasoningEffort: models?.default?.reasoningEffort ?? def.reasoningEffort,
     description: def.description,
+    displayName,
     adapter,
     flags:
       adapter?.kind === "custom" && adapter.parseFlags !== undefined
@@ -633,4 +641,21 @@ export function defineSandbox(def: CustomProviderSandboxOptions): SandboxLayer<"
 
 function rejectRemovedField(value: object, field: string, replacement: string): void {
   if (Object.hasOwn(value, field)) throw new TypeError(`${field} is no longer supported. ${replacement}`);
+}
+
+/** Explicit displayName is validated at definition time so discovery fails before any Invocation exists. */
+function normalizeExperimentDisplayName(value: unknown): ExperimentDisplayName | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new InvalidExperimentDisplayName(
+      "Experiment displayName must be a string. Omit it to display the full Experiment ID.",
+    );
+  }
+  const decoded = experimentDisplayName(value);
+  if (Result.isFailure(decoded)) {
+    throw new InvalidExperimentDisplayName(
+      `Invalid Experiment displayName (${decoded.failure.reason}). Use one line of 1-${EXPERIMENT_DISPLAY_NAME_MAX_BYTES} UTF-8 bytes without leading or trailing whitespace or control characters.`,
+    );
+  }
+  return decoded.success;
 }

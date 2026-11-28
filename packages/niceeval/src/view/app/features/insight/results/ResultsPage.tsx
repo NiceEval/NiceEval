@@ -14,6 +14,8 @@ import type { InsightTarget } from "../shell/types.ts";
 import { Grid } from "../components/primitives/index.tsx";
 import { CurrentResults } from "./CurrentResults.tsx";
 import { CostGaps } from "../components/primitives/cost-gaps.tsx";
+import { experimentDisplayLabel } from "../../../../../experiment/presentation.ts";
+import type { ViewCatalogSelection } from "../shell/manifest.ts";
 
 export function ResultsPage({
   model,
@@ -26,7 +28,12 @@ export function ResultsPage({
 }): ReactElement {
   const { t } = useTranslation();
   if (model.targetMode === "current") {
-    return <CurrentResults project={model.current} history={model.currentHistory} locale={locale} />;
+    return (
+      <>
+        <CurrentResults project={model.current} history={model.currentHistory} locale={locale} />
+        <RunLinks runs={model.overview.catalog.runExperiments} />
+      </>
+    );
   }
   if (model.targetMode === "unavailable") {
     const historicalRun = model.overview.catalog.runExperiments[0]?.runId;
@@ -54,19 +61,7 @@ export function ResultsPage({
       <header className="niceeval-report niceeval-hero">
         <h1 className="niceeval-hero-title">{t("insight.title")}</h1>
         <p>{t("current.historicalResults")}</p>
-        {historicalRuns.length === 0 ? null : (
-          <ul>
-            {historicalRuns.map(({ runId, experimentId }) => (
-              <li key={runId}>
-                <a href={`#/run/${encodeURIComponent(runId)}`}>{t("current.historicalRun")}</a>
-                {" · "}
-                {experimentId}
-                {" · "}
-                <code>{runId}</code>
-              </li>
-            ))}
-          </ul>
-        )}
+        <RunLinks runs={historicalRuns} />
       </header>
       <div className="niceeval-view-report-slot">
         {model.costSummary.state === "not-requested" ? null : <ExperimentCosts summary={model.costSummary.value} />}
@@ -75,7 +70,7 @@ export function ResultsPage({
             <ul>
               {experiments.map((experiment) => (
                 <li key={experiment.experimentId}>
-                  <a href={experiment.href}>{experiment.experimentId}</a>
+                  <a href={experiment.href}>{experimentDisplayLabel(experiment)}</a>
                 </li>
               ))}
             </ul>
@@ -90,6 +85,24 @@ export function ResultsPage({
         />
       </div>
     </>
+  );
+}
+
+function RunLinks({ runs }: { readonly runs: ViewCatalogSelection["runExperiments"] }): ReactElement | null {
+  const { t } = useTranslation();
+  if (runs.length === 0) return null;
+  return (
+    <ul className="niceeval-report">
+      {runs.map((run) => (
+        <li key={run.runId}>
+          <a href={`#/run/${encodeURIComponent(run.runId)}`}>{t("current.historicalRun")}</a>
+          {" · "}
+          {experimentDisplayLabel(run)}
+          {" · "}
+          <code>{run.runId}</code>
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -1243,7 +1243,7 @@ Roadmap 候选：显式目录入口拥有的递归 Eval discovery 范围；父�
 
 Roadmap 候选：与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签
 
-契约：[Experiment 展示名](roadmap/experiment-authoring-display-names/README.md)
+契约：[Experiment 展示名](feature/experiment-authoring-display-names/README.md)
 
 其它写法：`Experiment display name`、`displayName`。
 

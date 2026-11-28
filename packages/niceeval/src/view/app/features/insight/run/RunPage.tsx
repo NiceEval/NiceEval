@@ -10,6 +10,7 @@ import type { RunPageModel } from "./model.ts";
 import { useCurrentGeneration } from "../data/index.ts";
 import { runQueryOptions } from "./load.ts";
 import { localizedMessage } from "../components/locale.ts";
+import { experimentDisplayLabel } from "../../../../../experiment/presentation.ts";
 
 const runPhaseMessages = {
   "run.before": "run.phase.before",
@@ -21,9 +22,10 @@ const runPhaseMessages = {
 
 export function RunPage({ model, locale }: { readonly model: RunPageModel; readonly locale: Locale }): ReactElement {
   const { t } = useTranslation();
+  const experimentTitle = experimentDisplayLabel(model);
   const rows = model.members.map((member) => {
     const cells: Record<string, Cell> = {
-      experiment: { kind: "text", text: model.experimentId, detail: undefined },
+      experiment: { kind: "text", text: experimentTitle, detail: undefined },
       adapter:
         model.adapter === undefined
           ? { kind: "notApplicable" }
@@ -85,7 +87,7 @@ export function RunPage({ model, locale }: { readonly model: RunPageModel; reado
   return (
     <section className="niceeval-report niceeval-section">
       <h2 className="niceeval-section-title">
-        {locale === "zh-CN" ? `Run 成员 · ${model.runId}` : `Run membership · ${model.runId}`}
+        {locale === "zh-CN" ? "Run 成员" : "Run membership"} · {experimentTitle} · {model.runId}
       </h2>
       {model.diagnostics.length === 0 ? null : (
         <section aria-label={t("run.errors")}>

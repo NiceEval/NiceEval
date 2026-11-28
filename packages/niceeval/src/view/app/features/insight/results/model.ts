@@ -1,4 +1,5 @@
 import type { InspectionSuccessDocumentFor } from "../../../../../inspection/public.ts";
+import { sharedExperimentDisplayNames } from "../../../../../experiment/presentation.ts";
 import {
   type AttemptListItem,
   type ExperimentListEvalRow,
@@ -158,15 +159,18 @@ export function closeOverview(document: InspectionSuccessDocumentFor<"overview.g
     })),
   }));
   const experimentIds = experiments.map(({ experimentId }) => experimentId);
-  const runExperiments = uniqueBy(
-    cells.flatMap((cell) =>
-      cell.members.map((member) => ({
-        runId: member.runId,
-        experimentId: cell.experimentId,
-      })),
-    ),
-    ({ runId }) => runId,
-  );
+  const runExperiments =
+    document.selection.selectedRuns ??
+    uniqueBy(
+      cells.flatMap((cell) =>
+        cell.members.map((member) => ({
+          runId: member.runId,
+          experimentId: cell.experimentId,
+          displayName: cell.experimentId,
+        })),
+      ),
+      ({ runId }) => runId,
+    );
   const attemptExperiments = uniqueBy(
     cells.flatMap((cell) =>
       cell.members.flatMap((member) =>
@@ -222,6 +226,7 @@ export function overviewData(
   selectedExperiments: readonly string[],
 ): readonly ExperimentListItem[] {
   const selected = new Set(selectedExperiments);
+  const displayNames = sharedExperimentDisplayNames(overview.catalog.runExperiments);
   const cells = overview.cells.filter(({ experimentId }) => selected.has(experimentId));
   const allEvalIds = [...new Set(cells.map(({ evalId }) => evalId))];
   return selectedExperiments.flatMap((experimentId) => {
@@ -235,6 +240,7 @@ export function overviewData(
     return [
       {
         experimentId,
+        displayName: displayNames.get(experimentId) ?? experimentId,
         adapter: experiment.adapter,
         plugins: experiment.plugins,
         model: experiment.model,

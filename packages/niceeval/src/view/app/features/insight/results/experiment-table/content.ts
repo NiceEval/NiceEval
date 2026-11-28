@@ -4,6 +4,7 @@
 
 import type { Cell, ColumnSpec, MetricValue, TableContent, TableContentRow } from "../../components/cell.tsx";
 import { localizedMessage } from "../../components/locale.ts";
+import { experimentDisplayLabel } from "../../../../../../experiment/presentation.ts";
 import {
   experimentEvalLayout,
   relativeEvalLabel,
@@ -365,7 +366,7 @@ export function experimentRow(item: ExperimentListItem, view: HierarchyView): Ta
   const totalEvalCount = coveredEvalCount + item.missingEvalIds.length;
   const bag: CellBag = {
     entity: stackCell(
-      identityCell(item.experimentId, `${coveredEvalCount}/${totalEvalCount}`),
+      identityCell(experimentDisplayLabel(item), `${coveredEvalCount}/${totalEvalCount}`),
       ...(item.plugins ?? []).map((plugin) =>
         textCell(`${plugin.name} (${plugin.key})`, JSON.stringify(plugin.identity)),
       ),

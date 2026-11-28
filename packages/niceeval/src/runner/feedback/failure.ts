@@ -24,7 +24,8 @@ import type { CurrentReusedAttemptReadback } from "../reuse-readback.ts";
  */
 export function failureDetailFromResult(
   result: EvalResult,
-  sealed?: SealedAttemptAssertions,
+  sealed: SealedAttemptAssertions | undefined,
+  displayName: string | undefined,
 ): FailureDetail | undefined {
   const locator = result.locator;
   if (!locator || (result.verdict !== "failed" && result.verdict !== "errored")) {
@@ -70,6 +71,7 @@ export function failureDetailFromResult(
       agentName: result.adapter?.name ?? "",
       model: result.model,
       experimentId: result.experimentId,
+      displayName,
     }),
     verdict: result.verdict,
     reason: failureReason(),
@@ -198,7 +200,7 @@ function primaryAssertionSummary(
  */
 export function failureDetailFromCurrentReusedAttempt(
   readback: CurrentReusedAttemptReadback,
-  run: Pick<AgentRun, "adapter" | "model" | "experimentId">,
+  run: Pick<AgentRun, "adapter" | "model" | "experimentId" | "displayName">,
 ): FailureDetail | undefined {
   if (readback.verdict !== "failed") return undefined;
   const diagnostic = readback.executionErrors.state === "available" ? readback.executionErrors.value[0] : undefined;
@@ -213,6 +215,7 @@ export function failureDetailFromCurrentReusedAttempt(
       agentName: run.adapter?.name ?? "",
       model: run.model,
       experimentId: run.experimentId,
+      displayName: run.displayName,
     }),
     verdict: "failed",
     reason: diagnostic === undefined ? summaryText(readback.verdict) : executionErrorReason(diagnostic.summary),

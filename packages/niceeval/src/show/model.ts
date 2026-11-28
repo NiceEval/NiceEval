@@ -78,6 +78,7 @@ export type Aggregate = {
   readonly tokens: Metric;
 };
 export interface OverviewView {
+  readonly selectedRuns?: NonNullable<InspectionSuccessDocumentFor<"overview.get">["selection"]["selectedRuns"]>;
   readonly totals: Aggregate;
   readonly experiments: readonly {
     readonly experimentId: string;
@@ -110,6 +111,7 @@ export interface OverviewView {
   }[];
 }
 export interface ExperimentView {
+  readonly selectedRuns?: OverviewView["selectedRuns"];
   readonly labels: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["experiment"]["labels"];
   readonly plugins: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["experiment"]["plugins"];
   readonly notes: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["notes"];
@@ -123,6 +125,7 @@ export interface RunView {
   readonly diagnostics: InspectionSuccessDocumentFor<"run.get">["run"]["diagnostics"];
   readonly runId: string;
   readonly experimentId: string;
+  readonly displayName?: string;
   readonly adapter: ShowAdapterIdentity | undefined;
   readonly state: "active" | "recovering" | "completed" | "interrupted" | "failed";
   readonly startedAt: number;
@@ -314,6 +317,7 @@ const cells = (values: InspectionOverviewResult["cells"]): OverviewView["cells"]
 
 export function projectOverview(document: InspectionSuccessDocumentFor<"overview.get">): OverviewView {
   return {
+    ...(document.selection.selectedRuns === undefined ? {} : { selectedRuns: document.selection.selectedRuns }),
     totals: aggregate(document.overview.totals),
     experiments: document.overview.experiments.map((experiment) => ({
       experimentId: experiment.experimentId,
@@ -326,6 +330,7 @@ export function projectOverview(document: InspectionSuccessDocumentFor<"overview
 }
 export function projectExperiment(document: InspectionSuccessDocumentFor<"experiment.get">): ExperimentView {
   return {
+    ...(document.selection.selectedRuns === undefined ? {} : { selectedRuns: document.selection.selectedRuns }),
     labels: document.experiment.experiment.labels,
     experimentId: document.experiment.experiment.experimentId,
     notes: document.experiment.notes,
@@ -341,10 +346,12 @@ export function projectExperiment(document: InspectionSuccessDocumentFor<"experi
 export function projectRun(document: InspectionSuccessDocumentFor<"run.get">): RunView {
   const detail = document.run;
   const value = detail.value;
+  const presentation = document.selection.selectedRuns?.find(({ runId }) => runId === value.runId);
   return {
     diagnostics: detail.diagnostics,
     runId: value.runId,
     experimentId: value.experimentId,
+    displayName: presentation?.displayName ?? value.experimentId,
     adapter: adapterIdentity(value.context?.execution.adapter),
     state: value.state,
     startedAt: value.startedAt,

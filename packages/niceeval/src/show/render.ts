@@ -9,6 +9,11 @@ import type { AssertionDetailResult, PagedAssertionDetailSchema } from "../inspe
 import type { AssertionFactValue } from "../assertions/record/model.ts";
 import { formatNumericUnit } from "../assertions/quantity.ts";
 import {
+  experimentDisplayLabel,
+  experimentOutputFields,
+  sharedExperimentDisplayNames,
+} from "../experiment/presentation.ts";
+import {
   renderTerminal,
   type TerminalBlock,
   type TerminalPanelContentBlock,
@@ -512,6 +517,8 @@ export function renderOverview(
       | { readonly kind: "recorded" | "default" };
   } = { all: false, source: { kind: "default" } },
 ): string {
+  const selectedRuns = value.selectedRuns ?? [];
+  const displayNames = sharedExperimentDisplayNames(selectedRuns);
   const all = options.all;
   const current = options.source.kind === "current" ? options.source.project : undefined;
   const references = options.source.kind === "current" ? options.source.references : new Map();
@@ -551,6 +558,16 @@ export function renderOverview(
       ],
     },
   ];
+  if (selectedRuns.length > 0) {
+    blocks.push({
+      kind: "panel",
+      title: "Runs",
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
+      blocks: [runPresentationRows(selectedRuns)],
+    });
+  }
   if (value.experiments.length > 0) {
     const groups = groupExperiments(value);
     blocks.push({
@@ -582,7 +599,7 @@ export function renderOverview(
               ...(showScore ? [{ maxWidth: 40, header: "Score" }] : []),
             ],
             rows: group.experiments.map((experiment) => [
-              relativeToGroup(experiment.experimentId, group.name),
+              experimentDisplayLabel(experimentOutputFields(experiment.experimentId, displayNames)),
               `${experiment.aggregate.observed}/${experiment.aggregate.expected}`,
               ...(current === undefined
                 ? [adapterValue(experiment.adapter), executionValue(experiment.model)]
@@ -680,7 +697,7 @@ export function renderOverview(
             {
               meta: undefined,
               kind: "divider" as const,
-              title: `Experiment ${experiment.experimentId}`,
+              title: `Experiment ${experimentDisplayLabel(experimentOutputFields(experiment.experimentId, displayNames))}`,
               attachNext: true,
             },
             ...attemptBlocks(experimentCells, group.name, all),
@@ -704,14 +721,17 @@ function adapterValue(value: import("./model.ts").AdapterValue): string {
 
 export function renderExperiment(value: ExperimentView): string {
   const { totalCosts, coverage } = value.costSummary;
+  const selectedRuns = value.selectedRuns ?? [];
+  const display = experimentOutputFields(value.experimentId, sharedExperimentDisplayNames(selectedRuns));
   return terminal([
     {
       meta: undefined,
       footerCommand: undefined,
       capWidth: true,
       kind: "panel",
-      title: `Experiment ${value.experimentId}`,
+      title: `Experiment ${experimentDisplayLabel(display)}`,
       blocks: [
+        ...(selectedRuns.length === 0 ? [] : [runPresentationRows(selectedRuns)]),
         {
           kind: "keyValue",
           entries: [
@@ -793,6 +813,10 @@ export function renderExperiment(value: ExperimentView): string {
   ]);
 }
 
+function runPresentationRows(runs: NonNullable<OverviewView["selectedRuns"]>): TerminalPanelContentBlock {
+  return { kind: "keyValue", entries: runs.map((run) => ({ key: run.runId, value: experimentDisplayLabel(run) })) };
+}
+
 function executionValue(value: ExecutionValue): string {
   return value.state === "available" ? value.value : value.state;
 }
@@ -811,7 +835,13 @@ export function renderRun(value: RunView): string {
         {
           kind: "keyValue",
           entries: [
-            { key: "Experiment", value: value.experimentId },
+            {
+              key: "Experiment",
+              value: experimentDisplayLabel({
+                experimentId: value.experimentId,
+                displayName: value.displayName ?? value.experimentId,
+              }),
+            },
             {
               key: "Adapter",
               value:

@@ -10,6 +10,13 @@ export {
   defineConfig,
   defineExperiment,
 } from "./define.ts";
+export {
+  experimentDisplayName,
+  type ExperimentDisplayName,
+  type ExperimentOutputFieldsV1,
+  type ExperimentPresentationError,
+  type ExperimentPresentationInput,
+} from "./experiment/presentation.ts";
 export { defineAdapter, defineAdapterContract } from "./adapter.ts";
 export { defineState, type StateBinding, type StateDefinition, type StateInput } from "./state/definition.ts";
 export { defineSimulatedUser } from "./simulated-user/definition.ts";

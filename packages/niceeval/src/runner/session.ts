@@ -1,4 +1,4 @@
-import { ExpPrepareEventSchema } from "../experiment/host/cli/output-protocol.ts";
+import { ExpPrepareObservationSchema } from "../experiment/host/cli/output-protocol.ts";
 // Experiment Invocation 的轻量 Session 索引。
 //
 // Session 只回答「哪一批 Run 由同一次 exp 调度、当前是否仍活跃」；完整的
@@ -106,10 +106,10 @@ function sessionOptional<S extends Schema.Constraint>(schema: S) {
 }
 
 const SessionPreparationSchema = Schema.Struct({
-  node: ExpPrepareEventSchema.fields.node,
-  pairings: ExpPrepareEventSchema.fields.pairings,
-  action: ExpPrepareEventSchema.fields.action,
-  phase: ExpPrepareEventSchema.fields.phase,
+  node: ExpPrepareObservationSchema.fields.node,
+  pairings: ExpPrepareObservationSchema.fields.pairings,
+  action: ExpPrepareObservationSchema.fields.action,
+  phase: ExpPrepareObservationSchema.fields.phase,
   phaseEnteredAt: Schema.String,
   sandbox: sessionOptional(
     Schema.Struct({ provider: Schema.String, nativeInstanceId: sessionOptional(Schema.String) }),

@@ -90,7 +90,7 @@ function events(output: string) {
 // @feature docs/feature/experiments/README.md#progress-counts
 test("JSON reports the current Eval, phase and tool detail before an Attempt settles", () => {
   const liveEvents = events(liveOutput);
-  const identity = { experimentId: "lifecycle", evalId: "e0", attempt: 0 };
+  const identity = { experimentId: "lifecycle", displayName: "lifecycle", evalId: "e0", attempt: 0 };
   const activities = liveEvents.filter((event) => event.event === "activity").map(decodeExpActivityEvent);
   expect(activities).toContainEqual({ event: "activity", ...identity, phase: "eval.run" });
   fc.assert(

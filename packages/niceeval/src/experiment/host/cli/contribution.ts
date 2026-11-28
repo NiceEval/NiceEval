@@ -43,6 +43,8 @@ import {
   type ExperimentHostAfterResult,
 } from "../index.ts";
 import { ExperimentCliTerminal } from "./terminal.ts";
+import { experimentDisplayLabel, experimentOutputFields } from "../../presentation.ts";
+import { EXP_PLAN_FORMAT, EXP_PLAN_VERSION } from "./plan-protocol.ts";
 export { decodeExpPlanDocument, ExpPlanDocumentSchema, type ExpPlanDocument } from "./plan-protocol.ts";
 
 type ExperimentCliRequirements =
@@ -252,6 +254,10 @@ function failure(operation: string, cause: unknown, exitCode = 1, display?: stri
   });
 }
 
+function discoveryFailure(operation: string, cause: ExperimentHostError): ExperimentCliError {
+  return failure(operation, cause, cause.code === "experiment-display-name-invalid" ? 2 : 1);
+}
+
 function write(channel: "stdout" | "stderr", text: string): Effect.Effect<void, ExperimentCliError, CliOutput> {
   return Effect.flatMap(CliOutput, (output) =>
     channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text),
@@ -307,6 +313,7 @@ function userDatabaseStartupError(error: ExperimentHostError, json: boolean) {
 function catalogText(catalog: {
   readonly experiments: readonly {
     readonly id: string;
+    readonly displayName: string;
     readonly description: string | undefined;
     readonly adapter: string | null;
     readonly model: string | undefined;
@@ -319,6 +326,7 @@ function catalogText(catalog: {
     catalog.experiments
       .map((experiment) =>
         [
+          experiment.displayName,
           experiment.id,
           experiment.description ?? "—",
           experiment.adapter,
@@ -339,6 +347,7 @@ function catalogText(catalog: {
 function catalogJson(catalog: {
   readonly experiments: readonly {
     readonly id: string;
+    readonly displayName: string;
     readonly description: string | undefined;
     readonly adapter: string | null;
     readonly model: string | undefined;
@@ -350,6 +359,7 @@ function catalogJson(catalog: {
   return jsonDocument({
     experiments: catalog.experiments.map((experiment) => ({
       experimentId: experiment.id,
+      displayName: experiment.displayName,
       ...(experiment.description === undefined ? {} : { description: experiment.description }),
       adapter: experiment.adapter,
       ...(experiment.model === undefined ? {} : { model: experiment.model }),
@@ -508,11 +518,12 @@ function teardownFailure(operation: string, cause: ExperimentHostError, recovery
   return failure(operation, cause, 1, display);
 }
 
-function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lockedPairs">) {
+function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lockedPairs" | "displayNames">) {
   type ProjectedSlot = {
     readonly runId: string;
     readonly slotId: string;
     readonly experimentId: string;
+    readonly displayName: string;
     readonly evalId: string;
     readonly executionIdentityDigest: string;
     readonly evalGroupId: string | undefined;
@@ -528,11 +539,12 @@ function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lock
     string,
     {
       experimentId: string;
+      displayName: string;
       evalId: string;
       evalGroupId: string | undefined;
       evalGroupIndex: number | undefined;
       slots: ProjectedSlot[];
-      readbacks: CurrentReuseReadbackSnapshot[];
+      readbacks: (CurrentReuseReadbackSnapshot & { readonly target: { readonly displayName: string } })[];
       locked: true | undefined;
     }
   >();
@@ -542,7 +554,7 @@ function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lock
     const evalGroupIndex = evalGroup?.index;
     const key = JSON.stringify([target.experimentId, target.evalId]);
     const row = rows.get(key) ?? {
-      experimentId: target.experimentId,
+      ...experimentOutputFields(target.experimentId, plan.displayNames),
       evalId: target.evalId,
       evalGroupId,
       evalGroupIndex,
@@ -552,6 +564,7 @@ function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lock
     };
     row.slots.push({
       ...target,
+      displayName: row.displayName,
       evalGroupId,
       evalGroupIndex,
       state: slot.state === "reuse" ? "reused" : "gap",
@@ -566,7 +579,7 @@ function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lock
   for (const readback of plan.readbacks) {
     const key = JSON.stringify([readback.target.experimentId, readback.target.evalId]);
     const row = rows.get(key) ?? {
-      experimentId: readback.target.experimentId,
+      ...experimentOutputFields(readback.target.experimentId, plan.displayNames),
       evalId: readback.target.evalId,
       evalGroupId: undefined,
       evalGroupIndex: undefined,
@@ -574,7 +587,10 @@ function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lock
       readbacks: [],
       locked: undefined,
     };
-    row.readbacks.push(readback);
+    row.readbacks.push({
+      ...readback,
+      target: { ...readback.target, ...experimentOutputFields(readback.target.experimentId, plan.displayNames) },
+    });
     if (plan.lockedPairs.includes(key)) row.locked = true;
     rows.set(key, row);
   }
@@ -610,7 +626,7 @@ function dryText(
     for (const { lineage, origin } of group.state) {
       const start = origin.kind === "fresh" ? "no checkpoint" : `from ${origin.checkpoint.digest}`;
       lines.push(
-        `State ${lineage.name} · ${group.experimentId} / ${group.evalGroupId} cohort ${lineage.cohort} · ${start}`,
+        `State ${lineage.name} · ${experimentDisplayLabel(experimentOutputFields(group.experimentId, plan.displayNames))} / ${group.evalGroupId} cohort ${lineage.cohort} · ${start}`,
       );
     }
   }
@@ -638,7 +654,7 @@ function dryText(
       ...(reusedAttempts.length === 0 ? [] : [`using earlier results ×${reusedAttempts.length}`]),
       ...[...reasons].map(([reason, count]) => (count === 1 ? reason : `${reason} ×${count}`)),
     ];
-    lines.push(`${row.experimentId}  ${row.evalId}  ${parts.join(" · ") || "no attempts selected"}`);
+    lines.push(`${experimentDisplayLabel(row)}  ${row.evalId}  ${parts.join(" · ") || "no attempts selected"}`);
     const shownDetails = new Set<string>();
     for (const slot of gaps) {
       if (slot.reason !== "identity-mismatch" && slot.reason !== "adoption-unproven") continue;
@@ -704,13 +720,18 @@ function dryJson(
   plugins: readonly unknown[],
 ): string {
   return jsonDocument({
+    format: EXP_PLAN_FORMAT,
+    schemaVersion: EXP_PLAN_VERSION,
     total: shape.totalAttempts,
     evals: shape.evals,
     configs: shape.configurations,
     attempts: shape.attempts,
     reused: plan.slots.filter((slot) => slot.state === "reuse").length,
     matrix: dryRows(plan),
-    groups: plan.groups,
+    groups: plan.groups.map((group) => ({
+      ...group,
+      ...experimentOutputFields(group.experimentId, plan.displayNames),
+    })),
     plugins,
   });
 }
@@ -1006,7 +1027,7 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
             ...selection(rest),
             ...(typeof input.values.tag === "string" ? { tag: input.values.tag } : {}),
           })
-          .pipe(Effect.mapError((cause) => failure("list", cause)));
+          .pipe(Effect.mapError((cause) => discoveryFailure("list", cause)));
         if (result.experiments.length === 0 && rest[0] !== undefined) {
           yield* write(
             "stderr",
@@ -1014,7 +1035,7 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
 Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
 `,
           );
-          return 1;
+          return 2;
         }
         yield* write("stdout", input.values.json === true ? catalogJson(result) : catalogText(result));
         return 0;
@@ -1068,12 +1089,12 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
       if (Result.isFailure(planned)) {
         if (planned.failure.code === "user-database-unsupported")
           return yield* userDatabaseStartupError(planned.failure, input.values.json === true);
-        return yield* Effect.fail(failure("plan invocation", planned.failure));
+        return yield* Effect.fail(discoveryFailure("plan invocation", planned.failure));
       }
       const plan = planned.success;
       if (plan.status !== "ready") {
         yield* write("stderr", selectionProblemText(plan));
-        return 1;
+        return plan.status === "experiment-no-match" ? 2 : 1;
       }
       if (input.values.dry === true) {
         if (plan.dry === undefined)

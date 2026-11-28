@@ -26,6 +26,7 @@ import { formatDryDelta, formatIdentityDiagnostic } from "./identity-explanation
 export { windowChangedDeltaValues } from "./identity-explanation.ts";
 
 import { formatCost } from "../../shared/format.ts";
+import { experimentDisplayLabel, experimentOutputFields } from "../../experiment/presentation.ts";
 import { compactAssertionSummary, fitCompactAssertionSummary, stripControl } from "../../assertions/display.ts";
 import { boundedErrorText } from "../../shared/bounded-error-text.ts";
 import { COORDINATION_RECOVERED_CODE, encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
@@ -363,7 +364,7 @@ export function renderDurableLines(
       return buildDiagnosticLines(event, state);
     case "budget-exhausted":
       return [
-        `! ${`budget exhausted for ${event.experimentId} (spent ${event.spent.toFixed(2)}, unstarted ${event.unstarted})`}`,
+        `! budget exhausted for ${experimentDisplayLabel(experimentOutputFields(event.experimentId, state.displayNames))} (spent ${event.spent.toFixed(2)}, unstarted ${event.unstarted})`,
       ];
     case "interrupted":
       return [
@@ -383,11 +384,12 @@ export function renderDurableLines(
       // 只服务非 TTY 退化流(TTY dashboard 的 appendDurable 对这个事件直接返回,运行级行
       // 由 state.experimentHooks 驱动,成功钩子不进 scrollback,见 cli.md「实验级 Hook 的显示」)。
       const label = experimentHookLabel(event.hook);
+      const experiment = experimentDisplayLabel(experimentOutputFields(event.experimentId, state.displayNames));
       const duration = event.durationMs !== undefined ? ` (${formatElapsed(event.durationMs)})` : "";
       const recoverySuffix = event.recovery ? ` (recovery)` : "";
-      if (event.status === "started") return [`${label} · ${event.experimentId}${recoverySuffix}`];
+      if (event.status === "started") return [`${label} · ${experiment}${recoverySuffix}`];
       const statusWord = event.status === "done" ? `done` : `failed`;
-      return [`${label} ${statusWord} · ${event.experimentId}${duration}`];
+      return [`${label} ${statusWord} · ${experiment}${duration}`];
     }
     case "precheck": {
       // 只服务非 TTY 退化流(TTY dashboard 的 appendDurable 对这个事件直接返回,运行级行
@@ -988,13 +990,16 @@ function buildReceiptLines(
   panel: { mode: PanelMode; width: number },
 ): string[] {
   const rows: PanelRow[] = [];
-  const published = new Set(event.receipt.createdRunIds);
-  const runs = [
-    ...new Set([
-      ...[...state.runIdsByExperiment.values()].filter((runId) => published.has(runId)),
-      ...event.receipt.createdRunIds,
-    ]),
-  ];
+  const runs = event.receipt.createdRunIds;
+  const experimentIds = new Map([...state.runIdsByExperiment].map(([experimentId, runId]) => [runId, experimentId]));
+  const mappings = runs.flatMap((runId) => {
+    const experimentId = experimentIds.get(runId);
+    return experimentId === undefined
+      ? []
+      : [`${experimentDisplayLabel(experimentOutputFields(experimentId, state.displayNames))} → ${runId}`];
+  });
+  rows.push(...runs.map((runId): PanelRow => ({ kind: "line", text: runId })));
+  rows.push({ kind: "line", text: `publicationCutoff ${event.receipt.publicationCutoff}` });
   const first = runs[0];
   if (first !== undefined) {
     rows.push({ kind: "line", text: `show: niceeval show run:${first}` });
@@ -1006,20 +1011,25 @@ function buildReceiptLines(
       });
     }
   }
-  if (rows.length === 0) {
+  if (runs.length === 0) {
     rows.push({ kind: "line", text: "No Runs were created for this invocation." });
   }
-  return renderPanel({
-    title: `NEXT`,
-    meta: undefined,
-    footerCommand: undefined,
-    rows,
-    width: panel.width,
-    mode: rows.some((row) => row.kind === "line" && stringWidth(row.text) > panelContentWidth(panel.width, panel.mode))
-      ? "plain"
-      : panel.mode,
-    capWidth: true,
-  });
+  return [
+    ...mappings,
+    ...renderPanel({
+      title: `NEXT`,
+      meta: undefined,
+      footerCommand: undefined,
+      rows,
+      width: panel.width,
+      mode: rows.some(
+        (row) => row.kind === "line" && stringWidth(row.text) > panelContentWidth(panel.width, panel.mode),
+      )
+        ? "plain"
+        : panel.mode,
+      capWidth: true,
+    }),
+  ];
 }
 
 function boundedHumanError(message: string): string {
@@ -1553,8 +1563,8 @@ function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
         const previous = progress.get(key);
         if (previous?.text === text) continue;
         if (previous !== undefined && event.at - previous.at < NON_TTY_PROGRESS_INTERVAL_MS) continue;
-        const { experimentId, evalId, attempt } = active.identity;
-        const owner = [experimentId, evalId, `attempt ${attempt + 1}`].filter((part) => part !== undefined).join(" · ");
+        const { evalId, attempt } = active.identity;
+        const owner = [active.who, evalId, `attempt ${attempt + 1}`].join(" · ");
         io.stdout.write(`${stripControl(owner).replace(/\s+/gu, " ")} · ${text}\n`);
         progress.set(key, { text, at: event.at });
         lastDurableAtMs = event.at;

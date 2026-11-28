@@ -20,13 +20,14 @@ coding agent 不需要解读 TTY 重绘。
    niceeval exp compare memory/commit0 --json
    ```
 
-   `progress` 与 `diagnostic` 服务当前进程；最后一条 `receipt` 携带完整 `InvocationReceipt`。
+   首条 `start` 标记事件流版本。`progress` 与 `diagnostic` 服务当前进程，最后一条 `receipt` 携带完整 `InvocationReceipt`。
    `activity` 在 Attempt 阶段推进、发出工具调用或自述时给出其当前阶段与归属。空闲时的 `progress` 心跳更新全局计数与耗时。
 
    ```json
-   {"event":"activity","experimentId":"compare/codex","evalId":"memory/commit0","attempt":0,"phase":"agent.run","detail":"tool: web search: query"}
+   {"event":"start","format":"niceeval.exp","schemaVersion":1,"experiments":[{"experimentId":"compare/codex","displayName":"Baseline"}],"total":2,"configs":1,"concurrency":1,"reused":0}
+   {"event":"activity","experimentId":"compare/codex","displayName":"Baseline","evalId":"memory/commit0","attempt":0,"phase":"agent.run","detail":"tool: web search: query"}
    {"event":"progress","elapsedMs":30000,"total":2,"reused":0,"running":1,"preparing":0,"elsewhere":0,"queued":1,"passed":0,"failed":0,"errored":0,"skipped":0}
-   {"event":"warning","code":"judge-precheck-failed","level":"error","message":"Judge precheck failed…","phase":"judge.precheck","experimentId":"compare/codex","evalId":"memory/commit0","planned":1,"errored":1}
+   {"event":"warning","code":"judge-precheck-failed","level":"error","message":"Judge precheck failed…","phase":"judge.precheck","experimentId":"compare/codex","displayName":"Baseline","evalId":"memory/commit0","planned":1,"errored":1}
    {"type":"receipt","summary":{"startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","passed":2,"failed":0,"errored":0,"skipped":0,"durationMs":60000,"beforeCaches":{"total":0,"hit":0,"prepared":0,"degraded":0,"failed":0}},"receipt":{"invocationId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","createdRunIds":["8f3d6f62-1d34-4cf3-99c7-84ba3c483706"],"publicationCutoff":"opaque-cutoff","startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
    ```
 

@@ -11,7 +11,11 @@ import type {
 
 export interface ViewCatalogSelection {
   readonly experiments: readonly string[];
-  readonly runExperiments: readonly { readonly runId: string; readonly experimentId: string }[];
+  readonly runExperiments: readonly {
+    readonly runId: string;
+    readonly experimentId: string;
+    readonly displayName: string;
+  }[];
   readonly attemptExperiments: readonly { readonly locator: string; readonly experimentId: string }[];
 }
 

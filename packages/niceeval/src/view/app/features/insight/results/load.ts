@@ -5,6 +5,11 @@ import { inspectionQueryOptions, type ViewGenerationBinding } from "../data/inde
 import { RouteInputError, SelectionMissingError, projectOperation } from "../data/operations.ts";
 import type { ClosedOverview, ResultsPageModel } from "./model.ts";
 import type { ViewManifest } from "../shell/manifest.ts";
+import {
+  experimentDisplayLabel,
+  experimentOutputFields,
+  sharedExperimentDisplayNames,
+} from "../../../../../experiment/presentation.ts";
 
 export function resultsQueryOptions(
   generation: ViewGenerationBinding,
@@ -98,10 +103,11 @@ export function experimentQueryOptions(
         throw new RouteInputError("Invalid experiment route.");
       }
       const document = await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, operation.success));
+      const displayNames = sharedExperimentDisplayNames(document.selection.selectedRuns ?? []);
       return {
         overview,
         selectedExperiments,
-        selectionTitle: selectedExperiments[0] ?? "Results",
+        selectionTitle: experimentDisplayLabel(experimentOutputFields(experimentId, displayNames)),
         targetMode,
         costSummary: { state: "available", value: document.experiment.costSummary },
       };

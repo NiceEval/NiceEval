@@ -72,6 +72,7 @@ export interface ExperimentListItem {
       }[]
     | undefined;
   readonly experimentId: string;
+  readonly displayName: string;
   readonly adapter: AdapterValue;
   readonly model: ExecutionValue;
   readonly flags: Readonly<globalThis.Record<string, JsonValue>> | undefined;

@@ -1695,6 +1695,7 @@ export interface InspectionPublicationCutoff {
 export interface InspectionSelectionAudit {
   readonly requestedRunIds: readonly string[];
   readonly selectedRunIds: readonly string[];
+  readonly selectedRuns?: readonly import("./experiment-presentation-schema.ts").InspectionRunSummary[];
   readonly missingRunIds: readonly string[];
 }
 export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
@@ -1706,7 +1707,7 @@ export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
   };
   readonly publicationCutoff: InspectionPublicationCutoff;
   readonly selection: InspectionSelectionAudit;
-  readonly issues: readonly [];
+  readonly issues: readonly import("./experiment-presentation-schema.ts").InspectionPresentationIssue[];
   readonly evidence: { readonly refs: readonly string[] };
 }
 

@@ -5,9 +5,9 @@ import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAx
 import { useTranslation } from "react-i18next";
 import type { ReportLocale } from "../../components/locale.ts";
 import type { ExperimentListItem } from "./compute.ts";
+import { experimentDisplayLabel, type ExperimentOutputFieldsV1 } from "../../../../../../experiment/presentation.ts";
 
-interface ScatterPoint {
-  readonly experimentId: string;
+interface ScatterPoint extends ExperimentOutputFieldsV1 {
   readonly cost: number;
   readonly quality: number;
   readonly partial: boolean;
@@ -59,6 +59,7 @@ export default function QualityCostScatter({ items, kind, locale }: QualityCostS
             points: [
               {
                 experimentId: item.experimentId,
+                displayName: item.displayName,
                 cost,
                 quality,
                 partial: qualityMetric.state !== "available" || costMetric.state !== "available",
@@ -70,7 +71,6 @@ export default function QualityCostScatter({ items, kind, locale }: QualityCostS
         ];
   });
   const points = series.flatMap(({ points: values }) => values);
-  const pointLabels = uniqueExperimentLabels(series.map(({ experimentId }) => experimentId));
   const qualityLabel = t(kind === "pass" ? "insight.chart.passRate" : "insight.chart.score");
   const costLabel = t("insight.chart.cost");
   const title = `${costLabel} × ${qualityLabel}`;
@@ -142,7 +142,9 @@ export default function QualityCostScatter({ items, kind, locale }: QualityCostS
               labelStyle={{ color: "var(--text)", fontWeight: 650 }}
               labelFormatter={(_label, tooltipPayload) => {
                 const point = scatterPoint(tooltipPayload[0]?.payload);
-                return point === undefined ? "" : `${point.experimentId}${point.partial ? ` · ${partialLabel}` : ""}`;
+                return point === undefined
+                  ? ""
+                  : `${experimentDisplayLabel(point)}${point.partial ? ` · ${partialLabel}` : ""}`;
               }}
               formatter={(value, name) => [
                 name === "cost" ? formatter.format(Number(value)) : qualityText(Number(value)),
@@ -160,11 +162,7 @@ export default function QualityCostScatter({ items, kind, locale }: QualityCostS
                 strokeWidth={2}
                 {...(entry.points[0]?.partial ? { strokeDasharray: "2 2" } : {})}
                 shape={(shapeProps: PointShapeProps) => (
-                  <ExperimentPoint
-                    {...shapeProps}
-                    label={pointLabels.get(entry.experimentId) ?? entry.experimentId}
-                    openLabel={t("insight.chart.openExperiment")}
-                  />
+                  <ExperimentPoint {...shapeProps} openLabel={t("insight.chart.openExperiment")} />
                 )}
                 isAnimationActive={false}
               />
@@ -176,7 +174,7 @@ export default function QualityCostScatter({ items, kind, locale }: QualityCostS
         <ul>
           {points.map((point) => (
             <li key={point.experimentId}>
-              {`${point.experimentId}: ${costLabel} ${formatter.format(point.cost)}, ${qualityLabel} ${qualityText(point.quality)}${point.partial ? `, ${partialLabel} ${point.coverage}` : ""}`}
+              {`${experimentDisplayLabel(point)}: ${costLabel} ${formatter.format(point.cost)}, ${qualityLabel} ${qualityText(point.quality)}${point.partial ? `, ${partialLabel} ${point.coverage}` : ""}`}
             </li>
           ))}
         </ul>
@@ -191,9 +189,8 @@ function ExperimentPoint({
   payload,
   fill,
   stroke,
-  label,
   openLabel,
-}: PointShapeProps & { readonly label: string; readonly openLabel: string }) {
+}: PointShapeProps & { readonly openLabel: string }) {
   const point = scatterPoint(payload);
   if (point === undefined || cx === undefined || cy === undefined) return <g />;
   const activate = () => {
@@ -204,7 +201,7 @@ function ExperimentPoint({
       className="niceeval-scatter-point"
       role="link"
       tabIndex={0}
-      aria-label={`${openLabel}: ${point.experimentId}`}
+      aria-label={`${openLabel}: ${experimentDisplayLabel(point)}`}
       onClick={activate}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -224,7 +221,7 @@ function ExperimentPoint({
         aria-hidden="true"
       />
       <text className="niceeval-scatter-point-label" x={cx + 10} y={cy - 9}>
-        {label}
+        {point.displayName}
       </text>
     </g>
   );
@@ -234,6 +231,7 @@ function scatterPoint(value: unknown): ScatterPoint | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const point = value as Partial<ScatterPoint>;
   return typeof point.experimentId === "string" &&
+    typeof point.displayName === "string" &&
     typeof point.cost === "number" &&
     typeof point.quality === "number" &&
     typeof point.partial === "boolean" &&
@@ -246,19 +244,4 @@ function scatterPoint(value: unknown): ScatterPoint | undefined {
 function adaptiveCostFractionDigits(maxCost: number): number {
   if (!Number.isFinite(maxCost) || maxCost <= 0) return 2;
   return Math.min(8, Math.max(2, Math.ceil(-Math.log10(maxCost)) + 2));
-}
-
-function uniqueExperimentLabels(experimentIds: readonly string[]): ReadonlyMap<string, string> {
-  const labels = new Map<string, string>();
-  for (const experimentId of experimentIds) {
-    const segments = experimentId.split("/");
-    let label = experimentId;
-    for (let depth = 1; depth <= segments.length; depth += 1) {
-      const candidate = segments.slice(-depth).join("/");
-      label = candidate;
-      if (experimentIds.every((other) => other === experimentId || !other.endsWith(`/${candidate}`))) break;
-    }
-    labels.set(experimentId, label);
-  }
-  return labels;
 }

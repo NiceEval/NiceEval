@@ -161,6 +161,7 @@ function debugAgentRun(experiment: DiscoveredExperiment, evalId: string, config:
     budget: experiment.budget,
     selectedEvalIds: [evalId],
     experimentId: experiment.id,
+    displayName: experiment.displayName,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
     experimentExecutionSource: getExperimentExecutionSource(experiment, config),

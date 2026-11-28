@@ -1,6 +1,13 @@
 import { withLoaderExecutionPhase } from "../loaders/runtime.ts";
 import type { ExperimentExecutionSource } from "./experiment-modules.ts";
-import type { ExpPrepareEvent } from "../experiment/host/cli/output-protocol.ts";
+import {
+  experimentDisplayLabel,
+  fallbackExperimentDisplayName,
+  type ExperimentDisplayName,
+  type ExperimentOutputFieldsV1,
+  type ExperimentPresentationInput,
+} from "../experiment/presentation.ts";
+import type { ExpPrepareObservation } from "../experiment/host/cli/output-protocol.ts";
 import type { ModelRoleSelection, ResolvedModelRoles, ModelRolesWire } from "../model-roles.ts";
 import type { SlotId } from "../record/model/identifiers.ts";
 import type { AdapterFlagsParser, AdapterFlagsOutput, AdapterFlagsValue } from "../adapter-flags.ts";
@@ -958,11 +965,9 @@ export function resolveSandboxBeforeCache(
 }
 
 /** Experiment 作者自行选择的字段；不包含路径 id 与 factory 品牌。 */
-export interface ExperimentAuthorFields {
+export interface ExperimentAuthorFields extends ExperimentPresentationInput {
   /** 为自定义 Adapter 的各个模型用途选择模型；不能与单模型简写同时使用。 */
   models?: Readonly<Record<string, ModelRoleSelection>> | undefined;
-  /** 一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。 */
-  description?: string | undefined;
   /** 本实验使用的 Adapter 实现。 */
   adapter?: Adapter | undefined;
   /** 单个模型(agent 留空时实验决定);省略=用 agent 原生默认。跨模型对比写多个实验文件,别用数组。 */
@@ -1097,6 +1102,8 @@ export type ExperimentInput<A extends Adapter = Adapter> = Omit<
 export interface ExperimentDefinition<A extends Adapter = Adapter> {
   readonly models: ResolvedModelRoles | undefined;
   readonly description: string | undefined;
+  /** 作者显式给出并已校验的展示名称;缺省由 discovery 回落完整 Experiment ID。 */
+  readonly displayName: ExperimentDisplayName | undefined;
   readonly adapter: A | undefined;
   readonly model: string | undefined;
   readonly reasoningEffort: string | undefined;
@@ -1143,7 +1150,11 @@ export function discoverExperiment(
   definition: ExperimentDefinition,
   source: { readonly id: string; readonly baseDir: string; readonly sourcePath: string },
 ): DiscoveredExperiment {
-  const value = { ...definition, ...source };
+  const value = {
+    ...definition,
+    ...source,
+    displayName: definition.displayName ?? fallbackExperimentDisplayName(source.id),
+  };
   Object.defineProperty(value, EXPERIMENT_DEFINITION, { value: true });
   return Object.freeze(value) as DiscoveredExperiment;
 }
@@ -1151,6 +1162,8 @@ export function discoverExperiment(
 /** 发现期运行形状：Definition 加入路径与来源；规划期 configHash 不在这里。 */
 export interface DiscoveredExperiment extends ExperimentDefinition {
   readonly id: string;
+  /** 规范化后的展示值:作者的 displayName,缺省时恒为完整 `id`。 */
+  readonly displayName: ExperimentDisplayName;
   /** 定义文件所在目录；解析 Experiment layer 中的相对本地路径。 */
   readonly baseDir: string;
   /** 定义文件绝对路径；link 诊断标注声明来源。 */
@@ -1273,8 +1286,10 @@ export function runWho(run: {
   agentName: string;
   model: string | undefined;
   experimentId: string | undefined;
+  displayName: string | undefined;
 }): string {
-  if (run.experimentId) return run.experimentId.split("/").pop()!;
+  if (run.experimentId)
+    return experimentDisplayLabel({ experimentId: run.experimentId, displayName: run.displayName ?? run.experimentId });
   return run.model ? `${run.agentName}/${run.model}` : run.agentName;
 }
 
@@ -1317,6 +1332,8 @@ export interface AdapterRun {
   readonly timeoutSource: "flag" | "experiment" | undefined;
   readonly budget: number | undefined;
   readonly experimentId: string;
+  /** 本次 discovery 规范化后的展示值;不进入任何身份、selector 或调度键。 */
+  readonly displayName: string;
   /** Experiment 定义文件目录；只用于解析 template 中的相对宿主路径。 */
   readonly experimentBaseDir: string;
   /** Experiment 定义文件路径；link 诊断来源。 */
@@ -1698,6 +1715,7 @@ export interface InvocationCompletion {
 export interface RunFeedbackState {
   /** Draft 期的 Experiment → Run 映射；Human 只在 receipt 确认对应 Run 已发布后使用。 */
   runIdsByExperiment: ReadonlyMap<string, string>;
+  displayNames: ReadonlyMap<string, string>;
   total: number;
   reused: number;
   running: number;
@@ -1775,6 +1793,7 @@ export interface KeptNotice {
 /** 一次 run 的初始计划。复用只暴露数量；失败明细仅用于静态初始化终局清单。 */
 export interface RunFeedbackPlan {
   shape: InvocationShape;
+  experiments: readonly ExperimentOutputFieldsV1[];
   /**
    * 声明了 `maxConcurrency` 的实验 → 各自的上限。只收声明了的实验(未声明的实验的有效宽度就是
    * 全局值,列出来只是噪音);一个都没声明时整个字段省略——`--json` 的 `start` 事件因此不会
@@ -1965,7 +1984,7 @@ export type DurableFeedbackEvent =
    */
   | {
       type: "run-activity";
-      prepare?: ExpPrepareEvent | undefined;
+      prepare?: ExpPrepareObservation | undefined;
       sandbox?: { readonly provider: string; readonly nativeInstanceId: string | undefined } | undefined;
       at: number;
       id: string;

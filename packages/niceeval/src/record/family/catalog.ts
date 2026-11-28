@@ -1,4 +1,5 @@
 import { identityManifestsRecordAttachmentPersistence } from "./identity-manifests/persistence.ts";
+import { experimentPresentationRecordAttachmentPersistence } from "./experiment-presentation/persistence.ts";
 import { attemptNotesRecordAttachmentPersistence } from "./attempt-note/persistence.ts";
 import { judgeUsageRecordAttachmentPersistence } from "./judge-usage/persistence.ts";
 import { Result, Schema } from "effect";
@@ -52,6 +53,7 @@ export const NiceEvalRecordAttachmentPersistences = Object.freeze([
   executionTracesRecordAttachmentPersistence,
   executionTraceIndexRecordAttachmentPersistence,
   identityManifestsRecordAttachmentPersistence,
+  experimentPresentationRecordAttachmentPersistence,
   sourcesRecordAttachmentPersistence,
   attemptArtifactsRecordAttachmentPersistence,
   runArtifactsRecordAttachmentPersistence,
@@ -85,6 +87,7 @@ export const NICE_EVAL_FAMILIES = Object.freeze([
   NiceEvalRecordAttachments.executionTraces.family,
   NiceEvalRecordAttachments.executionTraceIndex.family,
   NiceEvalRecordAttachments.identityManifests.family,
+  NiceEvalRecordAttachments.experimentPresentation.family,
   NiceEvalRecordAttachments.sources.family,
   NiceEvalRecordAttachments.artifacts.attempt.family,
 ] as const);

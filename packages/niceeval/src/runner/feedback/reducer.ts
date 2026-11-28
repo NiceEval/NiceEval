@@ -36,6 +36,7 @@ import {
 export function createInitialRunFeedbackState(): RunFeedbackState {
   return {
     runIdsByExperiment: new Map(),
+    displayNames: new Map(),
     total: 0,
     reused: 0,
     running: 0,
@@ -75,6 +76,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         ...state,
         activePrecheck: undefined,
         runIdsByExperiment: new Map(event.plan.shape.runIds ?? []),
+        displayNames: new Map(
+          event.plan.experiments.map(({ experimentId, displayName }) => [experimentId, displayName]),
+        ),
         total,
         reused,
         // 全部非携入 attempt 在此刻就已知会被派发,先计入 queued;后续 attempt:start

@@ -1,5 +1,9 @@
 import { Schema } from "effect";
 
+export const EXP_FORMAT = "niceeval.exp";
+export const EXP_VERSION = 1;
+export const ExperimentOutputFields = { experimentId: Schema.String, displayName: Schema.String };
+
 const NonNegativeIntegerSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
 );
@@ -11,6 +15,7 @@ const NonNegativeNumberSchema = Schema.Number.pipe(
 /** Provider-native access and cleanup for a retained Attempt scene. */
 export const ExpKeptEventSchema = Schema.Struct({
   event: Schema.Literal("kept"),
+  ...ExperimentOutputFields,
   locator: Schema.String,
   evalId: Schema.String,
   attempt: NonNegativeIntegerSchema,
@@ -37,6 +42,9 @@ export function decodeExpKeptEvent(input: unknown): ExpKeptEvent {
 /** The initial execution scale emitted by `niceeval exp --json`. */
 export const ExpStartEventSchema = Schema.Struct({
   event: Schema.Literal("start"),
+  format: Schema.Literal(EXP_FORMAT),
+  schemaVersion: Schema.Literal(EXP_VERSION),
+  experiments: Schema.Array(Schema.Struct(ExperimentOutputFields)),
   total: NonNegativeIntegerSchema,
   configs: NonNegativeIntegerSchema,
   concurrency: NonNegativeIntegerSchema,
@@ -91,7 +99,7 @@ export const ExpTerminalEventSchema = Schema.Struct({
 });
 
 /** Invocation-local preparation observation; it never carries command inputs. */
-export const ExpPrepareEventSchema = Schema.Struct({
+export const ExpPrepareObservationSchema = Schema.Struct({
   event: Schema.Literal("prepare"),
   node: NonNegativeIntegerSchema,
   pairings: Schema.Array(Schema.Struct({ experimentId: Schema.String, evalId: Schema.String })),
@@ -102,6 +110,10 @@ export const ExpPrepareEventSchema = Schema.Struct({
   outcome: Schema.optionalKey(Schema.Literals(["hit", "published", "continued", "degraded", "failed"])),
   reason: Schema.optionalKey(Schema.String),
 });
+export type ExpPrepareObservation = Schema.Schema.Type<typeof ExpPrepareObservationSchema>;
+export const ExpPrepareEventSchema = ExpPrepareObservationSchema.pipe(
+  Schema.fieldsAssign({ pairings: Schema.Array(Schema.Struct({ ...ExperimentOutputFields, evalId: Schema.String })) }),
+);
 /** One `exp --json` line for a pre-dispatch before-cache preparation node: start, phase change or settlement. */
 export type ExpPrepareEvent = Schema.Schema.Type<typeof ExpPrepareEventSchema>;
 /** Strictly decodes one `prepare` NDJSON event from `exp --json`; throws when the shape does not match. */
@@ -112,14 +124,16 @@ export function decodeExpPrepareEvent(input: unknown): ExpPrepareEvent {
 /** An Attempt's transient phase or Adapter detail emitted during `exp --json`. */
 export const ExpActivityEventSchema = Schema.Struct({
   event: Schema.Literal("activity"),
-  experimentId: Schema.optional(Schema.String),
+  ...ExperimentOutputFields,
   evalId: Schema.String,
   attempt: NonNegativeIntegerSchema,
   phase: Schema.String,
   detail: Schema.optional(Schema.String),
 });
+/** Transient Attempt activity with the Experiment ID and display name from the invocation plan. */
 export type ExpActivityEvent = Schema.Schema.Type<typeof ExpActivityEventSchema>;
 
+/** Strictly decodes an `activity` event emitted by `niceeval exp --json`. */
 export function decodeExpActivityEvent(input: unknown): ExpActivityEvent {
   return Schema.decodeUnknownSync(ExpActivityEventSchema, { errors: "all", onExcessProperty: "error" })(input);
 }
@@ -156,7 +170,7 @@ export const ExpDiagnosticEventSchema = Schema.Struct({
   code: Schema.String,
   level: Schema.Literal("error"),
   message: Schema.String,
-  experimentId: Schema.String,
+  ...ExperimentOutputFields,
   phase: Schema.optional(Schema.String),
 });
 /** Carries one structured diagnostic in the exp JSON stream; diagnostics are distinct from terminal completion and invocation receipts. */

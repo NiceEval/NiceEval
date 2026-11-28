@@ -557,6 +557,11 @@ export function openRunnerRecordCoordinator<E>(input: {
     const byRecordRunId = new Map<RunId, RunnerRecordRun>();
     const runIdsByExperiment = new Map<string, string>();
     for (const { plan, session, target, writerGeneration } of openedRuns) {
+      // Run-owned presentation snapshot; it never enters identity, reuse or the source barrier.
+      yield* session.attach(NiceEvalRecordAttachments.experimentPresentation, {
+        experimentId: plan.experimentId,
+        displayName: plan.run.displayName,
+      });
       yield* session.attach(NiceEvalRecordAttachments.identityManifests, {
         entries: [
           ...new Map(

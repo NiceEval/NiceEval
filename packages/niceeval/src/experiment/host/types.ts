@@ -195,6 +195,8 @@ export interface ExperimentHostEvalSummary {
 export interface ExperimentHostExperimentSummary {
   readonly models: ResolvedModelRoles | undefined;
   readonly id: string;
+  /** Normalized display value; equals `id` when the definition omits displayName. Never a selector. */
+  readonly displayName: string;
   readonly description: string | undefined;
   readonly adapter: string | null;
   readonly model: string | undefined;
@@ -332,6 +334,7 @@ export type ExperimentHostDrySlot =
 
 /** Describes current target reuse and gaps with pinned readbacks; it is a preview of applicability rather than a new Run result. */
 export interface ExperimentHostDryPlan {
+  readonly displayNames: ReadonlyMap<string, string>;
   readonly groups: readonly {
     readonly experimentId: string;
     readonly evalGroupId: string;

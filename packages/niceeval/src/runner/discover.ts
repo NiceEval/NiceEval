@@ -54,6 +54,7 @@ import { ProjectModuleGraph, attachEvalModules, evalModules, rootedModuleIdentit
 import { parseSource, sourcePosition } from "./source-normalization.ts";
 import { DeclaredIdError, parseDeclaredId } from "./definition-id.ts";
 import { attachExperimentModules } from "./experiment-modules.ts";
+import { InvalidExperimentDisplayName } from "../experiment/presentation.ts";
 import { splitByEvaluationKind } from "./eval-selection.ts";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".niceeval", "dist", ".next"]);
@@ -62,6 +63,7 @@ export type DiscoveryIssueCode =
   | "discovery.filesystem"
   | "discovery.duplicate-id"
   | "discovery.import-failed"
+  | "experiment-display-name-invalid"
   | "discovery.invalid-export"
   | "eval-group-member-unresolved"
   | "eval-group-member-overlap"
@@ -236,14 +238,17 @@ function importModule<T>(
 ): Effect.Effect<T, DiscoveryError> {
   return Effect.tryPromise({
     try: () => withSandboxScriptRoot(root, () => load(file)),
-    catch: (cause) =>
-      issue(
+    catch: (cause) => {
+      if (kind === "experiment" && cause instanceof InvalidExperimentDisplayName)
+        return issue(relative(root, file), cause.code, cause.message, ["Correct or omit displayName."], cause);
+      return issue(
         relative(root, file),
         "discovery.import-failed",
         `Top-level ${kind} module evaluation failed: ${causeMessage(cause)}`,
         [`Move resource work into the selected ${kind} body.`, "Fix the reported top-level exception."],
         cause,
-      ),
+      );
+    },
   });
 }
 

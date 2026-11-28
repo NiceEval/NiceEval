@@ -358,6 +358,7 @@ niceeval show run:run_01JSHOW
 `run.get` 按 exact `runId` 一次交付：
 
 - Run/Experiment identity、state 与时间；
+- `selection.selectedRuns` 中该 Run 的 [Experiment 展示名](../experiment-authoring-display-names/cli.md#json)与读取状态；
 - expected/published/missing denominator，以及每个 Planned attempt 的 binding、Member state、Attempt locator 与 origin relation；
 - Verdict、score、coverage、usage 状态与摘要，以及 issues 与 limitations。
 

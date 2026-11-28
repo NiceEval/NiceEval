@@ -4,6 +4,7 @@ import { closeAdapterIdentity, type ClosedAdapterIdentity } from "../data/adapte
 export interface RunPageModel {
   readonly runId: string;
   readonly experimentId: string;
+  readonly displayName: string;
   readonly adapter: ClosedAdapterIdentity | undefined;
   readonly diagnostics: InspectionSuccessDocumentFor<"run.get">["run"]["diagnostics"];
   readonly members: readonly RunMemberModel[];
@@ -22,9 +23,11 @@ export interface RunMemberModel {
 }
 
 export function closeRun(run: InspectionSuccessDocumentFor<"run.get">): RunPageModel {
+  const { runId, experimentId } = run.run.value;
   return {
-    runId: run.run.value.runId,
-    experimentId: run.run.value.experimentId,
+    runId,
+    experimentId,
+    displayName: run.selection.selectedRuns?.find((summary) => summary.runId === runId)?.displayName ?? experimentId,
     adapter: closeAdapterIdentity(run.run.value.context?.execution.adapter),
     diagnostics: run.run.diagnostics,
     members: run.run.plannedAttempts.map((member, index) => ({

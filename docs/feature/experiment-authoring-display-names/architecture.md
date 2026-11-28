@@ -18,6 +18,8 @@ discovery 在执行任何 provider I/O 前同时产生 identity 与 presentation
 identity 路径只读取路径、family key 和执行配置。
 presentation 路径只读取 `displayName` 与 `description`。
 两条路径不能以名称、description 或历史 Run 相互补值。
+在[源码身份](../experiments/architecture/source-identity.md)中，直接配置的字面量展示名不进入执行文本。
+变量声明和可能执行的表达式仍按模块的源码规则计算。
 
 `ExecutionTarget`、`ExecutionReusePlan` 和 scheduler 使用 `experimentId`。
 presentation 可以随 target 传到 writer，但不会进入 plan comparison、source barrier 或 gap reason。
@@ -33,6 +35,7 @@ reference Member 沿 origin Attempt 读取 execution facts，但当前 Run 仍�
 该变化不修改 origin Run、locator、Verdict、Usage 或 reuse eligibility。
 
 历史 Run 缺少 Attachment 时，renderer 使用 Core 的完整 ID。
+Run 尚未发布快照时，读取结果使用完整 ID 并报告快照尚未发布。
 attachment 的 unsupported、migration-required、migration-unavailable 或 invalid 状态进入 Inspection issue surface。
 renderer 仍保留完整 ID 作为身份文本，但不把它标记为 recorded displayName。
 
@@ -68,7 +71,7 @@ renderer 仍保留完整 ID 作为身份文本，但不把它标记为 recorded 
 
 ## 生产入口验收
 
-真实 CLI/E2E 旅程包含普通定义、family member、名称重复、名称缺失、无效名称与历史 Run。
+真实 CLI/E2E 旅程包含普通定义、名称重复、名称缺失、无效名称与历史 Run。
 每个切片核对 list、dry、运行反馈、query document 与 View 的快照字段一致，并核对 terminal JSON receipt 保持 canonical `createdRunIds` 与 `publicationCutoff`。
 另一条切片只改 displayName，验证它不改变 selector、identity 或 carried 决定。
 验收不新增 Eval Assertion。

@@ -1,6 +1,10 @@
 import { IdentityExplanationSchema } from "../../../runner/manifest.ts";
 import { StateExecutionBindingSchema } from "../../../state/protocol.ts";
 import { Schema } from "effect";
+import { ExperimentOutputFields } from "./output-protocol.ts";
+
+export const EXP_PLAN_FORMAT = "niceeval.exp-plan";
+export const EXP_PLAN_VERSION = 5;
 
 /** Shared strict comparison shape for every dry-plan projection. */
 export const ExecutionComparisonSchema = Schema.Struct({
@@ -30,7 +34,7 @@ const attachmentRead = <S extends Schema.ConstraintDecoder<unknown>>(value: S) =
 const TargetSchema = Schema.Struct({
   runId: Schema.String,
   slotId: Schema.String,
-  experimentId: Schema.String,
+  ...ExperimentOutputFields,
   evalId: Schema.String,
   executionIdentityDigest: Schema.optional(Schema.String),
   attempt: Schema.Number,
@@ -84,6 +88,8 @@ const ReadbackSchema = Schema.Union([
 
 /** The complete machine document emitted by `niceeval exp --dry --json`. */
 export const ExpPlanDocumentSchema = Schema.Struct({
+  format: Schema.Literal(EXP_PLAN_FORMAT),
+  schemaVersion: Schema.Literal(EXP_PLAN_VERSION),
   total: Schema.Number,
   evals: Schema.Number,
   configs: Schema.Number,
@@ -91,7 +97,7 @@ export const ExpPlanDocumentSchema = Schema.Struct({
   reused: Schema.Number,
   matrix: Schema.Array(
     Schema.Struct({
-      experimentId: Schema.String,
+      ...ExperimentOutputFields,
       evalId: Schema.String,
       evalGroupId: Schema.optional(Schema.String),
       evalGroupIndex: Schema.optional(Schema.Number),
@@ -99,7 +105,7 @@ export const ExpPlanDocumentSchema = Schema.Struct({
         Schema.Struct({
           runId: Schema.String,
           slotId: Schema.String,
-          experimentId: Schema.String,
+          ...ExperimentOutputFields,
           evalId: Schema.String,
           executionIdentityDigest: Schema.String,
           attempt: Schema.Number,
@@ -129,7 +135,7 @@ export const ExpPlanDocumentSchema = Schema.Struct({
   plugins: Schema.Array(Schema.Unknown),
   groups: Schema.Array(
     Schema.Struct({
-      experimentId: Schema.String,
+      ...ExperimentOutputFields,
       evalGroupId: Schema.String,
       state: Schema.Array(StateExecutionBindingSchema),
     }),

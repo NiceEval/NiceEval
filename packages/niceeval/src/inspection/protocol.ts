@@ -22,6 +22,7 @@ import {
 import { isCommandId, isItemId, isToolOccurrenceId } from "../record/family/source-receipt/model.ts";
 import { AssertionDetailResultSchema, PagedAssertionDetailSchema } from "./assertion-result.ts";
 import { InspectionProjectResultSchema } from "./project-result.ts";
+import { InspectionPresentationIssueSchema, InspectionRunSummarySchema } from "./experiment-presentation-schema.ts";
 import { InspectionRepricingInputSchema, InspectionRepricingResultSchema } from "./repricing.ts";
 import {
   InspectionAttemptDiffResultSchema,
@@ -68,6 +69,7 @@ const PublicationCutoffSchema = Schema.Struct({
 const SelectionSchema = Schema.Struct({
   requestedRunIds: Schema.Array(Schema.String),
   selectedRunIds: Schema.Array(Schema.String),
+  selectedRuns: Schema.optionalKey(Schema.Array(InspectionRunSummarySchema)),
   missingRunIds: Schema.Array(Schema.String),
 });
 export const InspectionLinkSchema = Schema.Struct({
@@ -96,7 +98,7 @@ const SuccessMetadataSchema = Schema.Struct({
   source: SourceSchema,
   publicationCutoff: PublicationCutoffSchema,
   selection: SelectionSchema,
-  issues: Schema.Tuple([]),
+  issues: Schema.Array(InspectionPresentationIssueSchema),
   evidence: Schema.Struct({ refs: Schema.Array(Schema.String) }),
 });
 const RunsListSuccessMetadataSchema = Schema.Struct({

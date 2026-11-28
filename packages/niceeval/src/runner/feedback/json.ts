@@ -34,6 +34,8 @@ import type {
   RunFeedbackState,
 } from "../types.ts";
 import type { JsonValue, Verdict } from "../../shared/types.ts";
+import { experimentOutputFields, type ExperimentOutputFieldsV1 } from "../../experiment/presentation.ts";
+import { EXP_FORMAT, EXP_VERSION } from "../../experiment/host/cli/output-protocol.ts";
 import type {
   ExpActivityEvent,
   ExpTerminalSummary,
@@ -41,6 +43,7 @@ import type {
   ExpDiagnosticEvent,
   ExpProgressEvent,
   ExpPrepareEvent,
+  ExpStartEvent,
 } from "../../experiment/host/cli/output-protocol.ts";
 import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.ts";
 
@@ -52,22 +55,14 @@ export interface JsonRendererOptions {
   io: FeedbackIO;
 }
 
-export interface StartEvent {
-  event: "start";
-  total: number;
-  configs: number;
-  concurrency: number;
-  experimentConcurrency?: Readonly<globalThis.Record<string, number>>;
-  reused: number;
-}
+export type StartEvent = ExpStartEvent;
 
 export type ProgressEvent = ExpProgressEvent;
 
-export interface FailureEvent {
+export interface FailureEvent extends ExperimentOutputFieldsV1 {
   event: "failure";
   locator: string;
   evalId: string;
-  experimentId: string;
   verdict: "failed" | "errored";
   fact: string;
   matcher?: string;
@@ -75,20 +70,18 @@ export interface FailureEvent {
   received?: JsonValue;
 }
 
-export interface ErrorEvent {
+export interface ErrorEvent extends ExperimentOutputFieldsV1 {
   event: "error";
   locator: string;
   evalId: string;
-  experimentId: string;
   phase: Exclude<LifecyclePhase, "agent.setup" | "agent.teardown"> | "agent.before" | "agent.after";
   reason: string;
 }
 
-interface EvalEventBase {
+interface EvalEventBase extends ExperimentOutputFieldsV1 {
   event: "eval";
   locator: string;
   evalId: string;
-  experimentId: string;
   verdict: Verdict;
   attempts: number;
 }
@@ -101,34 +94,31 @@ export type EvalEvent = EvalEventBase &
 
 export type KeptEvent = ExpKeptEvent;
 
-export interface WarningEvent {
+export interface WarningEvent extends Partial<ExperimentOutputFieldsV1> {
   event: "warning";
   code: string;
   level: "warning" | "error";
   message: string;
   phase?: LifecyclePhase;
-  experimentId?: string;
   evalId?: string;
   planned?: number;
   errored?: number;
 }
 
-export interface NoticeEvent {
+export interface NoticeEvent extends Partial<ExperimentOutputFieldsV1> {
   event: "notice";
   code: string;
   level: "info";
   message: string;
   phase?: LifecyclePhase;
-  experimentId?: string;
   evalId?: string;
   resource?: "case-lock";
   previousPid?: number;
   previousHost?: string;
 }
 
-export interface BudgetExhaustedEvent {
+export interface BudgetExhaustedEvent extends ExperimentOutputFieldsV1 {
   event: "budget_exhausted";
-  experimentId: string;
   spent: number;
   unstarted: number;
 }
@@ -150,23 +140,20 @@ export interface JudgePrecheckEvent {
   durationMs?: number;
 }
 
-export interface ExperimentSetupEvent {
+export interface ExperimentSetupEvent extends ExperimentOutputFieldsV1 {
   event: "experiment_setup";
-  experimentId: string;
   status: "started" | "done" | "failed";
   durationMs?: number;
 }
 
-export interface ExperimentTeardownEvent {
+export interface ExperimentTeardownEvent extends ExperimentOutputFieldsV1 {
   event: "experiment_teardown";
-  experimentId: string;
   status: "started" | "done" | "failed";
   durationMs?: number;
 }
 
-export interface LockWaitEvent {
+export interface LockWaitEvent extends ExperimentOutputFieldsV1 {
   event: "lock_wait";
-  experimentId: string;
   evalId: string;
   status: "started" | "resolved";
   holderPid?: number;
@@ -250,9 +237,12 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
       switch (event.type) {
         case "plan": {
           noteCheckpoint(event.at);
-          const { shape, reused, experimentConcurrency } = event.plan;
+          const { shape, reused, experimentConcurrency, experiments } = event.plan;
           writeEvent(io, {
             event: "start",
+            format: EXP_FORMAT,
+            schemaVersion: EXP_VERSION,
+            experiments: experiments.toSorted((left, right) => left.experimentId.localeCompare(right.experimentId)),
             total: shape.totalAttempts,
             configs: shape.configs,
             concurrency: shape.maxConcurrency,
@@ -267,7 +257,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
 
         case "failure": {
           noteCheckpoint(event.at);
-          writeFailureOrError(io, event);
+          writeFailureOrError(io, event, state.displayNames);
           return;
         }
 
@@ -291,13 +281,18 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
             code,
             message: event.message,
             ...(phase !== undefined ? { phase } : {}),
-            ...(experimentId !== undefined ? { experimentId } : {}),
+            ...(experimentId !== undefined ? experimentOutputFields(experimentId, state.displayNames) : {}),
             ...(evalId !== undefined ? { evalId } : {}),
             ...(planned !== undefined ? { planned } : {}),
             ...(errored !== undefined ? { errored } : {}),
           };
           if (event.data?.preAttempt === true && event.severity === "error" && experimentId !== undefined) {
-            writeEvent(io, { event: "diagnostic", level: "error", ...common, experimentId });
+            writeEvent(io, {
+              event: "diagnostic",
+              level: "error",
+              ...common,
+              ...experimentOutputFields(experimentId, state.displayNames),
+            });
           } else if (event.severity === "info") {
             const resource = coordinationResourceField(event.data?.resource);
             const previousPid = numberField(event.data?.previousPid);
@@ -321,7 +316,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           if (!isFirstOccurrence(state, `budget-exhausted:${event.experimentId}`)) return;
           writeEvent(io, {
             event: "budget_exhausted",
-            experimentId: event.experimentId,
+            ...experimentOutputFields(event.experimentId, state.displayNames),
             spent: event.spent,
             unstarted: event.unstarted,
           });
@@ -332,7 +327,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           noteCheckpoint(event.at);
           writeEvent(io, {
             event: event.hook === "setup" ? "experiment_setup" : "experiment_teardown",
-            experimentId: event.experimentId,
+            ...experimentOutputFields(event.experimentId, state.displayNames),
             status: event.status,
             ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
           });
@@ -353,7 +348,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           noteCheckpoint(event.at);
           writeEvent(io, {
             event: "lock_wait",
-            experimentId: event.experimentId,
+            ...experimentOutputFields(event.experimentId, state.displayNames),
             evalId: event.evalId,
             status: event.status,
             ...(event.holderPid !== undefined ? { holderPid: event.holderPid } : {}),
@@ -377,7 +372,10 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
             noteCheckpoint(event.at);
             writeEvent(io, {
               ...prepare,
-              pairings: prepare.pairings.slice(0, 8),
+              pairings: prepare.pairings.slice(0, 8).map(({ experimentId, evalId }) => ({
+                ...experimentOutputFields(experimentId, state.displayNames),
+                evalId,
+              })),
               pairingsOmitted: Math.max(0, prepare.pairings.length - 8),
             });
           }
@@ -413,6 +411,10 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           }
           writeEvent(io, {
             event: "kept",
+            ...experimentOutputFields(
+              requiredExperimentId(event.identity.experimentId, event.identity.evalId),
+              state.displayNames,
+            ),
             locator: String(event.locator),
             evalId: event.identity.evalId,
             attempt: event.identity.attempt,
@@ -454,12 +456,22 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
       }
       const active = state.active.get(key);
       if (active === undefined) return;
+      const presentation = experimentOutputFields(
+        requiredExperimentId(active.identity.experimentId, active.identity.evalId),
+        state.displayNames,
+      );
       if (event.type === "attempt:start" || event.type === "attempt:phase") {
         if (reportedPhases.get(key) === active.phase) return;
         reportedPhases.set(key, active.phase);
-        writeEvent(io, { event: "activity", ...active.identity, phase: active.phase });
+        writeEvent(io, { event: "activity", ...active.identity, ...presentation, phase: active.phase });
       } else if (event.type === "attempt:progress" && event.machineDetail !== undefined) {
-        writeEvent(io, { event: "activity", ...active.identity, phase: active.phase, detail: event.machineDetail });
+        writeEvent(io, {
+          event: "activity",
+          ...active.identity,
+          ...presentation,
+          phase: active.phase,
+          detail: event.machineDetail,
+        });
       }
     },
 
@@ -543,15 +555,20 @@ function lifecyclePhaseField(value: JsonValue | undefined): LifecyclePhase | und
 
 // ───────────────────────── failure / error 事件(不设上限) ─────────────────────────
 
-function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { type: "failure" }): void {
+function writeFailureOrError(
+  io: FeedbackIO,
+  event: DurableFeedbackEvent & { type: "failure" },
+  names: RunFeedbackState["displayNames"],
+): void {
   const experimentId = requiredExperimentId(event.identity.experimentId, event.identity.evalId);
+  const presentation = experimentOutputFields(experimentId, names);
   const fact = event.fact;
   if (fact !== undefined) {
     writeEvent(io, {
       event: "failure",
       locator: String(event.locator),
       evalId: event.identity.evalId,
-      experimentId,
+      ...presentation,
       verdict: event.verdict,
       fact: fact.title,
       ...(fact.matcher !== undefined ? { matcher: fact.matcher } : {}),
@@ -570,7 +587,7 @@ function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { typ
       event: "error",
       locator: String(event.locator),
       evalId: event.identity.evalId,
-      experimentId,
+      ...presentation,
       phase: errorPhase(),
       reason: event.reason,
     });
@@ -580,7 +597,7 @@ function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { typ
     event: "failure",
     locator: String(event.locator),
     evalId: event.identity.evalId,
-    experimentId,
+    ...presentation,
     verdict: event.verdict,
     fact: event.reason,
   });
@@ -598,7 +615,7 @@ function requiredExperimentId(experimentId: string | undefined, evalId: string):
 /** 一条 `eval` 事件(cli.md「runs 与首过即停怎样展示」):字段随 earlyExit 是否触发在
  *  planned/unstarted/reason 与 passed 两组间二选一,不同时出现两组字段。`rate` 是
  *  `EvalConclusionRow` 派生出的额外读数,不在 `ExpEvent` 的 `EvalEvent` 形状里,这里不透出。 */
-function evalConclusionEvent(row: EvalConclusionRow): EvalEvent | undefined {
+function evalConclusionEvent(row: EvalConclusionRow, names: RunFeedbackState["displayNames"]): EvalEvent | undefined {
   const experimentId = requiredExperimentId(row.experimentId, row.evalId);
   if (row.locator === undefined) {
     // Pre-dispatch failures have no origin Attempt and therefore no locator.
@@ -610,7 +627,7 @@ function evalConclusionEvent(row: EvalConclusionRow): EvalEvent | undefined {
     event: "eval",
     locator: row.locator,
     evalId: row.evalId,
-    experimentId,
+    ...experimentOutputFields(experimentId, names),
     verdict: row.verdict,
     attempts: row.attempts,
   };
@@ -630,7 +647,7 @@ function writeEvalConclusions(io: FeedbackIO, pending: InvocationSummary | undef
   if (!pending) return;
   const rows = evalConclusionRows(pending.results, state.earlyExitByEval, state.diagnostics);
   for (const row of rows) {
-    const event = evalConclusionEvent(row);
+    const event = evalConclusionEvent(row, state.displayNames);
     if (event !== undefined) writeEvent(io, event);
   }
 }

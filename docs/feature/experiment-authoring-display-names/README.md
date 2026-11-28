@@ -25,11 +25,13 @@ Experiment ID 必须稳定、可选择和可审计，因此常常包含路径、
 
 本方向包含：
 
-- `defineExperiment()` 与 `defineExperiments()` 成员的可选 `displayName`；
+- `defineExperiment()` 的可选 `displayName`；
 - 当前定义的列表和 dry 展示；
 - 新 Run 固定保存其规范化后的展示值；
 - exp plan、progress/result、Run-owned presentation Attachment、`show --json` document 与 View summary 中同时输出 ID 与展示名称；
 - 人类完成摘要在 terminal JSON receipt 前显示名称、ID 与 Run ID 的映射。
+
+[具名 Experiment 族](../../roadmap/experiment-authoring-families/README.md)采用后，每个 `defineExperiments()` 成员使用同一展示名契约。
 
 本方向不包含：
 
@@ -47,6 +49,18 @@ Run 拥有自己不可变的展示快照；Record Core 仍是唯一 identity own
 本方向不新增 Eval Assertion。
 公开行为由真实 `niceeval exp list`、`niceeval exp --dry`、`niceeval exp`、`niceeval show` 与 `niceeval view` 旅程验收。
 CLI-only 行为使用真实 CLI/E2E 入口，不以内部 Assertion 代替。
+
+## 性质
+
+### 展示快照与身份隔离 {#presentation-snapshot}
+
+依次运行同一 Experiment、只修改展示名并再次运行。列表和 dry 计划显示当前定义的名称，两个 Run 各自保留创建时的名称。
+同一个 Attempt 可以被后续 Run 携带，两个 Run 继续以完整 Experiment ID 选择。
+
+### 名称校验与选择 {#presentation-validation}
+
+列表按完整 ID 排序。两条定义使用同一名称时，列表保留两条定义。省略名称时显示完整 ID。
+无效输入在创建 Invocation 前失败，用户只能使用既有 ID selector 选择定义。
 
 ## 入口
 

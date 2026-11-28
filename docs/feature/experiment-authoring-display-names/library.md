@@ -3,7 +3,8 @@
 ## 作者输入与规范化输出
 
 `displayName` 与 `description` 是 `ExperimentPresentationInput` 的两个独立字段。
-该 interface 由 `defineExperiment()` 输入和 `defineExperiments()` 的每个成员输入继承。
+`defineExperiment()` 的输入继承该 interface。
+[具名 Experiment 族](../../roadmap/experiment-authoring-families/README.md)采用后，每个成员的输入也继承该 interface。
 它不重述执行配置字段。
 
 ```ts
@@ -63,7 +64,8 @@ discovery 为每个普通 Experiment 或 family member 规范化得到一个 `Re
 - Record source identity 中这个 presentation 字段自身的编码。
 
 执行字段若明确读取了同一个 JavaScript 常量，其求值结果仍按原有配置 identity 规则处理。
-上述隔离只排除 `displayName` 与 `description` 字段本身，不能隐藏真实执行条件。
+在直接 `defineExperiment()` 的配置中修改字面量 `displayName` 不改变源码身份。
+外部变量或可执行表达式仍按[源码身份](../experiments/architecture/source-identity.md)的保守规则计算，修改这些源码可能使结果失去沿用资格。
 
 重复展示名称合法。
 数组、JSON、列表和 group 的规范顺序始终按 `experimentId`，不按展示文本或 description 排序。
@@ -101,5 +103,5 @@ writer 验证 Attachment 的 `experimentId` 与同一 Run Core 完全相等。
 删除把展示名称写入 Invocation receipt、identity、selector 或 reuse 输入的路径。
 receipt consumer 继续按既定 receipt 契约消费 canonical `createdRunIds` 与 `publicationCutoff`；其它机器表面按各自 schema version 分流，不按字段存在性猜版本。
 
-生产验收包含显式名称、缺失名称、重复名称、family member、历史 Run fallback 和 displayName-only 改动后的 carried Run。
+生产验收包含显式名称、缺失名称、重复名称、历史 Run fallback 和只改展示名后的 carried Run。
 验收使用公开 CLI/E2E 旅程，不新增 Eval Assertion。

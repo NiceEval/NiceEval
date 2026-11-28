@@ -1994,6 +1994,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         agentName: agent.name,
                         model: run.model,
                         experimentId: run.experimentId,
+                        displayName: run.displayName,
                       }),
                       verdict: bodyResult.verdict,
                       provider: providerName,

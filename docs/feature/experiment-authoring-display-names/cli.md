@@ -44,10 +44,12 @@ terminal JSON receipt 不指向 Experiment，而是交接本次创建的 canonic
 ```ts
 interface ExperimentListEntryV2 extends ExperimentOutputFieldsV1 {
   readonly description?: string;
-  readonly agent: string;
-  readonly model: string | null;
+  readonly adapter: string | null;
+  readonly model?: string;
   readonly attempts: number;
-  readonly selectedEvalCount: number;
+  readonly evalCount: number;
+  readonly labels: Readonly<Record<string, string | number>>;
+  readonly selectedEvalIds: readonly string[];
 }
 
 interface ExperimentRunOutputV1 extends ExperimentOutputFieldsV1 {
@@ -63,11 +65,14 @@ interface InspectionRunSummaryV1 extends ExperimentRunOutputV1 {
 ```
 
 `niceeval.exp` 的 plan、progress 与 result 事件，以及 `niceeval.exp-plan` v5 使用 `ExperimentOutputFieldsV1`。
-reuse action、prior locator 与 explanation 的形状唯一由 [缓存与携带](../../feature/experiments/architecture/cache.md) 定义。
+`exp --json` 的 `start` 事件以 `format: "niceeval.exp"`、`schemaVersion: 1` 标记事件流，并列出所选 Experiment 的 ID 与展示名称。
+`exp --dry --json` 的单一计划文档以 `format: "niceeval.exp-plan"`、`schemaVersion: 5` 标记版本。
+reuse action、prior locator 与 explanation 的形状唯一由 [缓存与携带](../experiments/architecture/cache.md) 定义。
 这两个 schema 不复制第二套计划决定。
 
 query 的 selected Run 摘要来自 closed Inspection document。
 View 的 host data 使用同一摘要，而不是从页面标题反向提取字段。
+同一 Experiment 的所选 Run 使用不同名称时，聚合标题使用完整 ID，每个 Run 仍显示自己的名称。
 
 `displayNameState: "recorded"` 表示读取到 Run snapshot。
 `"fallback-missing"` 只表示历史 Run 缺少该 Attachment，并以完整 ID 作为展示名称。

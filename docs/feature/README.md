@@ -60,6 +60,7 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 - [Eval](eval/README.md)：评估定义与 `defineEval`。
 - [Eval Groups](eval-groups/README.md)：封闭成员集内的 Sandbox 复用与组间并行。
 - [Experiments](experiments/README.md)：运行配置与 `defineExperiment`。
+- [Experiment 展示名](experiment-authoring-display-names/README.md)：当前定义的名称与 Run 保存的展示快照。
 - [Insight](insight/README.md)：受保护的本机 SPA、Snapshot 与人读审阅。
 - [Inspection](inspection/README.md)：固定 operation、闭合结果与 `show` 读取。
 - [Judge](judge/README.md)：裁判模型配置、调用与 unavailable。

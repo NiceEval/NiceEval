@@ -1,4 +1,4 @@
-import type { ExpPrepareEvent } from "../experiment/host/cli/output-protocol.ts";
+import type { ExpPrepareObservation } from "../experiment/host/cli/output-protocol.ts";
 import { beforeCacheReplacementWarnings, type BeforeCachePosition } from "./before-cache-collisions.ts";
 import { randomUUID } from "node:crypto";
 import { Cause, Deferred, Effect, Exit, Result, Option, Semaphore, Scope } from "effect";
@@ -85,7 +85,7 @@ interface BeforeCachePreparationActivityBase {
   readonly evalId: string;
   readonly attempts: number;
   readonly actionCount: number;
-  readonly prepare?: ExpPrepareEvent | undefined;
+  readonly prepare?: ExpPrepareObservation | undefined;
   readonly sandbox?: { readonly provider: string; readonly nativeInstanceId: string | undefined } | undefined;
 }
 
@@ -691,12 +691,12 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
           }));
           const startedAt = Date.now();
           let settlementReason: string | undefined;
-          let currentPhase: ExpPrepareEvent["phase"] = "lookup";
+          let currentPhase: ExpPrepareObservation["phase"] = "lookup";
           let observedSandbox: BeforeCachePreparationActivityBase["sandbox"];
           const pairings = [...dependents.get(node.key)!.values()];
           const total = actionTotal(node);
           const emit = (event: BeforeCachePreparationActivityEvent) => {
-            const nextPhase: ExpPrepareEvent["phase"] =
+            const nextPhase: ExpPrepareObservation["phase"] =
               event.status === "started"
                 ? "lookup"
                 : event.status === "done" || event.status === "failed"
@@ -710,7 +710,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
                         : event.phase;
             const changed = nextPhase !== currentPhase || event.status !== "progress";
             currentPhase = nextPhase;
-            const prepare: ExpPrepareEvent | undefined = changed
+            const prepare: ExpPrepareObservation | undefined = changed
               ? {
                   event: "prepare",
                   node: [...nodes.keys()].indexOf(node.key) + 1,

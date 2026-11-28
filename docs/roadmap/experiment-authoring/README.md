@@ -4,7 +4,7 @@
 
 ## 子方向
 
-- [展示名](../experiment-authoring-display-names/README.md) —— 为列表、运行反馈和报告保存不参与 identity 的稳定名称。
+- [展示名](../../feature/experiment-authoring-display-names/README.md) —— 为列表、运行反馈和报告保存不参与 identity 的稳定名称。
 - [具名 Experiment 族](../experiment-authoring-families/README.md) —— 用 keyed record 从一个入口展开多个稳定 Experiment ID。
 
 两者共同约束同一作者面，但可以独立采用：族成员没有展示名时仍以 ID 显示；展示名也不要求入口必须声明多个 Experiment。
