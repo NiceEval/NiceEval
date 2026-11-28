@@ -15,8 +15,22 @@ import {
 } from "../../packages/e2e-runner/src/owned-process.ts";
 import { classifyFromReceipt } from "../../packages/e2e-runner/src/receipt.ts";
 
-const testkit = new URL("../../packages/testkit/src/index.ts", import.meta.url);
-const tsxModule = [process.execPath, "--conditions=niceeval-source", "--import", "tsx", "--input-type=module", "-e"];
+const testkitRegistration = new URL("../../packages/testkit/src/resource-registration.ts", import.meta.url);
+
+function testkitCommand(script: string): readonly string[] {
+  // Load only resource registration within the fixture's process budget.
+  const source = `
+    import { spawn } from "node:child_process";
+    import { spawnTestkitProcess } from ${JSON.stringify(testkitRegistration.href)};
+    function startTestkitProcess(command, processGroup = false) {
+      return spawnTestkitProcess(command, process.env, processGroup, ([file, ...args]) =>
+        spawn(file, args, { detached: processGroup, stdio: "ignore" }),
+      );
+    }
+    ${script}
+  `;
+  return [process.execPath, "--input-type=module", "-e", source];
+}
 
 test.each([
   { script: "setInterval(() => {}, 60_000)", timeoutMs: 300, timedOut: true },
@@ -60,18 +74,16 @@ test.skipIf(process.platform !== "linux")("SIGINT reclaims a stopped Testkit pro
     const capture = await Effect.runPromise(
       Effect.gen(function* () {
         const script = `
-          import { startProcess } from ${JSON.stringify(testkit.href)};
-          const child = startProcess([process.execPath, "-e", ${JSON.stringify(
-            "process.kill(process.pid, 'SIGSTOP'); setInterval(() => {}, 60_000)",
-          )}], { processGroup: true });
-          child.done.catch(() => {});
-          child.stdout?.on("data", () => {});
-          const { writeFileSync } = await import("node:fs");
+          import { writeFileSync } from "node:fs";
+          const child = startTestkitProcess(
+            [process.execPath, "-e", "process.kill(process.pid, 'SIGSTOP'); setInterval(() => {}, 60_000)"],
+            true,
+          );
+          if (child.pid === undefined) throw new Error("Testkit fixture process did not spawn");
           writeFileSync(${JSON.stringify(witness)}, String(child.pid));
-          await child.done;
         `;
         const child = yield* Effect.forkChild(
-          runOwnedProcess([...tsxModule, script], {
+          runOwnedProcess(testkitCommand(script), {
             cwd: process.cwd(),
             output: "capture",
             timeoutMs: 3500,
@@ -125,12 +137,12 @@ if (command === "run") {
   if (${removed}) fs.unlinkSync(state);
 } else process.exit(2);
 `, { mode: 0o700 });
+      const script = `
+        const child = startTestkitProcess(["docker", "run", "--detach", "example"]);
+        child.once("close", (code) => { process.exitCode = code ?? 1; });
+      `;
       const capture = await Effect.runPromise(
-        runOwnedProcess([...tsxModule, `
-          import { runProcess } from ${JSON.stringify(testkit.href)};
-          const result = await runProcess(["docker", "run", "--detach", "example"]);
-          process.exitCode = result.exitCode ?? 1;
-        `], {
+        runOwnedProcess(testkitCommand(script), {
           cwd: process.cwd(),
           env: { ...process.env, PATH: [scratch, process.env.PATH].join(delimiter) },
           output: "capture",
