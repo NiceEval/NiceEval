@@ -74,12 +74,12 @@ Vercel 没有可公开发布的构建结果原语,官方起点止步于 E2B 与 
 - **保证 npm 与 corepack,不预装 yarn 实体**。node:24-slim 自带 yarn 1.22,E2B 官方 `claude`/`codex` 起点的现状不与 Docker 侧一致;统一之后官方起点一律不再提供现成的 yarn 二进制,要 yarn 的派生项目自己 `corepack enable` 或安装。
 - **保证 python3**。两侧起点都带系统 python3。取两侧都装是因为 E2B 配方只能在官方起点上叠加、没有"卸载"路径,而运行时安装步骤(node-gyp、rustup 一类)普遍依赖它。
 - **保证 `/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写**。起点的全局 CLI 在构建期以 root 安装,执行身份是非 root `node`(执行身份契约见[执行身份](README.md#执行身份));这两个目录必须交给运行用户,否则运行期 `corepack enable` 与 `npm install -g` 直接 EACCES。Docker 侧由 base 构建期 chown 给 `node`,八个 target(含只用 `$HOME/.local` 的 bub / hermes)全部继承;E2B 侧由 `withNodeToolContract` 保证同一条。
-- 三条都是发布门槛,与「[官方 coding agent 起点](#官方-coding-agent-起点)」的其余契约同一批构建自检。Docker 侧由 CI 的构建自检步骤断言:`command -v yarn` 必须为空、`python3 --version` 必须成功、以镜像默认用户执行 `corepack enable && yarn --version` 必须成功。E2B 侧由 `verifyE2BNodeToolContract` 断言同样三条。任一项不过,配方不写入 registry、不推送 tag。
+- Docker CI 在 Nightly 和每次发布前验证三项工具契约。构建自检断言：`command -v yarn` 必须为空、`python3 --version` 必须成功、以镜像默认用户执行 `corepack enable && yarn --version` 必须成功。E2B 发布前由 `verifyE2BNodeToolContract` 断言同样三项。任一项失败都会阻止对应配方发布。
 
 这条契约与「版本号跟着被装的 Agent 走」共用同一条规则:配方变了(包括这次的工具面收敛)就 bump `-r`,内容没变不重建。
 
 Docker 公共镜像允许默认非 root 用户通过 `n` 切换 Node runtime。完整 `/usr/local` 前缀及既有 Node/npm 文件对该用户可写，包括 `n`、`include/node` 和 `share`。
-发布自检以默认用户安装固定版本的 `n`、切换 Node 并实际执行新的 `node` 与 `npm`；只验证全局包目录可写不足以证明这个契约。
+构建自检以默认用户安装固定版本的 `n`，切换 Node 并实际执行新的 `node` 与 `npm`。
 
 ### 版本号跟着被装的 Agent 走
 
@@ -120,7 +120,7 @@ dockerSandbox({ source: { type: "image", image: NICEEVAL_OPENCODE_DOCKER_IMAGE }
 
 每个常量都是完整、版本锁定的引用,值只在 NiceEval 发布新起点时变化。下游不复制这些字符串,也不维护第二份版本常量;派生 image / template 要把起点身份写进名字或 provenance 时,直接用常量的值。公开起点是 convenience baseline,不是 Adapter 的隐式默认值。
 
-常量指向的一定是**已发布并验证过的** image / template:E2B 侧由维护者发布后登记进[发布清单](../../../../sandbox/README.md),Docker 侧由配方变更触发的 CI 发布;两侧都以构建内自检为发布条件(Node 工具契约见 [E2B · 预制实例](providers/e2b/README.md#预制实例)),自检不过的 image / template 不写进 registry。
+常量指向**已发布的**镜像或模板。E2B 侧由维护者发布后登记进[发布清单](../../../../sandbox/README.md)。Docker 侧由配方变更触发 CI 发布。Docker 镜像自检在 Nightly 和每次发布前运行。E2B 模板自检在发布前运行，见 [E2B 预制实例](providers/e2b/README.md#预制实例)。
 
 Adapter 不自动替 experiment 选择 image / template / snapshot。同一个 Codex Adapter 可以跑 Docker、E2B 或 Vercel，选择权属于 template-bearing Sandbox factory；反过来，Sandbox 也不猜要运行哪个 Agent。
 预装只是 install 探测 的快速命中路径；缺失时由 identity 匹配的 Installer 安装并复检。各 Agent 的身份与 探测 语义见各自接入页（上表链接）。

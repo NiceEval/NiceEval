@@ -12,7 +12,7 @@ name: Release
 # 新配置须在两天内首次成功发布；验证后禁止传统 token 发布并撤销旧发布 token。
 # 根 install 只准备工具依赖，不触发 prepare。后面的 `pnpm pack` 是唯一构建点：
 # prepack 生成 dist/** 与随包 INDEX.md。最后的 `npm publish <tgz>` 发布同一份
-# 已校验制品，不再重建或重新 pack；E2E 由独立 workflow 持续运行，不在发版时重跑。
+# 已校验制品，不再重建或重新 pack。所有发布在同一标签上运行 E2E 与完整属性测试。
 
 on:
   push:
@@ -35,6 +35,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  e2e-suite:
+    needs: prepare-release
+    uses: ./.github/workflows/e2e-suite.yml
+    permissions:
+      actions: read
+      contents: read
+    with:
+      lane: release
+      live-providers: true
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_BASE_URL: ${{ secrets.DEEPSEEK_BASE_URL }}
+      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+      INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
+      TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+
+  property-suite:
+    needs: prepare-release
+    uses: ./.github/workflows/property-suite.yml
+    permissions:
+      contents: read
+    with:
+      package-smoke: false
+    secrets:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
   prepare-release:
     name: Prepare exact release candidate
     runs-on: ubuntu-latest
@@ -119,7 +149,7 @@ jobs:
 
   publish:
     name: Publish exact tarball to npm
-    needs: prepare-release
+    needs: [prepare-release, e2e-suite, property-suite]
     runs-on: ubuntu-latest
     permissions:
       contents: write # 创建 GitHub Release

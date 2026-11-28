@@ -1,6 +1,8 @@
 import { networkInterfaces } from "node:os";
+import { resolve } from "node:path";
 import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
+import vercelConfig from "../../vercel.json";
 import { writeProfileManifests } from "./scripts/sentry-profile-assets.ts";
 
 if (process.env.VERCEL_ENV === "production" && !process.env.SENTRY_AUTH_TOKEN) {
@@ -17,7 +19,21 @@ const localDevOrigins = [
 const release =
   process.env.SENTRY_RELEASE || (process.env.VERCEL_GIT_COMMIT_SHA ? `site@${process.env.VERCEL_GIT_COMMIT_SHA}` : "");
 const environment = process.env.SENTRY_ENVIRONMENT || process.env.VERCEL_ENV || "production";
+const selfHosted = process.env.NICEEVAL_SITE_SELF_HOSTED === "1";
 const nextConfig: NextConfig = {
+  ...(selfHosted && {
+    output: "standalone",
+    outputFileTracingRoot: resolve(process.cwd(), "../.."),
+    async redirects() {
+      return vercelConfig.redirects.map(({ has, ...redirect }) => ({
+        ...redirect,
+        has: has.map(({ type, value }) => {
+          if (type !== "host") throw new Error(`Unsupported site redirect condition: ${type}`);
+          return { type, value };
+        }),
+      }));
+    },
+  }),
   compiler: {
     async runAfterProductionCompile({ distDir }) {
       await writeProfileManifests(distDir, release);
@@ -58,6 +74,7 @@ const nextConfig: NextConfig = {
     // 用 route-level rewrite 而不是 proxy:rewrite 后的 /en 会再次进入 proxy 被 308
     // 弹回根路径,形成 / → /en → / 的无限重定向环。
     return [
+      ...(selfHosted ? vercelConfig.rewrites : []),
       {
         source: "/:path((?!_next|docs|showcase|zh|.*\\..*).*)",
         destination: "/en/:path",
