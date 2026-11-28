@@ -206,6 +206,7 @@ type TraceJson = null | boolean | number | string
 interface ExecutionTraceInput {
   readonly traceId: string;
   readonly schema: { readonly id: string };
+  readonly archive?: ExecutionTraceArchive; // 见“外部存档出处”
   readonly collection: {
     readonly state: "complete" | "partial";
     readonly limitations: readonly { readonly code: string; readonly message: string }[];
@@ -276,6 +277,7 @@ Adapter 负责将领域 request reference 映射为明确的 link 或 evidence�
 同 `traceId` 的规范化快照完全相同则返回原 receipt；对象键顺序不影响比较，事件数组顺序参与比较。
 冲突或非法输入拒绝整份输入，保留此前接纳的快照，并登记采集失败。不得静默截取为合法前缀。
 complete 的 limitations 必须为空，partial 必须有原因；从未提交不等于 complete-empty。
+以 `niceeval.` 开头的 limitation code 保留给框架，producer 提交这类 code 使整份快照非法。
 
 快照数、事件数、规范化输入总量、payload、summary、links、evidence、membership、标识长度与 JSON 深度都不设领域上限。
 每个事件是一个 collection item；超过行内阈值的 payload 与 summary 存为 Content 分块，身份按完整内容计算。
@@ -288,6 +290,175 @@ complete 的 limitations 必须为空，partial 必须有原因；从未提交�
 接纳在返回 Promise 前完成验证与复制，不绑定已取消的执行 signal。Adapter 可在独立 cleanup 接纳时段结束前提交
 已验证的 partial；正常和失败路径应共享一次 finish。接纳时段结束后的调用拒绝且不改变封存事实。
 持久内容校验或 storage 失败阻止 Attempt publication，不能发布缺少声明证据的成功快照。
+
+### 流式提交事件
+
+长时间运行的应用可以边产生边提交事件，不必先把整局放进一个数组。
+例如一局 90 分钟、几十万条事件的多 actor 游戏，Adapter 逐行读取录像并交给框架，框架持有的内存不随局长增长。
+`events` 换成流工厂，scope 与完整性也改由流中的条目交付：
+
+```ts
+interface ExecutionTraceStreamInput {
+  readonly traceId: string;
+  readonly schema: { readonly id: string };
+  readonly archive?: ExecutionTraceArchive;
+  readonly events: {
+    readonly stream: (signal: AbortSignal) => AsyncIterable<ExecutionTraceStreamItem>;
+  };
+  readonly signal?: AbortSignal;
+}
+
+type ExecutionTraceStreamItem =
+  | { readonly kind: "scope"; readonly scope: ExecutionTraceScope }
+  | { readonly kind: "event"; readonly event: ExecutionTraceEvent }
+  | { readonly kind: "end"; readonly collection: ExecutionTraceCollection };
+
+type ExecutionTraceStreamCutReason =
+  | "producer-error"    // 迭代器抛错
+  | "unterminated"      // 迭代器结束，但没有交出 end
+  | "aborted"           // 调用方的 signal 取消
+  | "admission-closed"; // trace 接纳时段结束
+
+interface ExecutionTraceStreamReceipt {
+  readonly state: "accepted";
+  readonly traceId: string;
+  readonly ending:
+    | { readonly kind: "declared" }
+    | { readonly kind: "cut"; readonly reason: ExecutionTraceStreamCutReason; readonly droppedItems: number };
+  readonly collection: ExecutionTraceCollection;
+  readonly scopeCount: number;
+  readonly eventCount: number;
+  readonly evidenceCount: number;
+}
+
+// AdapterCreateContext 上的两个重载
+recordTrace(input: ExecutionTraceInput): Promise<ExecutionTraceReceipt>;
+recordTrace(input: ExecutionTraceStreamInput): Promise<ExecutionTraceStreamReceipt>;
+```
+
+`ExecutionTraceScope`、`ExecutionTraceEvent` 与 `ExecutionTraceCollection` 分别是快照中 `scopes` 元素、`events` 元素与 `collection` 的类型。
+`events` 是数组时按快照接纳，是 `{ stream }` 时按流接纳；两种写法的字段校验相同。
+
+```ts
+const receipt = await ctx.recordTrace({
+  traceId: "match",
+  schema: { id: "example.arena/v1" },
+  archive: { system: "arena-replay", locator: { matchId } },
+  events: {
+    stream: async function* (signal) {
+      yield { kind: "scope", scope: { scopeId: "measured", label: "Measured window", boundary: { fromTick: 0 } } };
+      for await (const line of readReplay(replayPath, { signal })) {
+        yield { kind: "event", event: toTraceEvent(line) };
+      }
+      yield { kind: "end", collection: { state: "complete", limitations: [] } };
+    },
+  },
+});
+```
+
+#### 拉取与完整性
+
+流工厂只调用一次，框架用受管 signal 启动它。框架每次拉取一项，校验并复制当前项后才请求下一项。
+producer 在下一次拉取前不得修改已交出的值。`scope` 与 `event` 的到达顺序就是展示顺序。
+
+完整性只由 `end` 声明，框架不从迭代器正常结束或抛错推断完整性。
+`end` 的 collection 与快照规则相同：complete 的 limitations 为空，partial 必须写明原因。
+已知采集缺口的 producer 正常结束时交出 partial；被取消后排空了全部事件的 producer 可以交出 complete。
+收到 `end` 后框架不再拉取，并请求迭代器 `return()`。
+
+`targetKey` 与 membership 的 `scopeId` 可以指向后到的条目。到达 `end` 时仍未出现的目标使整份快照非法。
+只知道上游 ID、没有对应条目的关系照常写成 unresolved；框架不会替 producer 把缺失目标改写成 unresolved。
+
+#### 没有到达 `end` 的流
+
+流没有交出 `end` 就停止时，框架发布可验证的前缀，并以框架自己的 limitation 把快照标为 partial。
+receipt 的 `ending.kind` 为 `cut`，`reason` 取值见上方 `ExecutionTraceStreamCutReason`。
+
+前缀是接纳顺序中最长的一段，段内每个 `targetKey` 与 `scopeId` 都已出现。前缀中的 `causes` 环仍是非法输入，不靠截短规避。
+段后已拉取的条目不发布，条数记为 `droppedItems`。
+例如第 10 条事件指向尚未到达的第 12 条，流在第 11 条后截断，发布的前缀只有前 9 条，`droppedItems` 为 2。
+
+截断快照的 limitations 只有一项，code 为 `niceeval.trace-stream-cut`，message 写明截断原因与舍弃条数。
+它与 producer 自己声明的 partial 可以区分，读者据此知道缺口来自流没有正常结束，而不是 producer 已知的采集范围。
+截断同时登记一条 Attempt 诊断，带 `traceId`、原因与舍弃条数。截断本身不改变 Attempt outcome。
+
+#### 非法输入
+
+以下情况使整份快照被拒绝：
+
+- 条目违反快照的字段规则，包括 envelope、JSON、展示块、evidence 与保留的 limitation code；
+- key 或 scopeId 重复；
+- `causes` 成环，或到达 `end` 时仍有未出现的目标。
+
+拒绝时 Promise 以具名错误失败，框架停止拉取，丢弃这次提交的全部条目，保留此前接纳的同 `traceId` 快照，并登记采集失败。
+拒绝与截断不同：截断的前缀合法，只是不完整；非法输入不能截成合法前缀发布。
+
+#### 幂等与重交
+
+规范化快照与提交方式无关。流按到达顺序还原为 scopes、events 与 collection 后，与数组快照用同一规则比较。
+同一 `traceId` 已有接纳快照时，新流读完后与它比较：完全相同则返回描述原快照的 receipt，不同则按冲突拒绝。
+重交是一份完整的新快照，不接在旧快照的尾部。截断后要提交完整内容，使用新的 `traceId`。
+
+同一 `traceId` 的流正在接纳时，另一次同 `traceId` 的调用立即按冲突拒绝，不调用它的流工厂，也不影响正在接纳的流。
+写入数据库失败后的重试由框架完成，只重提已冻结的批次，不重新拉取迭代器。
+Attempt 重试使用新的 Attempt 身份，不继承上一次 Attempt 的任何流。
+
+#### 取消与接纳时段
+
+流使用与快照相同的 trace 接纳时段：执行取消后仍开放，cleanup 完成或截止时关闭，关闭后的调用被拒绝。
+受管 signal 在调用方 `signal` 取消或接纳时段关闭时触发，不跟随执行取消。
+执行被取消时，Adapter 在自己的 cleanup 回调中通知 producer 停止，producer 再交出 `end`，从而在 cleanup 预算内排空。
+
+接纳时段关闭时，框架先停止拉取并关闭写入准入，再触发受管 signal，请求迭代器 `return()`。
+迟到的 `next()` 或 `return()` 结果被丢弃：它们不阻塞快照接纳，也不能重新打开入口。
+已发起但未等待的流调用计入 Adapter 的 cleanup 总时限，流不延长这个时限。
+
+每个 Attempt 同时拉取的流至多 4 个。更多调用排队等待空位，不调用流工厂，也不被拒绝。
+
+Attempt outcome、流的结束方式、数据库写入结果与 Attempt 发布彼此独立。
+被取消的 Attempt 可以有 complete 轨迹，completed Attempt 也可以有截断的轨迹。
+数据库写入或持久内容校验失败按快照的规则阻止 Attempt 发布；进程崩溃时未发布的条目由 recovery 回收。
+
+#### 规模与回执
+
+流的条目数与总量不设上限。框架持有的内存只与当前批次和当前单个条目有关：
+key 唯一性、跨批引用、计数与 ID 分配都在 Record 的暂存索引中完成，不在内存中保留整条轨迹。
+
+单个条目是接纳单位，producer 以 JS 值交出它并自行持有。超过行内阈值的 payload、summary 与展示文本按 Content 分块写入。
+单个值本身很大时，先用 `ctx.attach` 的流式 body 保存为附件，再用 evidence 精确引用，不放进事件。
+
+Promise 在流结束、全部校验通过并原子接纳后完成。成功只证明接纳，持久性仍由 Attempt 发布提供。
+流式 receipt 只给汇总，`key` 到 `eventId` / `evidenceId` 的映射通过 Inspection 的
+[按导入 key 查找](../../inspection/cli.md#按导入-key-查找)分页取得。数组快照的 receipt 照常返回完整映射。
+
+#### 身份
+
+提交方式与 `archive` 只描述已经发生的执行如何被观测，不改变被测行为或判定输入，因此不进入 `executionIdentityDigest`。
+把数组改成流、增删 `archive` 都不会让既有结果失去[复用资格](../../experiments/architecture/cache.md#复用资格)。
+Adapter 源码本身的改动仍按源码闭包进入身份；框架的接纳规则不属于按能力计数的 NiceEval 行为组件。
+
+### 外部存档出处
+
+应用在自己的系统里另存原始录像时，快照可以附带一条纯展示的出处：
+
+```ts
+interface ExecutionTraceArchive {
+  readonly system: string;      // 来源系统标识
+  readonly locator: TraceJson;  // 应用自己能解释的定位数据
+  readonly sha256?: string;     // 原始存档的 SHA-256，64 位小写十六进制
+  readonly byteLength?: number; // 原始存档的字节数
+}
+```
+
+`system` 非空且不含控制字符，`locator` 是有限 plain JSON，`byteLength` 是非负安全整数。
+`show @<locator> execution`、View 与 trace 详情原样显示出处，供读者回到应用系统溯源。
+
+出处不是证据。NiceEval 不读取、不打开存档，也不验证它存在或与摘要一致。
+Inspection、`--record` 与 `run import` 只校验出处字段的形状，绝不据此调用读取器、访问网络或文件。
+`locator` 不能含 token、密码或签名 URL。
+
+`archive` 参与同 `traceId` 的幂等比较，但不改变 collection。存档完整不代表 Record 中的事件完整，事件缺口仍用 partial 与 limitations 表达。
+在 NiceEval 中按需读取外部存档是另一项能力，见 Roadmap [外部轨迹读取](../../../roadmap/external-trace-reading/README.md)。
 
 ### 事件展示块
 
@@ -338,12 +509,14 @@ interface ExecutionTraceEvent {
 
 #### 轨迹保存在外部系统
 
-应用自己保存完整轨迹时，提交一个指向外部系统的事件，并把快照标为 `partial`：
+应用自己保存完整轨迹、只向 Record 提交其中一部分事件时，用 `archive` 记录出处，并把快照标为 `partial`。
+需要给读者一条查询命令时，再加一个带展示块的事件：
 
 ```ts
 await ctx.recordTrace({
   traceId: "rpg",
   schema: { id: "example.rpg/v1" },
+  archive: { system: "rpg-server", locator: { runId: "run_8f2c" } },
   collection: {
     state: "partial",
     limitations: [{ code: "external-trace", message: "Full trace is stored by the RPG server." }],

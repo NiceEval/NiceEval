@@ -5,6 +5,7 @@
 ## 原生应用：`defineAdapter`
 
 - [用原生操作评估订单应用](native-operations.md)：连接业务客户端，调用原生方法并释放资源。
+- [流式保存长局轨迹并按事件查看](long-trace-stream.md)：边运行边提交几十万条事件，按导入 key 跳到目标事件，取消后读取可验证前缀。
 
 ## 会话服务：`defineAgent` 与 `ctx.session`
 
@@ -23,6 +24,7 @@
 | API 组 | 用户路径 |
 |---|---|
 | `defineAdapter`、`onCleanup`、Adapter 的 `defineEval` | [原生应用](native-operations.md) |
+| `ctx.recordTrace` 的流式输入、`archive` | [长局轨迹](long-trace-stream.md) |
 | `defineAgent`、`ctx.session.id`、`capture`、`t.newSession` | [服务端会话](direct-conversation.md) |
 | `codexAgent`、Experiment 的 `adapter` 与 `sandbox` | [Sandbox CLI](sandbox-cli.md) |
 | `t.send`、`requireInputRequest`、`respond` | [审批恢复](resume-approval.md) |

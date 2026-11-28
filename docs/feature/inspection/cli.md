@@ -37,7 +37,7 @@ agent 只需要知道 `niceeval show --json`，之后顺着每份 document 的 [
 | --- | --- | --- |
 | `assertions` | `attempt.assertions` | `ae_` → 单条断言 |
 | `source` | `attempt.sources` | — |
-| `execution` | `attempt.trace` | `tool_`、`command_`、`item_`、`turn_`、`evt_` 等 trace 稳定 ID → `attempt.trace.detail` |
+| `execution` | `attempt.trace`；`execution keys` 为 `attempt.trace.keys` | `tool_`、`command_`、`item_`、`turn_`、`evt_` 等 trace 稳定 ID → `attempt.trace.detail` |
 | `timing` | `attempt.timing` | — |
 | `usage` | `attempt.usage`；加 `--reprice <file>` 为 `attempt.reprice` | — |
 | `diff` | `attempt.diff` | `fc_` → 带 `changeId` 的 `attempt.diff`，显示 unified diff |
@@ -294,6 +294,47 @@ Evidence detail 返回该精确 JSON 值的规范 UTF-8 bytes，以 `base64` 编
 `execution.continuation` 绑定相同筛选、Attempt origin、source、publication cutoff 和当前 family；
 续读时保留全部筛选参数，绑定改变返回 `restart-required`。identity index 的遗漏不妨碍按已知稳定 ID 精确展开。
 
+可选 `fromEventId` 让第一页从该通用事件开始，按接纳顺序向后读，适合在几十万条事件的长轨迹中直接跳到目标附近。
+它必须与 `traceId` 同时给出且属于该 trace，并满足其余筛选；不满足时返回 `inspection-selection-missing`。
+continuation 同时绑定 `fromEventId`。CLI 写法是 `--trace <trace-id> --from <eventId>`。
+
+`attempt.trace` 不按 `time` 的 clock 值筛选。clock 属于各自 trace，可以非递增或有多个 clock，按 tick 范围定位需要单独定义的语义。
+按业务位置定位时，先用导入 key 查到 `eventId`，再用 `--from` 从它开始读。
+
+每条 trace 的头部交付 `traceId`、schema、collection、limitations、计数与可选的 `archive` 出处。
+流式轨迹被截断时，limitations 中的 `niceeval.trace-stream-cut` 原样显示，读者据此区分截断与 producer 声明的 partial。
+`archive` 只显示，Inspection 不据此读取外部存档，见 [外部存档出处](../adapters/library/README.md#外部存档出处)。
+
+### 按导入 key 查找
+
+流式提交的 receipt 不含 key 到 ID 的映射。按 Adapter 的导入 key 取得稳定 ID 时使用 `attempt.trace.keys`：
+
+```sh
+niceeval show @<locator> execution keys --trace <trace-id> [--key <key>]... [--continuation <token>] [--json]
+```
+
+request 是 `{ kind: "attempt.trace.keys", locator, traceId, keys?, continuation? }`。
+`keys` 省略时按接纳顺序列出整条 trace 的映射；给出时只查这些事件 key，1–64 个且不重复，结果按请求顺序排列。
+
+结果的 `rows` 是三种行的序列：
+
+```ts
+type ExecutionKeyRow =
+  | { readonly kind: "event"; readonly key: string; readonly eventId: string; readonly ordinal: number }
+  | { readonly kind: "evidence"; readonly eventKey: string; readonly key: string; readonly evidenceId: string }
+  | { readonly kind: "missing"; readonly key: string };
+```
+
+每个 `event` 行之后紧跟该事件的 `evidence` 行，按声明顺序排列。`ordinal` 是该事件在 trace 内从 0 开始的接纳序号。
+`missing` 只出现在给出 `keys` 时，表示该 trace 没有这个 key，不是错误。
+`traceId` 不存在时返回 `inspection-selection-missing`。
+
+每页最多 256 行且序列化后至多 64 KiB，每页至少一行。一个事件的 evidence 行可以跨页，下一页从未交付的行继续。
+有后续页时结果带 `continuation`，它绑定 locator、`traceId`、`keys`、publication cutoff 与当前 family，绑定改变返回 `restart-required`。
+查询经身份索引完成，成本与轨迹长度无关；它不读取事件 payload，也不读取 `archive` 指向的存档。
+
+人读输出每行显示 key、`eventId` 与 evidence 映射，`Next` 给出续读命令，以及第一个命中事件的详情命令。
+
 Inspection 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 handle。详情中的“完整”表示完整取回
 已经脱敏并封存的内容；事实族不因规模截断，超过页大小的字段经 `continuation` 逐页读取。外部生产者或脱敏留下的 limitations 必须继续可见，
 查询不能恢复运行时从未取得的原文。tool occurrence、item 与事件详情里超过页大小的字段带本页字节范围、原始字节数与 `continuation`，文本视图写明后续页的读取命令；不能把一页前缀当作完整值交付。
@@ -429,7 +470,8 @@ niceeval show @<locator> assertions [--json]
 niceeval show @<locator> ae_<id> [--full] [--json]
 niceeval show @<locator> ae_<id> image <image-id> --output <file>
 niceeval show @<locator> source [--json]
-niceeval show @<locator> execution [--actor <id>] [--type <event-type>] [--continuation <token>] [--json]
+niceeval show @<locator> execution [--trace <trace-id> [--from <eventId>]] [--actor <id>] [--type <event-type>] [--continuation <token>] [--json]
+niceeval show @<locator> execution keys --trace <trace-id> [--key <key>]... [--continuation <token>] [--json]
 niceeval show @<locator> <trace 稳定 ID> [--json]
 niceeval show @<locator> timing [--json]
 niceeval show @<locator> usage [--reprice <pricing-file>] [--json]
@@ -531,6 +573,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   `niceeval show @<locator> <commandId>`，其余入口合并为 `+N more`；展开后显示该命令完整保留的 stdout 与 stderr。
   错误摘要里的命令输出只是截断后的尾部，读者不必猜完整输出在哪（[T-31](../../taste.md#t-31)）。
 - `@<locator> timing` 调用 `attempt.timing`，显示 activity 层级、phase、offset、duration、outcome、limitations 与 omitted count。
+  已知导入 key 时先用 `@<locator> execution keys --trace <trace-id> --key <key>` 查到 `eventId`，见[按导入 key 查找](#按导入-key-查找)。
   activity 超过单页上限时，result 带 `continuation`，`niceeval show @<locator> timing --continuation <token>` 读下一页，规则与 `execution` 的分页相同；不能只报 omitted count 而不给翻页入口。人读输出的 `Next` 给出下一页命令。各层 activity 的 label 由 owner 定义，Judge 的区间见 [Judge · Timing 区间](../judge/architecture.md#timing-区间)。
 - `@<locator> usage` 调用 `attempt.usage`，首先显示该局 totalCosts，再显示应用用途、实际模型和 Judge 明细。全账本费用完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 和 Missing sources，不把已知小计称为整局价格。实验中的每个 origin Attempt 复用同一总费用投影，不累加分页预览。
   input/output token、request 与 cost typed totals 均保留各自 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
@@ -562,7 +605,8 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 | `@<locator> assertions` | `attempt.assertions` |
 | `@<locator> ae_<id>` | 带 `entryId` 的 `attempt.assertion.detail` |
 | `@<locator> source` | `attempt.sources` |
-| `@<locator> execution` | `attempt.trace`，带 `--actor`、`--type` 与 `--continuation` |
+| `@<locator> execution` | `attempt.trace`，带 `--trace`、`--from`、`--actor`、`--type` 与 `--continuation` |
+| `@<locator> execution keys` | `attempt.trace.keys`，带 `--trace`、`--key` 与 `--continuation` |
 | `@<locator> <trace 稳定 ID>` | `attempt.trace.detail` |
 | `@<locator> timing` | `attempt.timing` |
 | `@<locator> usage` | `attempt.usage`；带 `--reprice` 时为 `attempt.reprice` |
@@ -623,6 +667,9 @@ Events 的全部人读字符串按码点去掉控制字符与双向格式控制�
 | `--eval <prefix>` | `exp:` 的 `assertions` |
 | `--full` | 单条断言 `ae_<id>` |
 | `--output <file>` | 断言图片 `image <image-id>` |
+| `--trace <trace-id>` | `execution` 与 `execution keys`，交给 `traceId`；`execution keys` 必填 |
+| `--from <eventId>` | `execution`，交给 `fromEventId`，必须同时给 `--trace` |
+| `--key <key>` | `execution keys`，可重复，交给 `keys` |
 | `--continuation <token>` | 任何带 `next-page` link 的输出，原样交给 operation |
 | `--reference` | 省略对象的当前结果 |
 | `--all` | 省略对象的当前结果，且不与 `--json` 同用 |

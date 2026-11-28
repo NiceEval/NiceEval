@@ -49,6 +49,8 @@ type SourceCollection<Limitation> =
 authority 未开始或不适用时是 `not-recorded`。观察到空集合仍应显式 close 为 `complete-empty`。安全前缀确有已知业务缺口时，
 producer 以 non-empty typed limitation close 为 `partial`；interruption、Schema/storage failure 与 mailbox backpressure 不自动
 冒充 partial。
+流式执行轨迹的截断不属于这种冒充：框架是流管道的 capture authority，只发布已验证前缀，并写入保留 code
+`niceeval.trace-stream-cut` 说明缺口，见[流式接纳与暂存索引](#流式接纳与暂存索引)。
 
 适合逐条 plain-data capture 的 source 使用 `Record.attemptCollection()`、`records.append` / `appendAll(Stream)` 与显式
 `records.close`。需要领域排序/去重、rich limitation、Content 或 reference closure 的 source 使用 `Record.attempt()` /
@@ -95,9 +97,54 @@ collector 先验证整份输入和同 Attempt 的附件证据，再接纳不可�
 固定 family 的完整性校验核对 owner、附件 digest、JSON pointer、目标 digest 和长度。校验失败阻止 publication 或读取。
 原生 collection 的 plain-data 限制不取消此闭合义务，未经校验的 artifactId 字符串不能替代验证。
 
-读取按存储页扫描并控制内存，不宣称常数时间索引查询。每页响应受条数和 UTF-8 字节预算共同限制。
+outline 按存储页扫描并控制内存，每页响应受条数和 UTF-8 字节预算共同限制。
+按 `eventId`、`traceId + key` 定位使用下文的身份索引，不扫描整条轨迹。
 分页省略与采集 partial 分开；continuation 固定 origin Attempt、source、cutoff、revision、operation 和全部过滤条件。
 任一条件变化要求重新开始，不能从另一个快照继续。旧 identityIndex 也必须有界且报告遗漏。
+
+### 流式接纳与暂存索引
+
+公开语义见 [Adapter Library](../../adapters/library/README.md#流式提交事件)。本节定义 Host 如何在有界内存中完成它。
+
+每次流式调用在所属 Attempt 下取得一个暂存预留。预留身份由 `attemptId`、writer generation、`traceId` 与该 Attempt 内的提交序号组成。
+同一 `traceId` 同时只有一个打开的预留。预留行与其它未发布 aggregate 一样受 [Run 架构](README.md#canonical-record-与运行中状态) 的 generation 与状态检查约束。
+
+Host 按 encoded bytes 与条目数切批，批的上限由 Host 固定，作者不能选择。
+每批在事务外冻结条目顺序、command identity、规范化 bytes 与 digest，再以一个短事务写入。
+SQLite busy 或 ack 丢失只重提冻结批次，并按 [command 重试规则](storage.md#逻辑事实与物理行) 重读确认，不重新拉取迭代器。
+producer 的等待始终在事务外。超过行内阈值的单个值先作为 Content 分块写入，批中只保存其 logical handle。
+
+暂存索引按预留保存四类行：
+
+- key 到接纳序号与稳定 `eventId` 的映射；
+- scopeId 与每个事件的 evidence key，以及已分配的 `evidenceId`；
+- 指向尚未出现目标的引用，记录引用方序号与目标；
+- 条目、scope、事件与 evidence 的计数。
+
+key 与 scopeId 唯一性、跨批引用的解析、计数与截断前缀都通过这些行计算，内存只保存当前批次与当前条目。
+目标到达时删除对应的待解析引用。截断时最长有效前缀的终点是最早一条待解析引用的引用方序号，与流的终点二者取前。
+
+流结束或截断后，Host 在有界批次中完成最终校验：待解析引用、`causes` 成环与 evidence 闭合。
+`causes` 环检查按索引逐批做拓扑排序，不把整张图载入内存；截断时只校验有效前缀。
+全部通过后，一个短事务把预留原子标为该 `traceId` 的接纳快照，并写入快照头：collection、计数与 `archive`。
+截断时只有有效前缀成为快照，其后的暂存行随预留删除。任一校验失败则整体删除预留，此前接纳的快照不变。
+
+同 `traceId` 已有接纳快照时，Host 在流结束后比较两份快照的规范化 digest。digest 对接纳顺序的条目流式计算，与提交方式无关。
+相同则删除新预留并返回原快照的汇总，不同则删除新预留并按冲突拒绝。
+
+接纳不推进 publication revision。暂存预留与接纳快照都只在 Attempt 发布后进入 Inspection。
+Attempt 重试使用新的 `attemptId`，不继承预留；崩溃留下的预留随未发布 aggregate 由 [recovery](lifecycle.md#崩溃与-recovery) 清除。
+
+### 身份索引
+
+每个事件 item 携带通用 item key，值为 `traceId` 与事件 key 的规范编码，evidence 同样携带含 evidence key 的 item key。
+Host 按 owner Attempt、family 与 item key 建唯一索引，按 `eventId` 与 `evidenceId` 建身份索引，不解释 item key 的业务含义。
+Inspection 的 key 查询、`eventId` 详情与从指定事件开始的 outline 都经这些索引定位，读取成本与轨迹长度无关。
+
+publication 与 hostile import 对 execution-traces 逐 item 核对 item key 与 item 内容一致且唯一，在有界批次中完成。
+item key 是从事件派生的定位数据，不是第二份事实；不一致按 publication closure 失败处理。
+
+### 读取兼容
 
 新 family 缺席为 not-recorded；内建 Agent 投影可以同时存在，但不能遮盖损坏的新 family。
 兼容承诺是新 reader 读取当前支持格式的既有 Record，不要求旧 reader 接受新 family 或新的 Inspection 结果。

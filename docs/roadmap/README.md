@@ -22,6 +22,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [发现边界](discovery-boundaries/README.md) —— 让目录入口明确拥有递归发现范围，并由 CLI 解释截止原因。
 - [Experiment Authoring](experiment-authoring/README.md) —— 统一展示名与具名 Experiment 族的身份边界。
 - [Experiment Pilot 抽样](experiment-pilot-sampling/README.md) —— 用共同 Eval ID、固定 seed 与 non-final coverage 运行可复现小样本。
+- [外部轨迹读取](external-trace-reading/README.md) —— 经本机授权显式读取应用保存的原始存档，并逐块校验内容承诺。
 - [Judge Runtimes](judge-runtimes/README.md) —— 收拢 Agent Judge 与原生 LLM Judge 的材料、权限和结果边界。
 - [Multi-Agent](multi-agent/README.md) —— 多 Agent Eval 场景。
 - 已取消的 Report 图表语义内核 —— 保留已取消方向的裁决归档，不定义 terminal、web 或 static 交付面。

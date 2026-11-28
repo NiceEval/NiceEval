@@ -15,10 +15,15 @@ chunk rows 按 Content identity 与 ordinal 唯一排列，单行受内部结构
 输入 Stream 的 chunk 不决定持久 ordinal、row size 或事务边界；物理分块不改变逻辑 bytes、digest 或 family 事实。
 作者不选择 path、table、index、pragma、transaction 或 chunk size。
 
+collection item 可以携带 family 定义的 item key。Host 按 owner、family 与 item key 建唯一索引，只比较 bytes，不解释业务含义。
+它让按领域键定位的读取不扫描整个 collection；哪些 family 使用 item key 及其校验规则由 family 所在的契约定义，
+例如[执行轨迹的身份索引](observability-attachments.md#身份索引)。
+
 Host 在接纳前验证并冻结 command identity、canonical bytes 与 digest。
 mailbox 同时按 encoded bytes 和 command count 施加 backpressure，不通过丢弃 item 取得进展。
 builder 与 Content source 在事务外消费一次；SQLite busy retry 只重新提交冻结 command，不重新执行作者代码。
 已接纳 command 属于所属 Attempt 的 backlog，取消调用方等待不能撤回它。
+长时间的流式采集同样按冻结批次进入 mailbox，每批是一个独立 command；流持续多久都不延长单个写事务。
 
 同一 command identity 的重试只有在完整 identity 与 digest 一致时才能返回已提交结果。
 commit 后、ack 前的进程终止不改变提交事实；无法确认的 commit 必须重读确认，不能猜成功。
