@@ -110,11 +110,7 @@ pnpm --silent exec niceeval show run:<run-id> --json
 
 准备缓存现在称为 before cache，身份类型称为 `BeforeCacheKey`。timing 和 diagnostic 的生命周期名称使用 `*.before`、`*.after`。缓存目录、缓存键与 Record 编码保持原样，读取时映射名称，已有缓存与结果无需重写。
 
-Docker profile 解码和定义只保留 `decodeDockerExecutionProfile`、`defineDockerExecutionProfile`。
-索引和查找只保留 `indexDockerProfiles`、`resolveDockerProfile`。
-版本常量只保留 `DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION`。删除这些实现的其它别名。
-
-`/sandbox` 不再导出身份计算、Compose 编译、内部构建调度、capture normalization 与 profile 策略常量。
+`/sandbox` 不再导出身份计算、Compose 编译、内部构建调度与 capture normalization。
 `/loaders` 不再导出 `captureLoadedFiles`。
 `/inspection` 不再导出 `canonicalInspectionJson`、`canonicalJsonValue`、`closeInspectionJson`。
 这些内部能力没有替代作者 API。

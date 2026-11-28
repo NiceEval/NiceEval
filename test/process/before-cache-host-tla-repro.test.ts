@@ -7,7 +7,6 @@ import { expect, test } from "vitest";
 test.each([
   ["short append and journal reopen", "before-cache-journal-tla-repro.py"],
   ["concurrent seed publication, reservation release and daemon rotation", "before-cache-contention-tla-repro.py"],
-  ["private slot prefix continuity", "before-cache-prefix-tla-repro.mjs"],
   ["leased image handoff", "before-cache-image-lease-tla-repro.mjs"],
 ])("%s", { timeout: 20_000 }, async (_, fixture) => {
   const path = fileURLToPath(new URL(`../host/${fixture}`, import.meta.url));

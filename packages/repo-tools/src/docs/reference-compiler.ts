@@ -728,12 +728,7 @@ const CLI_OPTION_COMMAND_OWNERSHIP: Readonly<Record<string, Readonly<Record<stri
       force: Object.freeze(["sandbox prune"]),
     }),
     "src/docker/cli/contribution.ts#DOCKER_OPTIONS": Object.freeze({
-      json: Object.freeze([
-        "docker profile list",
-        "docker profile doctor",
-        "docker cache inventory",
-        "docker cache gc",
-      ]),
+      json: Object.freeze(["docker cache inventory", "docker cache gc"]),
       domain: Object.freeze(["docker cache inventory", "docker cache gc"]),
       apply: Object.freeze(["docker cache gc"]),
     }),

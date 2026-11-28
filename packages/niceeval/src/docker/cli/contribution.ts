@@ -8,7 +8,6 @@ import {
   type DockerCacheDomainInventory,
   type DockerCacheInventoryEntry,
 } from "../cache-administration.ts";
-import { runDockerProfileCommand } from "../../sandbox/docker-profile/cli.ts";
 
 export const DOCKER_OPTIONS = Object.freeze({
   /** Render Docker administration results as JSON. */
@@ -39,13 +38,10 @@ export type DockerCliError = CliFeatureError<ExternalCause>;
 const DOCKER_HELP = `niceeval docker — Docker-specific administration
 
 Usage:
-  niceeval docker profile list [--json]
-  niceeval docker profile doctor <alias> [--json]
   niceeval docker cache inventory [--domain <domain-id>] [--json]
   niceeval docker cache gc --domain <domain-id> [--apply <plan-id>] [--json]
 
 Commands:
-  profile    inspect and diagnose managed Docker execution profiles
   cache      inspect and safely reclaim NiceEval-owned Docker image cache
 `;
 
@@ -65,20 +61,15 @@ const dockerFailure = (operation: string, cause: unknown, exitCode = 4) =>
   });
 
 const DOCKER_COMMAND_OPTIONS = Object.freeze({
-  "profile/list": Object.freeze(["json", "help"]),
-  "profile/doctor": Object.freeze(["json", "help"]),
   "cache/inventory": Object.freeze(["json", "domain", "help"]),
   "cache/gc": Object.freeze(["json", "domain", "apply", "help"]),
-  profile: Object.freeze(["help"]),
   cache: Object.freeze(["help"]),
   root: Object.freeze(["help"]),
 } satisfies Readonly<Record<string, readonly string[]>>);
 
 function dockerCommandKey(positionals: readonly string[]): keyof typeof DOCKER_COMMAND_OPTIONS {
   const [root, subcommand] = positionals;
-  if (root === "profile" && (subcommand === "list" || subcommand === "doctor")) return `profile/${subcommand}`;
   if (root === "cache" && (subcommand === "inventory" || subcommand === "gc")) return `cache/${subcommand}`;
-  if (root === "profile") return "profile";
   if (root === "cache") return "cache";
   return "root";
 }
@@ -286,7 +277,7 @@ export const dockerCliCommand: CliCommandContribution<
   DockerCliError
 > = Object.freeze({
   name: "docker",
-  summary: "inspect Docker profiles, image cache, and BuildKit capacity",
+  summary: "inspect Docker image cache and BuildKit capacity",
   options: DOCKER_OPTIONS,
   run: (argv: readonly string[]) =>
     Effect.gen(function* () {
@@ -308,7 +299,7 @@ export const dockerCliCommand: CliCommandContribution<
       const help = parsed.values.help === true;
       const root = positionals[0];
       if (help && root === "cache") return yield* cacheCommand(positionals.slice(1), { json, help: true });
-      if (help || root === undefined) {
+      if (root === undefined) {
         yield* output("stdout", DOCKER_HELP);
         return 0;
       }
@@ -318,18 +309,6 @@ export const dockerCliCommand: CliCommandContribution<
           help: false,
           ...(typeof parsed.values.domain === "string" ? { domain: parsed.values.domain } : {}),
           ...(typeof parsed.values.apply === "string" ? { apply: parsed.values.apply } : {}),
-        });
-      }
-      if (root === "profile") {
-        const io = yield* CliOutput;
-        return yield* Effect.tryPromise({
-          try: () =>
-            runDockerProfileCommand(positionals, {
-              json,
-              out: io.writeStdoutSync,
-              err: io.writeStderrSync,
-            }),
-          catch: (cause) => dockerFailure("run Docker profile command", cause),
         });
       }
       yield* output("stderr", `Unknown Docker command "${root}".\n${DOCKER_HELP}`);

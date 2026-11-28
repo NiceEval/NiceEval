@@ -74,11 +74,9 @@ export type {
   DockerImageSource,
   DockerfileSource,
   DockerSandboxSource,
-  DockerSandboxAccess,
   DockerSandboxOptions,
   DockerSandboxCommonOptions,
   DockerSandboxReadiness,
-  ManagedDockerResources,
   DockerComposeSandboxOptions,
   DockerSandboxResources,
   DockerSandboxTmpfsOptions,
@@ -218,46 +216,3 @@ export type {
   SandboxBuildFailure,
   PrepareSandboxBuildsOptions,
 } from "./build-coordinator.ts";
-
-export {
-  DockerProfileError,
-  dockerProfileError,
-} from "./docker-profile/errors.ts";
-export type {
-  DockerProfileErrorCode,
-  DockerProfileErrorOptions,
-} from "./docker-profile/errors.ts";
-export {
-  DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION,
-  DockerExecutionProfileV1Schema,
-  DockerExecutionProfileSchema,
-  defineDockerExecutionProfile,
-  decodeDockerExecutionProfile,
-  dockerExecutionProfileSemanticPolicyRevisionOf,
-  dockerProfileSemanticPolicyRevisionOf,
-  dockerExecutionProfileV1Digest,
-  dockerProfileDigestOf,
-  dockerProfilePublicSummaryOf,
-  isDockerExecutionProfileV1,
-} from "./docker-profile/schema.ts";
-export type {
-  DockerExecutionProfileSecurityLevel,
-  DockerExecutionProfileV1,
-  DockerExecutionProfileV1Draft,
-  DockerProfileNetworkPolicy,
-  DockerProfilePublicSummary,
-  DockerProfileUnixEndpoint,
-} from "./docker-profile/schema.ts";
-export {
-  indexDockerProfiles,
-  resolveDockerProfile,
-  resolveDockerProfileSelector,
-} from "./docker-profile/registry.ts";
-export type {
-  DockerProfileRegistryEntry,
-  DockerProfileRegistryFileFacts,
-  DockerProfileRegistryIndex,
-  DockerProfileRegistryInput,
-  DockerProfileRegistryOptions,
-  ResolvedDockerProfileEntry,
-} from "./docker-profile/registry.ts";

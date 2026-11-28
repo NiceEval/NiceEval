@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Static host-side checks for a managed docker profile (no sudo mutations).
-# Full runtime attestation remains with `niceeval docker profile doctor`.
 set -euo pipefail
 
 NAME="${1:-}"

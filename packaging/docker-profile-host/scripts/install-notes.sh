@@ -34,8 +34,6 @@ Generic systemd Linux (Ubuntu/Debian-style)
        --access-group niceeval-dp-<alias>-access
 7. Static check:
      niceeval-docker-profile-host-doctor <alias>
-8. Runtime doctor (as access user, no sudo):
-     niceeval docker profile doctor <alias>
 
 Fixed-image raw profile activation (explicit deployment transaction)
 --------------------------------------------------------------------
@@ -75,7 +73,6 @@ services.niceeval.dockerProfiles.<alias> = {
 # sudo systemctl restart niceeval-docker-profile-fixed-images-<alias>.service \
 #   niceeval-docker-profile-descriptor-<alias>.service \
 #   niceeval-docker-profile-fixed-watchdog-<alias>.service
-# daily work: niceeval docker profile doctor default
 
 Hard constraints (must hold)
 ----------------------------

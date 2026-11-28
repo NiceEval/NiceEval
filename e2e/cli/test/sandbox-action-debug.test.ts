@@ -9,8 +9,7 @@ import { cliE2E } from "./context.ts";
 const PRIVATE_ENV_KEY = "NICEEVAL_DEBUG_PRIVATE_TOKEN";
 const PRIVATE_ENV_VALUE = "debug-env-value-must-not-leak-91f65d";
 const PRIVATE_STDIN = "debug-stdin-must-not-leak-4a360c\n";
-const EPHEMERAL_BEFORE_CACHE_REASON =
-  "Persistent before cache is unsupported for Docker Profile sandboxes and for read-only rootfs or tmpfs surfaces.";
+const EPHEMERAL_BEFORE_CACHE_REASON = "Persistent before cache is unsupported for read-only rootfs or tmpfs surfaces.";
 
 type CommandPlan = DebugPlanDocument["commandPlan"];
 type CommandPlanStep = CommandPlan["experiments"][number]["beforeLanes"][number];

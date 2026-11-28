@@ -6,7 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import Docker from "dockerode";
 import { Clock, Effect } from "effect";
@@ -42,16 +42,10 @@ import {
   type BeforeCacheBaseEligibility,
   type AttemptBeforeCache,
 } from "./backend.ts";
-import type { DockerSandboxAccess, NormalizedDockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
-import { DIND_CAPTURE_QUIESCE_COMMAND, dindContainerCommand } from "./dind-supervisor.ts";
+import type { NormalizedDockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
 import { sandboxState } from "./action.ts";
 import { ManagedProcessOutput } from "./managed-process.ts";
 import { makeDockerBeforeCacheCapability, type DockerBeforeCacheHoldOwnership } from "./docker-before-cache.ts";
-import {
-  makeDockerProfileBeforeCacheCapability,
-  type DockerProfileBeforeCacheSession,
-} from "./docker-profile/before-cache.ts";
-import { DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY } from "./docker-profile/schema.ts";
 import { createDockerStateFiles, DOCKER_SANDBOX_WORKDIR, localDockerSupportsState } from "./docker-state.ts";
 
 const execFileAsync = promisify(execFile);
@@ -97,8 +91,8 @@ export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
  * 硬前置,静默放行等于盲重试(见 docs/feature/sandbox/architecture/README.md);唯一的例外:
  * 容器已不存在(404),视作对账完成。
  */
-export async function reconcileProvision(token: string, socketPath?: string): Promise<void> {
-  const docker = new Docker(socketPath === undefined ? undefined : { socketPath });
+export async function reconcileProvision(token: string): Promise<void> {
+  const docker = new Docker();
   const containers = await docker.listContainers({
     all: true,
     filters: { label: [`niceeval.provision-token=${token}`] },
@@ -138,27 +132,6 @@ const CONTAINER_LOG = "/tmp/niceeval-agent.log";
 // (整个 Sandbox 的默认身份)或 runCommand 的 `{ user: "root" }`(只这一条命令)——
 // 见 docs/feature/sandbox/library/README.md「执行身份」。
 const ROOT_USER = "root";
-const DOCKER_ACCESS_SOCKET = "unix:///var/run/docker.sock";
-
-/**
- * This is intentionally provider-owned.  It proves the Agent's *initial default*
- * endpoint without pretending to constrain commands the Agent may issue later.
- */
-export const DOCKER_ACCESS_COMPATIBILITY_COMMAND = Object.freeze([
-  "sh",
-  "-ec",
-  [
-    'test -z "${DOCKER_HOST+x}" || { echo "DOCKER_HOST must be unset" >&2; exit 1; }',
-    'test -z "${DOCKER_CONTEXT+x}" || { echo "DOCKER_CONTEXT must be unset" >&2; exit 1; }',
-    'context="$(docker context show)"',
-    'test "$context" = "default" || { echo "docker context must be default (got $context)" >&2; exit 1; }',
-    "default_daemon=\"$(docker info --format '{{.ID}}')\"",
-    `unix_daemon="$(docker --host=${DOCKER_ACCESS_SOCKET} info --format '{{.ID}}')"`,
-    'test -n "$default_daemon" || { echo "bare docker info returned no daemon ID" >&2; exit 1; }',
-    'test "$default_daemon" = "$unix_daemon" || { echo "bare and Unix Docker endpoints reached different daemons" >&2; exit 1; }',
-  ].join("\n"),
-] as const satisfies readonly [string, ...string[]]);
-
 /** `user` 取值是否等价于 root(数字 uid 0、`0:0` 或字面量 `root`)。 */
 function isRootLikeUserSpec(value: string): boolean {
   return value === "0" || value === "0:0" || value === ROOT_USER;
@@ -196,24 +169,10 @@ export interface DockerSandboxOptions {
    * Compose service `user:` 或其镜像 `USER`。
    */
   user: string | undefined;
-  /** raw = 直接请求 privileged；rootless = 只允许受管 rootless daemon。 */
-  privileged: "disabled" | "raw" | "rootless";
-  /** Agent在Sandbox内访问Docker的模式；socket模式会显式挂载宿主Unix socket。 */
-  dockerAccess: Readonly<DockerSandboxAccess> | undefined;
   /** 创建容器时交给 daemon 强制执行的资源边界。 */
   resources: Readonly<DockerSandboxResources>;
   /** PID 1 启动后、任何 setup/prepare/agent 命令之前必须通过的作者声明探针。 */
   readiness: NormalizedDockerSandboxReadiness | undefined;
-  /** profile-bound provider fixes every Docker I/O to the attested Unix endpoint. */
-  dockerSocketPath: string | undefined;
-  /** Descriptor-pinned public resolvers; managed privileged mode never invents defaults. */
-  dns: readonly string[];
-  /** Durable watchdog ownership labels, copied to both container and exclusive network. */
-  managedLabels: Readonly<Record<string, string>>;
-  rootlessAttestation: { readonly daemonId: string; readonly dataRoot: string } | undefined;
-  /** Current profile lease/reservation; full-copy restore may only replace this reservation's private slot. */
-  profileBeforeCache: DockerProfileBeforeCacheSession | undefined;
-  afterStop: () => Promise<void>;
   /**
    * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md
    * 「PATH:受管变量与 pathPrepend」)。
@@ -232,83 +191,10 @@ export const defaultDockerSandboxOptions: DockerSandboxOptions = {
   runIdentity: undefined,
   workdir: undefined,
   user: undefined,
-  privileged: "disabled",
-  dockerAccess: undefined,
   resources: {},
   readiness: undefined,
-  dockerSocketPath: undefined,
-  dns: [],
-  managedLabels: {},
-  rootlessAttestation: undefined,
-  profileBeforeCache: undefined,
-  afterStop: async () => {},
   pathPrepend: [],
 };
-
-export interface DockerControlCreateSpec {
-  readonly image: string;
-  readonly command: readonly string[];
-  readonly entrypoint: string | undefined;
-  readonly environment: readonly string[];
-  readonly workingDir: string;
-  readonly user: string | undefined;
-  readonly tmpfs: Readonly<Record<string, string>>;
-}
-
-export interface DockerControlCreateResult {
-  readonly containerId: string;
-  readonly networkId: string;
-}
-
-export function assertRootlessPrivilegedDaemon(
-  info: {
-    readonly ID?: string;
-    readonly SecurityOptions?: readonly string[];
-    readonly DockerRootDir?: string;
-    readonly CgroupDriver?: string;
-    readonly CgroupVersion?: string;
-  },
-  dockerHost: string | undefined,
-  expected: { readonly daemonId?: string; readonly dataRoot?: string } | undefined,
-): void {
-  if (dockerHost === undefined || !dockerHost.startsWith("unix://")) {
-    throw new Error(
-      "privileged Docker sandbox requires an explicit rootless Unix DOCKER_HOST; no default socket or TCP endpoint is allowed",
-    );
-  }
-  const socketPath = dockerHost.slice("unix://".length);
-  if (socketPath === "/var/run/docker.sock" || socketPath === "/run/docker.sock") {
-    throw new Error("privileged Docker sandbox refuses the host rootful Docker socket");
-  }
-  const securityOptions = info.SecurityOptions ?? [];
-  if (!securityOptions.some((entry) => /(?:^|[=,])rootless(?:$|[=,])/i.test(entry))) {
-    throw new Error("privileged Docker sandbox requires a daemon whose SecurityOptions report rootless");
-  }
-  if (info.CgroupVersion !== "2" || info.CgroupDriver !== "systemd") {
-    throw new Error(
-      `privileged Docker sandbox requires delegated cgroup v2 with the systemd driver; got ` +
-        `version=${info.CgroupVersion ?? "unknown"}, driver=${info.CgroupDriver ?? "unknown"}`,
-    );
-  }
-  if (expected?.daemonId === undefined || expected.daemonId === "") {
-    throw new Error("privileged Docker sandbox requires NICEEVAL_ROOTLESS_DOCKER_ID attestation");
-  }
-  if (info.ID !== expected.daemonId) {
-    throw new Error(
-      `privileged Docker sandbox daemon ID does not match NICEEVAL_ROOTLESS_DOCKER_ID ` +
-        `(expected ${expected.daemonId}, got ${info.ID ?? "unknown"})`,
-    );
-  }
-  if (expected?.dataRoot === undefined || expected.dataRoot === "") {
-    throw new Error("privileged Docker sandbox requires NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT attestation");
-  }
-  if (info.DockerRootDir !== expected.dataRoot) {
-    throw new Error(
-      `privileged Docker sandbox DockerRootDir does not match NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT ` +
-        `(expected ${expected.dataRoot}, got ${info.DockerRootDir ?? "unknown"})`,
-    );
-  }
-}
 
 function dockerStatusCode(error: unknown): number | undefined {
   return typeof error === "object" && error !== null && "statusCode" in error
@@ -325,28 +211,7 @@ function benignRemoveError(error: unknown): boolean {
   return dockerStatusCode(error) === 404;
 }
 
-async function startContainerIdempotently(container: Docker.Container, signal?: AbortSignal): Promise<void> {
-  if ((await container.inspect(signal === undefined ? {} : { abortSignal: signal })).State?.Running === true) return;
-  try {
-    await container.start(signal === undefined ? {} : { abortSignal: signal });
-  } catch (error) {
-    // A control-owned committed create may be replayed after readiness failed.
-    // Accept Docker's 304 only when a fresh inspect proves the same container is running.
-    if (
-      dockerStatusCode(error) === 304 &&
-      (await container.inspect(signal === undefined ? {} : { abortSignal: signal })).State?.Running === true
-    )
-      return;
-    throw error;
-  }
-}
-
-export function dockerHostConfig(
-  privileged: "disabled" | "raw" | "rootless",
-  resources: Readonly<DockerSandboxResources>,
-  dns: readonly string[] = [],
-  socketMount?: { readonly source: string; readonly gid: number },
-): Docker.HostConfig {
+function dockerHostConfig(resources: Readonly<DockerSandboxResources>): Docker.HostConfig {
   const nanoCpus = resources.cpus === undefined ? undefined : Math.round(resources.cpus * 1_000_000_000);
   if (nanoCpus !== undefined && !Number.isSafeInteger(nanoCpus)) {
     throw new TypeError("Docker sandbox resources.cpus is too large to encode as NanoCpus");
@@ -371,51 +236,12 @@ export function dockerHostConfig(
         );
   return {
     AutoRemove: false,
-    ...(privileged !== "disabled" ? { Privileged: true, ...(dns.length === 0 ? {} : { Dns: [...dns] }) } : {}),
-    ...(socketMount === undefined
-      ? {}
-      : {
-          Mounts: [{ Type: "bind", Source: socketMount.source, Target: "/var/run/docker.sock" }],
-          GroupAdd: [String(socketMount.gid)],
-        }),
     ...(nanoCpus === undefined ? {} : { NanoCpus: nanoCpus }),
     ...(resources.memoryBytes === undefined ? {} : { Memory: resources.memoryBytes }),
     ...(resources.memoryBytes === undefined ? {} : { MemorySwap: resources.memoryBytes }),
     ...(resources.pidsLimit === undefined ? {} : { PidsLimit: resources.pidsLimit }),
     ...(resources.readOnlyRootfs === true ? { ReadonlyRootfs: true } : {}),
     ...(tmpfs === undefined ? {} : { Tmpfs: tmpfs }),
-  };
-}
-
-export async function resolveDockerSocketMount(
-  socketPath: string,
-): Promise<{ readonly source: string; readonly gid: number }> {
-  const source = await realpath(socketPath);
-  const info = await stat(source);
-  if (!info.isSocket()) throw new TypeError(`Docker socket path is not a Unix socket: ${socketPath}`);
-  return { source, gid: info.gid };
-}
-
-/** managed privileged Attempt 的独占 outer network；允许 NAT 出站，但禁止 sibling 互通。 */
-export function dockerManagedNetworkOptions(
-  provisionToken: string | undefined,
-  nonce: string = randomUUID(),
-  managedLabels: Readonly<Record<string, string>> = {},
-): Docker.NetworkCreateOptions {
-  return {
-    Name: `niceeval-attempt-${nonce}`,
-    CheckDuplicate: false,
-    Driver: "bridge",
-    Internal: false,
-    Attachable: false,
-    Options: {
-      "com.docker.network.bridge.enable_icc": "false",
-    },
-    Labels: {
-      "niceeval.managed-network": "true",
-      ...(provisionToken === undefined ? {} : { "niceeval.provision-token": provisionToken }),
-      ...managedLabels,
-    },
   };
 }
 
@@ -431,7 +257,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   readonly otlpHost: string | null;
   private docker: Docker;
   private container: Docker.Container | undefined;
-  private network: Docker.Network | undefined;
   private _containerId = "";
   private timeout: number | undefined;
   private deadlineAt: number | undefined;
@@ -450,25 +275,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private releaseMode: DockerSandboxReleaseMode = "destroy";
   /** 起点覆盖(factory `user`);省略 = 沿用镜像/Compose 声明的默认身份。 */
   private readonly userOverride: string | undefined;
-  private readonly privileged: "disabled" | "raw" | "rootless";
-  private readonly dockerAccess: Readonly<DockerSandboxAccess> | undefined;
   private readonly resources: Readonly<DockerSandboxResources>;
   private readonly readiness: NormalizedDockerSandboxReadiness | undefined;
-  private readonly dockerSocketPath: string | undefined;
-  private readonly dns: readonly string[];
-  private readonly managedLabels: Readonly<Record<string, string>>;
   private containerName: string | undefined;
-  private readonly rootlessAttestation: { readonly daemonId: string; readonly dataRoot: string } | undefined;
-  private readonly profileBeforeCache: DockerProfileBeforeCacheSession | undefined;
-  private controlledCreate:
-    | ((spec: DockerControlCreateSpec, signal?: AbortSignal) => Promise<DockerControlCreateResult>)
-    | undefined;
-  private controlledCreateSpec: DockerControlCreateSpec | undefined;
-  private readonly afterStop: () => Promise<void>;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
-  /** DinD 覆盖容器 User 为 root 后，仍用镜像 USER 作为 Agent 默认身份。 */
-  private imageDefaultUser: string | undefined;
   /** 下面三项由 `resolveDefaultIdentity()` 探测得出,构造期先给出安全占位值。 */
   private defaultHome = "/root";
   private defaultUserName = "root";
@@ -619,9 +430,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   constructor(options: DockerSandboxOptions = defaultDockerSandboxOptions) {
-    this.docker = new Docker(
-      options.dockerSocketPath === undefined ? undefined : { socketPath: options.dockerSocketPath },
-    );
+    this.docker = new Docker();
     this.workdir = options.workdir ?? DOCKER_SANDBOX_WORKDIR;
     this.timeout = options.timeout;
     this.deadlineAt = options.deadlineAt;
@@ -632,44 +441,25 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.provisionToken = options.provisionToken;
     this.runIdentity = options.runIdentity;
     this.userOverride = options.user === "" ? undefined : options.user;
-    this.privileged = options.privileged;
-    this.dockerAccess = options.dockerAccess;
     // Docker bridge 能否回连宿主取决于宿主防火墙与 daemon 网络策略，provider 不能把
     // host-gateway 伪装成稳定能力。null 让 runner 把 attempt-scope collector 放进沙箱；
     // 作者确有受控 tunnel 时仍可用 config.telemetry.host 显式覆盖。
     this.otlpHost = null;
     this.resources = options.resources;
     this.readiness = options.readiness;
-    this.dockerSocketPath = options.dockerSocketPath;
-    this.dns = options.dns;
-    this.managedLabels = options.managedLabels;
-    this.rootlessAttestation = options.rootlessAttestation;
-    this.profileBeforeCache = options.profileBeforeCache;
-    this.afterStop = options.afterStop;
     this.pathPrepend = options.pathPrepend;
     this.sandboxPath = this.managedPath(this.npmGlobalDir);
-    this.attemptBeforeCache =
-      this.profileBeforeCache === undefined
-        ? makeDockerBeforeCacheCapability({
-            baseReference: options.image ?? DOCKER_IMAGES[this.runtime]!,
-            eligibility: () => this.beforeCacheEligibility(),
-            captureExactImage: (labels, knownSensitiveValues, signal) =>
-              this.captureBeforeCacheImage(labels, knownSensitiveValues, signal),
-            rebaseToExactImage: (imageId, plannedContainerName, signal) =>
-              this.rebaseBeforeCacheImage(imageId, plannedContainerName, signal),
-            destroyCurrentForCacheRecovery: () => this.destroyCurrentContainer(false),
-            adoptBeforeCacheHold: (root) => this.adoptBeforeCacheHold(root),
-            fallBackToBase: (signal) => this.recoverBeforeCacheCleanBase(signal),
-          })
-        : makeDockerProfileBeforeCacheCapability({
-            session: this.profileBeforeCache,
-            baseReference: options.image ?? DOCKER_IMAGES[this.runtime]!,
-            eligibility: () => this.beforeCacheEligibility(),
-            quiesceAndStop: (signal) => this.quiesceProfileBeforeCache(signal),
-            resumeStopped: (signal) => this.resumeProfileBeforeCache(signal),
-            retireStopped: () => this.retireProfileBeforeCache(),
-            createFromCurrent: (signal) => this.createProfileBeforeCacheContinuation(signal),
-          });
+    this.attemptBeforeCache = makeDockerBeforeCacheCapability({
+      baseReference: options.image ?? DOCKER_IMAGES[this.runtime]!,
+      eligibility: () => this.beforeCacheEligibility(),
+      captureExactImage: (labels, knownSensitiveValues, signal) =>
+        this.captureBeforeCacheImage(labels, knownSensitiveValues, signal),
+      rebaseToExactImage: (imageId, plannedContainerName, signal) =>
+        this.rebaseBeforeCacheImage(imageId, plannedContainerName, signal),
+      destroyCurrentForCacheRecovery: () => this.destroyCurrentContainer(),
+      adoptBeforeCacheHold: (root) => this.adoptBeforeCacheHold(root),
+      fallBackToBase: (signal) => this.recoverBeforeCacheCleanBase(signal),
+    });
     this.capabilities = {
       rootCommands: supportedBackendCapability(true as const),
       appendLog: supportedBackendCapability((line: string) => this.appendLog(line)),
@@ -677,12 +467,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
       setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
       managedProcess: supportedBackendCapability((input: ManagedProcessStart) => this.startManagedProcess(input)),
-      ...(localDockerSupportsState({
-        profile: this.dockerSocketPath !== undefined || this.profileBeforeCache !== undefined,
-        dockerAccess: this.dockerAccess !== undefined,
-        privileged: this.privileged !== "disabled",
-        readOnly: this.resources.readOnlyRootfs === true,
-      })
+      ...(localDockerSupportsState(this.resources.readOnlyRootfs === true)
         ? {
             state: supportedBackendCapability(
               createDockerStateFiles({
@@ -704,103 +489,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   readonly attemptBeforeCache: AttemptBeforeCache;
 
   private beforeCacheEligibility(): BeforeCacheBaseEligibility {
-    if (this.profileBeforeCache !== undefined) {
-      const capability = this.profileBeforeCache.lease.binding.profile.backend.filesystem.beforeCache;
-      if (capability === undefined) {
-        return {
-          _tag: "Unsupported",
-          code: "profile-backed-dind",
-          reason:
-            `Docker Profile descriptor does not declare ${DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY}; ` +
-            "shared loop/project-quota profiles remain unsupported",
-        };
-      }
-      if (
-        capability.coverage !== sandboxState.dockerData ||
-        capability.requiredState !== sandboxState.dockerData ||
-        capability.slotAttestation !== "independent-fixed-filesystem/v1" ||
-        capability.filesystemSizeBytes !==
-          this.profileBeforeCache.lease.binding.profile.backend.filesystem.dockerDataPool.bytesPerAllocation ||
-        this.profileBeforeCache.lease.binding.profile.backend.filesystem.dockerDataPool.attestation !==
-          "independent-fixed-filesystem/v1"
-      ) {
-        return {
-          _tag: "Unsupported",
-          code: "profile-backed-dind",
-          reason:
-            "Docker Profile raw-image/v1 requires an independently attested fixed filesystem; " +
-            "shared loop/project-quota slots are not capture-safe",
-        };
-      }
-      if (this.dockerAccess?.mode !== "dind") {
-        return {
-          _tag: "Unsupported",
-          code: "profile-backed-dind",
-          reason: "Docker Profile docker-data snapshots require a profile-bound DinD sandbox",
-        };
-      }
-      if (this.baseIdentity === undefined || !/^sha256:[a-f0-9]{64}$/u.test(this.baseIdentity)) {
-        return {
-          _tag: "Unsupported",
-          code: "base-image-unverified",
-          reason: "Docker Profile before-cache capture requires a verified exact Base image id",
-        };
-      }
-      return {
-        _tag: "Eligible",
-        persistence: "persistent",
-        dependency: "parent-backed",
-        coverage: sandboxState.dockerData,
-        baseIdentity: this.baseIdentity,
-        keyScope: decodeBeforeCacheKeyScope({
-          cacheFormat: JSON.stringify({
-            protocol: capability.protocol,
-            publication: capability.publicationRevision,
-            copy: capability.copyRevision,
-          }),
-          semanticIdentity: {
-            component: "durable-docker-data",
-            coverage: capability.coverage,
-            requiredState: capability.requiredState,
-            semanticPolicyRevision: this.profileBeforeCache.lease.binding.profile.semanticPolicyRevision,
-            providerIdentity: capability.providerIdentity,
-            executionDomain: capability.executionDomain,
-            helperRevision: capability.helperRevision,
-            copyProtocol: capability.copyProtocol,
-            copyRevision: capability.copyRevision,
-            quiesceRevision: capability.quiesceRevision,
-            slotAttestation: capability.slotAttestation,
-            filesystemSizeBytes: capability.filesystemSizeBytes,
-            filesystemFeatures: capability.filesystemFeatures,
-            seedPolicy: capability.seedPolicy,
-            publicationRevision: capability.publicationRevision,
-            recoveryRevision: capability.recoveryRevision,
-            manifestSchema: capability.manifestSchema,
-            seedLimitBytes: capability.seedLimitBytes,
-            filesystemIdentity: capability.filesystemIdentity,
-          },
-        }),
-      };
-    }
-    if (this.dockerSocketPath !== undefined || this.privileged === "rootless") {
-      return {
-        _tag: "Unsupported",
-        code: "profile-managed",
-        reason: "persistent before-cache capture is limited to the default local Docker daemon",
-      };
-    }
     if (this.releaseMode === "detach") {
       return {
         _tag: "Unsupported",
         code: "compose",
         reason: "Compose and attached containers have group-owned state outside one writable outer rootfs",
-      };
-    }
-    if (this.dockerAccess?.mode === "socket") {
-      return {
-        _tag: "Unsupported",
-        code: "host-socket",
-        reason: "a mounted host Docker socket is state outside the captured outer rootfs",
       };
     }
     if (this.resources.readOnlyRootfs === true) {
@@ -831,17 +524,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         reason: this.beforeCacheMountReason,
       };
     }
-    if (
-      this.resources.dockerDataBytes !== undefined ||
-      (this.dockerAccess?.mode === "dind" &&
-        (this.dockerAccess.isolation === "managed-rootless" || this.dockerAccess.storageProfile !== undefined))
-    ) {
-      return {
-        _tag: "Unsupported",
-        code: "profile-backed-dind",
-        reason: "DinD capture requires /var/lib/docker to remain in the writable outer rootfs",
-      };
-    }
     if (this.baseIdentity === undefined || !/^sha256:[a-f0-9]{64}$/u.test(this.baseIdentity)) {
       return {
         _tag: "Unsupported",
@@ -860,123 +542,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         semanticIdentity: { capture: "outer-writable-rootfs" },
       }),
     };
-  }
-
-  private async quiesceProfileBeforeCache(signal: AbortSignal): Promise<void> {
-    signal.throwIfAborted();
-    if (this.profileBeforeCache === undefined || this.dockerAccess?.mode !== "dind") {
-      throw new Error("Docker profile before-cache quiesce requires a bound DinD reservation");
-    }
-    const container = this.container;
-    if (container === undefined) throw new Error("Docker profile before-cache private container is not available");
-    const state = await container.inspect({ abortSignal: signal });
-    if (state.State?.Running !== true) {
-      throw new Error(
-        "Docker Profile outer container was already stopped; this capture call has no graceful quiesce proof",
-      );
-    }
-    {
-      const liveState = await this.runCommand(
-        "sh",
-        [
-          "-ec",
-          [
-            'running="$(docker --host=unix:///var/run/docker.sock ps --quiet)"',
-            'test -z "$running" || { echo "running inner containers are not durable dockerData state" >&2; exit 1; }',
-          ].join("\n"),
-        ],
-        { user: ROOT_USER, timeoutMs: 10_000, signal },
-      );
-      if (liveState.exitCode !== 0) {
-        throw new Error(
-          `Docker Profile before-cache capture rejects live inner container state: ` +
-            `${liveState.stderr.trim() || liveState.stdout.trim() || `exit ${liveState.exitCode}`}`,
-        );
-      }
-      const [command, ...args] = DIND_CAPTURE_QUIESCE_COMMAND;
-      const quiesced = await this.runCommand(command, args, { user: ROOT_USER, timeoutMs: 20_000, signal });
-      if (quiesced.exitCode !== 0) {
-        throw new Error(
-          `Docker Profile could not stop every inner container/containerd/shim/dockerd before capture: ` +
-            `${quiesced.stderr.trim() || quiesced.stdout.trim() || `exit ${quiesced.exitCode}`}`,
-        );
-      }
-      const durableOnly = await this.runCommand(
-        "sh",
-        [
-          "-ec",
-          [
-            "test ! -S /var/run/docker.sock || ! docker --host=unix:///var/run/docker.sock info >/dev/null 2>&1",
-            "for process in /proc/[0-9]*/comm; do",
-            '  test -r "$process" || continue',
-            '  name="$(cat "$process")"',
-            '  case "$name" in dockerd|containerd|containerd-shim|containerd-shim-runc-v2|buildkitd) exit 1;; esac',
-            "done",
-          ].join("\n"),
-        ],
-        { user: ROOT_USER, timeoutMs: 10_000, signal },
-      );
-      if (durableOnly.exitCode !== 0) {
-        throw new Error(
-          "Docker Profile before-cache capture could not prove inner daemon/build/session processes quiesced",
-        );
-      }
-      try {
-        await container.stop({ t: 5, abortSignal: signal });
-      } catch (cause) {
-        if (!benignStopError(cause)) throw cause;
-      }
-    }
-    signal.throwIfAborted();
-    const stopped = await container.inspect({ abortSignal: signal });
-    if (stopped.State?.Running === true) {
-      throw new Error("Docker Profile outer container is still running after before-cache quiesce");
-    }
-  }
-
-  private async resumeProfileBeforeCache(signal: AbortSignal): Promise<string> {
-    signal.throwIfAborted();
-    if (this.container === undefined) throw new Error("Docker Profile stopped private container is unavailable");
-    await startContainerIdempotently(this.container, signal);
-    await this.waitForReadiness(signal);
-    await this.resolveDefaultIdentity(signal);
-    return this.sandboxId;
-  }
-
-  private retireProfileBeforeCache(): void {
-    this.container = undefined;
-    this.network = undefined;
-    this._containerId = "";
-  }
-
-  private async createProfileBeforeCacheContinuation(signal: AbortSignal): Promise<string> {
-    signal.throwIfAborted();
-    if (
-      this.profileBeforeCache === undefined ||
-      this.controlledCreate === undefined ||
-      this.controlledCreateSpec === undefined
-    ) {
-      throw new Error("Docker Profile continuation has no scoped reservation/create binding");
-    }
-    const created = await this.controlledCreate(this.controlledCreateSpec, signal);
-    this.container = this.docker.getContainer(created.containerId);
-    this.network = this.docker.getNetwork(created.networkId);
-    this._containerId = created.containerId;
-    this.releaseMode = "detach";
-    await startContainerIdempotently(this.container, signal);
-    await this.initializeControlledContainer(signal);
-    return this.sandboxId;
-  }
-
-  private async initializeControlledContainer(signal?: AbortSignal): Promise<void> {
-    await this.waitForReadiness(signal);
-    await this.ensureRunnerTools();
-    await this.resolveDefaultIdentity(signal);
-    await this.runCommandAsRoot("mkdir", ["-p", this.workdir], { signal });
-    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.workdir], { signal });
-    await this.runCommandAsRoot("mkdir", ["-p", this.npmGlobalDir], { signal });
-    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.npmGlobalDir], { signal });
-    await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir], { signal });
   }
 
   private adoptBeforeCacheHold(hold: DockerBeforeCacheHoldOwnership): void {
@@ -1090,7 +655,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private cleanupAfterInitializationFailureEffect(error: unknown): Effect.Effect<never, unknown> {
     return Effect.tryPromise({
       try: async () => {
-        const initializationError = await this.withInitializationDiagnostics(error);
         // kill-on-failure:容器创建之后的初始化(start、基础工具安装、工作区属主)一旦失败,
         // 先尽力销毁容器再抛出原始错误——不给重试层留一台无主容器
         // (见 docs/feature/sandbox/architecture/README.md「Provisioning 失败与重试」)。
@@ -1105,149 +669,25 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
             cleanupErrors.push(cleanupError);
           }
         }
-        try {
-          await this.network?.remove();
-          this.network = undefined;
-        } catch (cleanupError) {
-          if (dockerStatusCode(cleanupError) === 404) {
-            this.network = undefined;
-          } else {
-            cleanupErrors.push(cleanupError);
-          }
-        }
         if (cleanupErrors.length > 0) {
           throw new AggregateError(
-            [initializationError, ...cleanupErrors],
-            "Docker sandbox initialization failed and its partial container/network could not be fully removed",
+            [error, ...cleanupErrors],
+            "Docker sandbox initialization failed and its partial container could not be fully removed",
           );
         }
-        throw initializationError;
+        throw error;
       },
       catch: (cause) => cause,
     });
   }
 
-  /** Control service owns create/remove; this handle only starts, initializes and detaches. */
-  static async createControlled(
-    options: DockerSandboxOptions,
-    create: (spec: DockerControlCreateSpec, signal?: AbortSignal) => Promise<DockerControlCreateResult>,
-  ): Promise<DockerSandbox> {
-    const sandbox = new DockerSandbox(options);
-    const imageName = sandbox.image ?? DOCKER_IMAGES[sandbox.runtime];
-    if (!imageName) throw new Error(`Unsupported runtime: ${sandbox.runtime}`);
-    await sandbox.ensureImage(imageName);
-    const inspectedImage = await sandbox.docker.getImage(imageName).inspect();
-    if (!/^sha256:[a-f0-9]{64}$/u.test(inspectedImage.Id)) {
-      throw new Error(`Docker profile source image ${imageName} did not resolve to an exact image id`);
-    }
-    sandbox.baseIdentity = inspectedImage.Id;
-    const declaredVolumes = Object.keys(inspectedImage.Config?.Volumes ?? {}).sort();
-    sandbox.beforeCacheMountReason =
-      declaredVolumes.length === 0
-        ? undefined
-        : `image-declared volumes are outside the declared profile surfaces: ${declaredVolumes.join(", ")}`;
-    const isDind = sandbox.dockerAccess?.mode === "dind";
-    if (isDind) {
-      const declaredUser = inspectedImage.Config?.User?.trim();
-      sandbox.imageDefaultUser = declaredUser === "" ? undefined : declaredUser;
-    }
-    const ttlSec = Math.ceil(
-      Math.max(sandbox.lifetimeMs ?? (sandbox.timeout ?? TTL_BASE_WITHOUT_DEADLINE) * TTL_MULTIPLIER, TTL_FLOOR_MS) /
-        1000,
-    );
-    sandbox.expiresAtMs = Date.now() + ttlSec * 1000;
-    const dindCommand = isDind ? dindContainerCommand(ttlSec, CONTAINER_LOG) : undefined;
-    const tmpfs = dockerHostConfig(sandbox.privileged, sandbox.resources).Tmpfs ?? {};
-    const createSpec: DockerControlCreateSpec = {
-      image: inspectedImage.Id,
-      command:
-        dindCommand === undefined
-          ? [
-              "sh",
-              "-c",
-              `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`,
-            ]
-          : [...dindCommand.Entrypoint.slice(1), ...dindCommand.Cmd],
-      entrypoint: dindCommand?.Entrypoint[0],
-      environment: [],
-      workingDir: sandbox.workdir,
-      user: isDind ? ROOT_USER : sandbox.userOverride,
-      tmpfs,
-    };
-    sandbox.controlledCreate = create;
-    sandbox.controlledCreateSpec = createSpec;
-    const created = await create(createSpec);
-    sandbox.container = sandbox.docker.getContainer(created.containerId);
-    sandbox.network = sandbox.docker.getNetwork(created.networkId);
-    sandbox._containerId = created.containerId;
-    sandbox.releaseMode = "detach";
-    try {
-      await startContainerIdempotently(sandbox.container);
-      await sandbox.initializeControlledContainer();
-      return sandbox;
-    } catch (error) {
-      throw await sandbox.withInitializationDiagnostics(error);
-    }
-  }
-
-  /** DinD 容器 kill-on-failure 前收集有界诊断，普通 Docker 保持原错误形状。 */
-  private async withInitializationDiagnostics(error: unknown): Promise<unknown> {
-    if (this.dockerAccess?.mode !== "dind" || this.container === undefined) return error;
-    const sections: string[] = [];
-    try {
-      const logs = await this.container.logs({ stdout: true, stderr: true, tail: 256 });
-      const bytes = Buffer.isBuffer(logs) ? logs : await readableToBuffer(logs as unknown as NodeJS.ReadableStream);
-      const tail = bytes
-        .subarray(Math.max(0, bytes.length - 256 * 1024))
-        .toString("utf-8")
-        .trim();
-      if (tail !== "") sections.push(`docker logs (tail):\n${tail}`);
-    } catch {
-      // 诊断采集是 best effort；不能覆盖初始化原错误。
-    }
-    try {
-      const state = await this.container.inspect();
-      if (state.State?.Running === true) {
-        const daemonTail = await this.execCommand("tail", ["-c", String(256 * 1024), "/tmp/dockerd.log"], {
-          user: ROOT_USER,
-        });
-        const tail = (daemonTail.stderr || daemonTail.stdout).trim();
-        if (tail !== "") sections.push(`dockerd.log (tail):\n${tail}`);
-      }
-    } catch {
-      // daemon 提前退出时 supervisor 已把有界 tail 写入 docker logs。
-    }
-    if (sections.length === 0) return error;
-    const message = error instanceof Error ? error.message : String(error);
-    return new Error(`${message}\n${sections.join("\n")}`, { cause: error });
-  }
-
   /** 拉镜像、起容器、装基础工具、备好工作区与 npm 前缀。 */
   private async initializeBeforeReadiness(operationSignal?: AbortSignal): Promise<void> {
     operationSignal?.throwIfAborted();
-    const socketMount =
-      this.dockerAccess?.mode === "socket" ? await resolveDockerSocketMount(this.dockerAccess.socketPath) : undefined;
     // 显式 image(预制模板)优先;否则按 runtime 选默认 node:*-slim。
     const imageName = this.image ?? DOCKER_IMAGES[this.runtime];
     if (!imageName) {
       throw new Error(`Unsupported runtime: ${this.runtime}`);
-    }
-
-    if (this.privileged === "rootless") {
-      assertRootlessPrivilegedDaemon(
-        await this.docker.info(),
-        this.dockerSocketPath === undefined ? undefined : `unix://${this.dockerSocketPath}`,
-        this.rootlessAttestation === undefined
-          ? undefined
-          : {
-              daemonId: this.rootlessAttestation.daemonId,
-              dataRoot: this.rootlessAttestation.dataRoot,
-            },
-      );
-      if (this.dns.length === 0) throw new Error("managed rootless Docker requires descriptor-pinned DNS servers");
-      this.network = await this.docker.createNetwork(
-        dockerManagedNetworkOptions(this.provisionToken, randomUUID(), this.managedLabels),
-      );
     }
 
     // 确保镜像在本地。
@@ -1273,12 +713,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         ? undefined
         : `image-declared volumes are outside the captured outer rootfs: ${declaredVolumes.join(", ")}`;
 
-    const isDind = this.dockerAccess?.mode === "dind";
-    if (isDind) {
-      const declaredUser = sourceInspection.Config?.User?.trim();
-      this.imageDefaultUser = declaredUser === "" ? undefined : declaredUser;
-    }
-
     // 起容器(先以 root 做初始化,之后命令切到非 root 用户)。
     // PID1 改成 tail 一个日志文件(而非 sleep infinity):这样容器「主日志」= 这个文件,
     // `docker logs` / Docker UI 的 Logs 标签页能实时显示我们 appendLog 进去的 agent 逐轮活动。
@@ -1291,45 +725,30 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // TTL 一旦烧进 PID1 的 `timeout` 就改不了(容器没有续期通道),所以这里把真实到期时刻记下来,
     // 供 ensureLifetime 如实回答;不够用时由 runner 轮换实例,而不是让容器在 attempt 中途消失。
     this.expiresAtMs = Date.now() + ttlSec * 1000;
-    const dindCommand = isDind ? dindContainerCommand(ttlSec, CONTAINER_LOG) : undefined;
     const exactSourceImageId = sourceInspection.Id;
     this.container = await this.docker.createContainer({
       ...(this.containerName === undefined ? {} : { name: this.containerName }),
       Image: exactSourceImageId,
       ...(operationSignal === undefined ? {} : { abortSignal: operationSignal }),
-      ...(dindCommand === undefined
-        ? {
-            Cmd: [
-              "sh",
-              "-c",
-              `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`,
-            ],
-          }
-        : { Entrypoint: [...dindCommand.Entrypoint], Cmd: [...dindCommand.Cmd], User: ROOT_USER }),
+      Cmd: [
+        "sh",
+        "-c",
+        `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`,
+      ],
       WorkingDir: this.workdir,
       // provision token:歧义类失败的对账通道(按 label 查询本地容器);
       // keep-candidate:留存候选标记(异常硬退时核对未完成提交的候选)。
       Labels: {
         niceeval: "true",
         "niceeval.keep-candidate": "true",
-        ...(isDind
-          ? {
-              "niceeval.docker-access": "dind",
-              "niceeval.dind-readiness-user": this.userOverride ?? this.imageDefaultUser ?? ROOT_USER,
-            }
-          : {}),
         ...(this.provisionToken ? { "niceeval.provision-token": this.provisionToken } : {}),
         ...(this.runIdentity ? dockerRunIdentityLabels(this.runIdentity) : {}),
-        ...this.managedLabels,
       },
       Tty: true,
       // 不带 AutoRemove:留存意图必须在创建期传入(--keep-sandbox 的 suspend = docker stop,
       // 停驻容器的文件系统落盘持久)。默认路径的销毁由 stop() 显式 stop + remove,行为等价;
       // 宿主异常硬退留下的孤儿由 TTL dead-man switch 停驻后按 keep-candidate 标签事后核对。
-      HostConfig: {
-        ...dockerHostConfig(this.privileged, this.resources, this.dns, socketMount),
-        ...(this.network === undefined ? {} : { NetworkMode: this.network.id }),
-      },
+      HostConfig: dockerHostConfig(this.resources),
     });
 
     this._containerId = this.container.id;
@@ -1381,35 +800,17 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     });
   }
 
-  /** Docker start 只代表 PID 1 存活；Docker access 先证明默认端点，再跑作者 readiness。 */
-  private waitForReadiness(signal?: AbortSignal): Promise<void> {
-    return Effect.runPromise(this.waitForReadinessEffect(signal));
-  }
-
   private waitForReadinessEffect(signal?: AbortSignal): Effect.Effect<void, unknown> {
     const readiness = this.readiness;
     if (readiness === undefined) return Effect.void;
-    const readinessUser =
-      readiness.user ?? this.userOverride ?? (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
+    const readinessUser = readiness.user ?? this.userOverride;
     return Effect.gen({ self: this }, function* () {
       const deadline = (yield* Clock.currentTimeMillis) + readiness.timeoutMs;
-      if (this.dockerAccess !== undefined) {
-        yield* this.waitForReadinessProbeEffect({
-          command: DOCKER_ACCESS_COMPATIBILITY_COMMAND,
-          user: readinessUser,
-          intervalMs: readiness.intervalMs,
-          deadline,
-          phase: "Docker access compatibility",
-          timeoutMs: readiness.timeoutMs,
-          signal,
-        });
-      }
       yield* this.waitForReadinessProbeEffect({
         command: readiness.command,
         user: readinessUser,
         intervalMs: readiness.intervalMs,
         deadline,
-        phase: "Docker sandbox readiness",
         timeoutMs: readiness.timeoutMs,
         signal,
       });
@@ -1421,7 +822,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     readonly user: string | undefined;
     readonly intervalMs: number;
     readonly deadline: number;
-    readonly phase: string;
     readonly timeoutMs: number;
     readonly signal: AbortSignal | undefined;
   }): Effect.Effect<void, unknown> {
@@ -1440,7 +840,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       if (state?.State?.Running !== true) {
         return yield* Effect.fail(
           new Error(
-            `Docker sandbox exited before ${input.phase.toLowerCase()} completed ` +
+            `Docker sandbox exited before docker sandbox readiness completed ` +
               `(state=${state?.State?.Status ?? "missing"})`,
           ),
         );
@@ -1474,17 +874,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       yield* Effect.sleep(Math.min(input.intervalMs, remaining));
       return yield* attempt;
     });
-    const timedOut = (): Effect.Effect<never, Error> => {
-      const diagnosticUser = input.user ?? this.imageDefaultUser ?? ROOT_USER;
-      const permissionHelp =
-        this.dockerAccess?.mode === "dind" && /permission denied/i.test(lastFailure)
-          ? `; DinD user ${JSON.stringify(diagnosticUser)} must belong to the docker group ` +
-            `(the inner socket remains root:docker 0660)`
-          : "";
-      return Effect.fail(
-        new Error(`${input.phase} timed out after ${input.timeoutMs}ms: ${lastFailure}${permissionHelp}`),
-      );
-    };
+    const timedOut = (): Effect.Effect<never, Error> =>
+      Effect.fail(new Error(`Docker sandbox readiness timed out after ${input.timeoutMs}ms: ${lastFailure}`));
     return attempt;
   }
 
@@ -1494,7 +885,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    * `/etc/passwd` 解析,不在 runner 侧维护一张 UID → 家目录的映射表。
    */
   private async resolveDefaultIdentity(signal?: AbortSignal): Promise<void> {
-    const user = this.userOverride ?? (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
+    const user = this.userOverride;
     const probe = await this.execCommand(
       "sh",
       ["-c", 'printf "%s\\n%s\\n%s" "$(id -u)" "$(id -un 2>/dev/null || true)" "$HOME"'],
@@ -2143,17 +1534,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const container = this.container;
     if (container === undefined) throw new Error("Docker before-cache staging container has already been released");
 
-    if (this.dockerAccess?.mode === "dind") {
-      const [command, ...args] = DIND_CAPTURE_QUIESCE_COMMAND;
-      const quiesced = await this.runCommand(command, args, { user: ROOT_USER, timeoutMs: 20_000, signal });
-      if (quiesced.exitCode !== 0) {
-        throw new Error(
-          `raw DinD could not gracefully stop inner containers/containerd/dockerd before capture: ` +
-            `${quiesced.stderr.trim() || quiesced.stdout.trim() || `exit ${quiesced.exitCode}`}`,
-        );
-      }
-    }
-
     try {
       await container.stop({ t: 5, abortSignal: signal });
     } catch (cause) {
@@ -2164,7 +1544,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (stopped.State?.Running === true)
       throw new Error("outer Docker staging container is still running after graceful stop");
 
-    // Capture ordering is deliberate: inner daemon (above) → outer stop → host sync → commit.
+    // Capture ordering is deliberate: container stop → host sync → commit.
     await execFileAsync("sync", [], { timeout: 30_000, signal });
     const changes = Object.entries(labels)
       .sort(([left], [right]) => left.localeCompare(right))
@@ -2224,12 +1604,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         if (eligibility._tag === "Unsupported") throw new Error(eligibility.reason);
         if (!/^sha256:[a-f0-9]{64}$/u.test(imageId)) throw new Error("before-cache restore requires an exact image id");
         // DestroyOnly is intentional: cached staging never runs normal teardown/after callbacks.
-        await this.destroyCurrentContainer(false, signal);
+        await this.destroyCurrentContainer(signal);
         this.image = imageId;
         this.containerName = plannedContainerName;
         this.provisionToken = randomUUID();
         this.expiresAtMs = undefined;
-        this.imageDefaultUser = undefined;
         this.defaultHome = "/root";
         this.defaultUserName = "root";
         this.defaultIsRoot = true;
@@ -2256,26 +1635,22 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
           catch: (cause) => cause,
         }),
       ),
-      Effect.catch((cause) => this.cleanupAfterBeforeCacheRebaseFailureEffect(cause, signal)),
+      Effect.catch((cause) => this.cleanupAfterBeforeCacheRebaseFailureEffect(cause)),
     );
   }
 
-  private cleanupAfterBeforeCacheRebaseFailureEffect(
-    cause: unknown,
-    signal: AbortSignal,
-  ): Effect.Effect<never, unknown> {
+  private cleanupAfterBeforeCacheRebaseFailureEffect(cause: unknown): Effect.Effect<never, unknown> {
     return Effect.tryPromise({
       try: async () => {
-        const initializationError = signal.aborted ? cause : await this.withInitializationDiagnostics(cause);
         try {
-          await this.destroyCurrentContainer(false);
+          await this.destroyCurrentContainer();
         } catch (cleanupCause) {
           throw new AggregateError(
-            [initializationError, cleanupCause],
-            "Docker exact-image rebase failed and its partial container/network could not be fully removed",
+            [cause, cleanupCause],
+            "Docker exact-image rebase failed and its partial container could not be fully removed",
           );
         }
-        throw initializationError;
+        throw cause;
       },
       catch: (error) => error,
     });
@@ -2296,7 +1671,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     return { baseIdentity, sandboxId: recovered.containerId.slice(0, 12) };
   }
 
-  private async destroyCurrentContainer(runAfterStop: boolean, operationSignal?: AbortSignal): Promise<void> {
+  private async destroyCurrentContainer(operationSignal?: AbortSignal): Promise<void> {
     const cleanupSignal = operationSignal ?? AbortSignal.timeout(BEFORE_CACHE_PROVIDER_CLEANUP_TIMEOUT_MS);
     const container = this.container;
     if (container === undefined) {
@@ -2309,8 +1684,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     }
     if (this.releaseMode === "detach") {
       this.container = undefined;
-      this.network = undefined;
-      if (runAfterStop) await this.afterStop();
       return;
     }
 
@@ -2331,19 +1704,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       else cleanupErrors.push(error);
     }
     if (removed && this.container === container) this.container = undefined;
-    if (removed && this.network !== undefined) {
-      const network = this.network;
-      try {
-        await network.remove({ abortSignal: cleanupSignal } as {});
-        if (this.network === network) this.network = undefined;
-      } catch (error) {
-        if (dockerStatusCode(error) === 404) {
-          if (this.network === network) this.network = undefined;
-        } else {
-          cleanupErrors.push(error);
-        }
-      }
-    }
     if (removed && this.beforeCacheHold !== undefined) {
       const hold = this.beforeCacheHold;
       if (hold.containerId !== container.id) {
@@ -2360,7 +1720,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (cleanupErrors.length > 0) {
       throw new AggregateError(cleanupErrors, `failed to destroy Docker sandbox ${this.sandboxId}`);
     }
-    if (runAfterStop) await this.afterStop();
   }
 
   /**
@@ -2368,12 +1727,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    * `releaseMode: "detach"`(Compose 附着)只松绑——整组由 compose down 回收,避免主容器先被拆掉留下 sidecar 孤儿。
    */
   async stop(): Promise<void> {
-    await this.destroyCurrentContainer(true);
-  }
-
-  /** Watchdog commit records container + exclusive network as one lifecycle unit. */
-  get managedNetworkId(): string | undefined {
-    return this.network?.id;
+    await this.destroyCurrentContainer();
   }
 
   /**

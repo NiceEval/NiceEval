@@ -97,8 +97,7 @@ Retired names have no aliases. Definition and CLI parsing errors point to their 
 
 Preparation caches are now called before caches, with `BeforeCacheKey` identifying them. Timing and diagnostic lifecycle names use `*.before` and `*.after`. Cache directories, cache keys, and Record encodings stay unchanged; readers project the new names, so existing caches and results need no rewrite.
 
-Docker profiles retain only `decodeDockerExecutionProfile`, `defineDockerExecutionProfile`, `indexDockerProfiles`, `resolveDockerProfile`, and `DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION`. Replace their parser, constructor, and registry aliases.
-Internal identity helpers, Compose compilation, build scheduling, capture normalization, and profile policy constants are no longer exported from `/sandbox`. `/loaders` no longer exports `captureLoadedFiles`; `/inspection` no longer exports canonical JSON helpers. These internal functions have no replacement author API.
+Internal identity helpers, Compose compilation, build scheduling, and capture normalization are no longer exported from `/sandbox`. `/loaders` no longer exports `captureLoadedFiles`; `/inspection` no longer exports canonical JSON helpers. These internal functions have no replacement author API.
 
 ## Plugin
 

@@ -69,7 +69,6 @@ The number of Attempts that can run at once is decided by the following together
 | --- | --- | --- | --- |
 | Global concurrency | `--max-concurrency`, or `maxConcurrency` in `niceeval.config.ts` | Total throughput of this run | Counted separately; values from two terminals add up |
 | Experiment concurrency cap | `maxConcurrency` in the Experiment file | How many Attempts this one Experiment runs at once | Counted separately; values from two terminals add up |
-| Docker profile capacity | Host profile configuration | How many containers and resources this profile allows at once | Shared by all terminals on the same host |
 | Shared-state lease | `sharedState.key` in the Experiment file | The whole window from restoring the same checkpoint, through execution, to writing it back | Runs with the same key queue |
 
 Global concurrency takes its value in this order: `--max-concurrency`, then `maxConcurrency` in the config, and finally the current Sandbox Provider's recommended value (`docker` 10, `e2b` 20, `vercel` 1). The recommended value reflects limits on the Provider side. When your own Agent interface is rate-limited, lower it with `--max-concurrency`:
@@ -120,8 +119,6 @@ This diagram shows three things:
 - **An Attempt backing off to retry gives up its global capacity, but not its Experiment's own capacity.** So when you hit rate limits, `running` in the live panel can exceed the limit, by exactly the number of Attempts backing off. At any moment, the work actually executing still does not exceed the limit. Concurrency control has not failed.
 
 Attempts waiting for Experiment-level `setup` (starting a tunnel, starting shared services) do not consume concurrency capacity and show as `queued` in the counts. So when a tunnel is slow to start, the panel shows "0 running, N queued" for a long time; the problem is in `setup`, not in the concurrency configuration.
-
-Attempts waiting for Docker profile capacity also show as `queued`, with the queue reason `provider-capacity`. They do not show `creating sandbox` and do not consume ordinary concurrency capacity. Once the profile has room, the Attempt acquires concurrency capacity again and enters `running` only after it is assigned resources. Attempts in the same batch that use other Providers can keep starting and are not held up by Docker tasks ahead of them.
 
 ## Confirm in the live panel that concurrency took effect
 

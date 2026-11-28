@@ -4,12 +4,9 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
-import { Readable } from "node:stream";
+import { readFile } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
 import { Data, Effect } from "effect";
-import * as tar from "tar-stream";
 import {
   materializationScopeId,
   sandboxBuildRef,
@@ -26,7 +23,6 @@ import {
   type DockerfileBuildIdentity,
 } from "./dockerfile-identity.ts";
 import type { SandboxLocation } from "./layer.ts";
-import { listFilteredBuildContextFiles } from "../runner/leak-gate.ts";
 
 export { DOCKERFILE_MATERIALIZER_REVISION } from "./dockerfile-identity.ts";
 
@@ -38,10 +34,6 @@ export interface DockerfileBuildDetails {
   readonly buildArgs: Readonly<globalThis.Record<string, string>>;
   readonly target: string | undefined;
   readonly platform: string;
-  readonly contextFiles: readonly string[];
-  readonly dockerSocketPath: string | undefined;
-  /** managed profile 在 daemon bridge=none 时为本次 build 创建的独占 bridge。 */
-  readonly dockerNetworkMode: string | undefined;
 }
 
 export interface DockerfileBuildCollection {
@@ -66,7 +58,6 @@ export function collectDockerfileBuildFromIdentity(input: {
   readonly target: string | undefined;
   readonly platform: string;
   readonly expected: DockerfileBuildIdentity;
-  readonly dockerSocketPath: string | undefined;
 }): Effect.Effect<DockerfileBuildCollection, DockerfileBuildCollectionError> {
   return Effect.gen(function* () {
     const context = input.context._tag === "Url" ? new URL(input.context.value) : input.context.value;
@@ -87,22 +78,15 @@ export function collectDockerfileBuildFromIdentity(input: {
         }),
       );
     }
-    const contextFiles = yield* listFilteredBuildContextFiles({
-      contextDir: identity.contextDir,
-      label: `sandbox profile ${input.profile}`,
-
-      dockerignorePath: undefined,
-      extraIgnoreRules: undefined,
-    });
     const authorityFingerprint =
-      input.provider === "docker" && input.dockerSocketPath === undefined
+      input.provider === "docker"
         ? yield* dockerTaskBuildAuthorityFingerprintEffect.pipe(
             Effect.mapError(
               (cause) =>
                 new DockerfileBuildCollectionError({ message: cause instanceof Error ? cause.message : String(cause) }),
             ),
           )
-        : JSON.stringify(identity.providerIdentityMarker ?? [input.provider, input.dockerSocketPath ?? "default"]);
+        : JSON.stringify(identity.providerIdentityMarker ?? [input.provider, "default"]);
     return yield* Effect.try({
       try: () => {
         const caseKey = computeCaseKey({
@@ -119,9 +103,6 @@ export function collectDockerfileBuildFromIdentity(input: {
           buildArgs: input.buildArgs,
           target: input.target,
           platform: input.platform,
-          contextFiles,
-          dockerSocketPath: input.dockerSocketPath,
-          dockerNetworkMode: undefined,
         };
         const scopeId = materializationScopeId({
           providerFamily: input.provider,
@@ -160,7 +141,7 @@ export function collectDockerfileBuildFromIdentity(input: {
 }
 
 interface DockerfileProviderHooks {
-  readonly dockerImageExists?: (tag: string, dockerSocketPath?: string) => Promise<boolean>;
+  readonly dockerImageExists?: (tag: string) => Promise<boolean>;
   readonly runDockerBuild?: (
     details: DockerfileBuildDetails,
     tag: string,
@@ -185,9 +166,7 @@ export function dockerfileBuildProvider(
   const templateExists = hooks.e2bTemplateExists ?? defaultE2BTemplateExists;
   const buildE2BTemplate = hooks.buildE2BTemplate ?? defaultBuildE2BTemplate;
   const managedDockerCache =
-    hooks.dockerImageExists === undefined &&
-    hooks.runDockerBuild === undefined &&
-    collections.every((collection) => collection.details.dockerSocketPath === undefined)
+    hooks.dockerImageExists === undefined && hooks.runDockerBuild === undefined
       ? makeTaskBuildCacheService()
       : undefined;
 
@@ -202,12 +181,7 @@ export function dockerfileBuildProvider(
     acquireUse: async () => {
       const lease =
         detail.provider === "docker" && managedDockerCache !== undefined
-          ? await managedDockerCache.acquireUse(
-              work.buildKey,
-              locator,
-              buildManifestDigest(work),
-              detail.dockerSocketPath,
-            )
+          ? await managedDockerCache.acquireUse(work.buildKey, locator, buildManifestDigest(work))
           : { release() {} };
       return { locator, release: () => lease.release() };
     },
@@ -228,16 +202,11 @@ export function dockerfileBuildProvider(
       if (detail.provider === "docker") {
         const tag = dockerBuildTag(work.buildKey);
         if (managedDockerCache !== undefined) {
-          return (await managedDockerCache.lookup(
-            work.buildKey,
-            tag,
-            buildManifestDigest(work),
-            detail.dockerSocketPath,
-          ))
+          return (await managedDockerCache.lookup(work.buildKey, tag, buildManifestDigest(work)))
             ? { _tag: "Hit", source: source(work, tag, "cache", detail) }
             : { _tag: "Miss" };
         }
-        return (await imageExists(tag, detail.dockerSocketPath))
+        return (await imageExists(tag))
           ? { _tag: "Hit", source: source(work, tag, "cache", detail) }
           : { _tag: "Miss" };
       }
@@ -251,13 +220,7 @@ export function dockerfileBuildProvider(
       if (detail.provider === "docker") {
         const tag = dockerBuildTag(work.buildKey);
         await runDockerBuild(detail, tag, ctx);
-        await managedDockerCache?.publish(
-          work.buildKey,
-          tag,
-          buildManifestDigest(work),
-          ctx.operationId,
-          detail.dockerSocketPath,
-        );
+        await managedDockerCache?.publish(work.buildKey, tag, buildManifestDigest(work), ctx.operationId);
         return source(work, tag, "build", detail);
       }
       const name = e2bBuildName(work.buildKey);
@@ -302,52 +265,12 @@ export function dockerBuildTag(buildKey: BuildKey): string {
   return `niceeval-build:${buildKey.slice(0, 32)}`;
 }
 
-/** Stream the exact filtered context whose file list contributed to BuildKey. */
-export function packDockerfileBuildContext(details: DockerfileBuildDetails): Readable {
-  const pack = tar.pack();
-  void (async () => {
-    const dockerfile = relative(details.contextDir, details.dockerfilePath).split(sep).join("/");
-    if (dockerfile === "" || dockerfile === ".." || dockerfile.startsWith("../") || isAbsolute(dockerfile)) {
-      throw new Error("Dockerfile must be inside its build context for a control-owned build");
-    }
-    const files = [...new Set([...details.contextFiles, dockerfile])].sort();
-    for (const name of files) {
-      const path = resolvePath(details.contextDir, name);
-      const facts = await stat(path);
-      if (!facts.isFile()) throw new Error(`build context entry is no longer a regular file: ${name}`);
-      await new Promise<void>((resolve, reject) => {
-        const input = createReadStream(path);
-        const entry = pack.entry(
-          {
-            name,
-            type: "file",
-            size: facts.size,
-            mode: facts.mode & 0o777,
-            mtime: new Date(0),
-          },
-          (error) => (error ? reject(error) : resolve()),
-        );
-        input.on("error", reject);
-        entry.on("error", reject);
-        input.pipe(entry);
-      });
-    }
-    pack.finalize();
-  })().catch((error: unknown) => pack.destroy(error instanceof Error ? error : new Error(String(error))));
-  return Readable.from(pack, { objectMode: false });
-}
-
 function e2bBuildName(buildKey: BuildKey): string {
   return `niceeval-build-${buildKey.slice(0, 40)}`;
 }
 
-async function defaultDockerImageExists(tag: string, dockerSocketPath?: string): Promise<boolean> {
-  return await commandSucceeded("docker", [
-    ...(dockerSocketPath === undefined ? [] : ["--host", `unix://${dockerSocketPath}`]),
-    "image",
-    "inspect",
-    tag,
-  ]);
+async function defaultDockerImageExists(tag: string): Promise<boolean> {
+  return await commandSucceeded("docker", ["image", "inspect", tag]);
 }
 
 async function defaultRunDockerBuild(
@@ -355,7 +278,6 @@ async function defaultRunDockerBuild(
   tag: string,
   ctx: SandboxBuildExecutionContext,
 ): Promise<void> {
-  const connection = details.dockerSocketPath === undefined ? [] : ["--host", `unix://${details.dockerSocketPath}`];
   const buildArgs = [
     "--platform",
     details.platform,
@@ -367,43 +289,7 @@ async function defaultRunDockerBuild(
     ...(details.target !== undefined ? ["--target", details.target] : []),
     details.contextDir,
   ];
-  if (details.dockerNetworkMode === undefined) {
-    await runBuildCommand("docker", [...connection, "build", ...buildArgs], ctx.signal);
-    return;
-  }
-
-  // managed daemon 关闭默认 bridge。现代 BuildKit 不接受任意 network ID 作为
-  // `docker build --network`，所以为 reservation 建短生命周期 docker-container builder，
-  // 把 builder 自身绑定到 watchdog 所有的独占网络，并将结果显式 load 回 profile daemon。
-  const builderName = `niceeval-${details.dockerNetworkMode.slice(0, 24)}`;
-  await runBuildCommand(
-    "docker",
-    [
-      ...connection,
-      "buildx",
-      "create",
-      "--driver",
-      "docker-container",
-      "--driver-opt",
-      `network=${details.dockerNetworkMode}`,
-      "--name",
-      builderName,
-    ],
-    ctx.signal,
-  );
-  try {
-    await runBuildCommand(
-      "docker",
-      [...connection, "buildx", "build", "--builder", builderName, "--load", ...buildArgs],
-      ctx.signal,
-    );
-  } finally {
-    await runBuildCommand(
-      "docker",
-      [...connection, "buildx", "rm", "--force", builderName],
-      new AbortController().signal,
-    ).catch(() => undefined);
-  }
+  await runBuildCommand("docker", ["build", ...buildArgs], ctx.signal);
 }
 
 async function defaultE2BTemplateExists(name: string, signal: AbortSignal): Promise<boolean> {

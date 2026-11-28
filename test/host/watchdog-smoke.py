@@ -597,4 +597,3 @@ with tempfile.TemporaryDirectory(prefix="niceeval-watchdog-") as raw:
             raise AssertionError(f"{name} journal must fail closed")
 
 print("watchdog-smoke ok")
-subprocess.run(["pnpm", "exec", "tsx", "test/host/docker-profile-public-smoke.ts"], cwd=ROOT, check=True)

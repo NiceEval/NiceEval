@@ -15,21 +15,9 @@ import {
 
 export const DOCKER_SANDBOX_WORKDIR = "/home/sandbox/workspace";
 
-export function localDockerSupportsState(input: {
-  readonly profile: boolean;
-  readonly dockerAccess: boolean;
-  readonly privileged: boolean;
-  readonly readOnly: boolean;
-}): boolean {
+export function localDockerSupportsState(readOnly: boolean): boolean {
   const host = process.env.DOCKER_HOST;
-  return (
-    process.platform !== "win32" &&
-    (host === undefined || host === "" || host.startsWith("unix://")) &&
-    !input.profile &&
-    !input.dockerAccess &&
-    !input.privileged &&
-    !input.readOnly
-  );
+  return process.platform !== "win32" && (host === undefined || host === "" || host.startsWith("unix://")) && !readOnly;
 }
 
 type Root = StateManifest["roots"][number];

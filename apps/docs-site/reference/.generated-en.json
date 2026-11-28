@@ -106,7 +106,7 @@
   "cli-flags/view/--json": "Output View lifecycle NDJSON, not Inspection results.",
   "cli-flags/view/--help": "Print help for this command.",
   "cli-flags/init/--help": "Print help for this command.",
-  "cli-flags/docker cache gc,docker cache inventory,docker profile doctor,docker profile list/--json": "Write this command's machine document or event stream.",
+  "cli-flags/docker cache gc,docker cache inventory/--json": "Write this command's machine document or event stream.",
   "cli-flags/docker cache gc,docker cache inventory/--domain": "Select one Docker cache domain managed by NiceEval.",
   "cli-flags/docker cache gc/--apply": "Apply a previously issued Docker cache reclamation plan.",
   "cli-flags/docker/--help": "Print help for this command.",

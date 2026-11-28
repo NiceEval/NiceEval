@@ -47,10 +47,7 @@
           ],
           "timeoutMinutes": 30,
           "harness": {
-            "testkit": true,
-            "assets": [
-              "docker-profile-host-scripts"
-            ]
+            "testkit": true
           },
           "secrets": [],
           "requires": {
@@ -61,9 +58,6 @@
             "docker": true,
             "platforms": [
               "linux"
-            ],
-            "hostCapabilities": [
-              "linux-loop-project-quota"
             ]
           },
           "artifacts": [

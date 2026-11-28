@@ -69,7 +69,6 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
 | --- | --- | --- | --- |
 | 全局并发 | `--max-concurrency`，或 `niceeval.config.ts` 的 `maxConcurrency` | 这次运行的总吞吐 | 各算各的，两个终端的值相加 |
 | 实验并发上限 | 实验文件的 `maxConcurrency` | 这一个实验同时跑几个 | 各算各的，两个终端的值相加 |
-| Docker profile 容量 | 宿主机 profile 配置 | 这个 profile 同时允许多少容器和资源 | 同一宿主机上所有终端共享 |
 | 共享状态租约 | 实验文件的 `sharedState.key` | 同一份 checkpoint 从恢复、执行到回存的整段时间 | 同一个 key 的运行排队 |
 
 全局并发按这个顺序取值：`--max-concurrency`，其次是配置里的 `maxConcurrency`，最后是当前 Sandbox Provider 的推荐值（`docker` 10、`e2b` 20、`vercel` 1）。推荐值反映的是 Provider 那边的限制。你自己的 Agent 接口有限速时，用 `--max-concurrency` 压低：
@@ -119,8 +118,6 @@ pnpm exec niceeval exp compare --max-concurrency 19
 - **退避重试中的 Attempt 让出全局位，但不让出实验自己的位。** 所以撞上限流时，live 面板的 `running` 会超过上限，超出的数量正好是正在退避的数量。任一时刻真正在执行的仍然不超过上限，这不是并发失效。
 
 等待实验级 `setup`（起隧道、起共享服务）的 Attempt 不占并发名额，计数里显示为 `queued`。所以隧道启动慢时，面板长时间显示 “0 running、N queued”，问题在 `setup`，不在并发配置。
-
-等待 Docker profile 容量的 Attempt 也显示为 `queued`，排队原因是 `provider-capacity`。它不会显示 `creating sandbox`，也不占普通并发名额。profile 有空余后，它重新拿到并发名额，分到资源才进入 `running`。同批用其它 Provider 的 Attempt 可以继续启动，不会被排在前面的 Docker 任务卡住。
 
 ## 在 live 面板确认并发生效
 

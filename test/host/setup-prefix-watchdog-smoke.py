@@ -211,25 +211,6 @@ def verify_activation_manifest_revision(root: Path) -> None:
         raise AssertionError("legacy activation manifest schema must fail closed")
 
 
-def run_new_client_against_host(admission, socket_path: Path, fixture: dict) -> None:
-    fixture_path = socket_path.with_suffix(".json")
-    fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
-    server = watchdog.Server(str(socket_path), admission)
-    worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
-    worker.start()
-    try:
-        environment = {**os.environ, "NICEEVAL_PROTOCOL_MATRIX_FIXTURE": str(fixture_path)}
-        subprocess.run(
-            ["pnpm", "exec", "tsx", "test/host/docker-profile-public-smoke.ts"],
-            cwd=ROOT, env=environment, check=True,
-        )
-    finally:
-        server.shutdown()
-        worker.join(timeout=10)
-        server.server_close()
-        socket_path.unlink(missing_ok=True)
-
-
 with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     root = Path(raw)
     verify_activation_manifest_revision(root)
@@ -642,48 +623,6 @@ with tempfile.TemporaryDirectory(prefix="niceeval-setup-prefix-") as raw:
     assert prefix_a not in admission.state["setupPrefix"]["artifacts"]
     assert not admission.state["setupPrefix"]["operations"]
     assert admission.state["setupPrefix"]["seeds"]["seed-fullcopy01"]["state"] == "free"
-    client_socket = root / "new-client-new-host.sock"
-    run_new_client_against_host(admission, client_socket, {
-        "lease": {
-            "binding": {
-                "alias": "profile",
-                "profile": {
-                    "profileId": descriptor["profileId"],
-                    "backend": {"filesystem": {
-                        "dockerDataPool": descriptor["backend"]["filesystem"]["dockerDataPool"],
-                        "setupPrefix": capability,
-                    }},
-                },
-                "descriptorDigest": admission.descriptor_digest,
-                "daemonGeneration": challenge["daemonGeneration"],
-                "daemonId": "daemon",
-                "dockerSocketPath": "",
-                "controlSocketPath": str(client_socket),
-                "platform": "linux/amd64",
-            },
-            "invocationId": common["invocationId"],
-            "leaseToken": common["leaseToken"],
-        },
-        "reservation": {
-            "reservationId": "capture",
-            "provisionToken": capture_reservation["provisionToken"],
-            "state": "committed",
-            "slotGeneration": capture_reservation["slotGeneration"],
-        },
-        "input": {
-            "operationId": capture["operationId"],
-            "manifest": {
-                "baseImageId": base_identity,
-                "setupPrefixKey": prefix_a,
-                "setupManifestDigest": "sha256:" + client_digest,
-                "requiredState": "dockerData",
-                "storageSchemaRevision": "storage/v1",
-                "artifactFormatRevision": capability["copyRevision"],
-                "changeFrequency": 1,
-                "declarationMetadata": client_declaration,
-            },
-        },
-    })
     captured = admission.handle(capture)
     assert set(captured) == receipt_wire_fields | {"artifact", "status"}
     assert captured["daemonGeneration"] == challenge["daemonGeneration"]

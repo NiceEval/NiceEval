@@ -2,7 +2,6 @@ import { sandboxCreationLabels } from "./creation-labels.ts";
 // ProviderModule 的唯一运行入口：core 只调用 plan 私绑的闭包，不解释 adapter 名或 JSON runtime input。
 
 import { randomUUID } from "node:crypto";
-import { relative, sep } from "node:path";
 import { Data, Effect, Option, Scope } from "effect";
 import type { ProvisionSlot } from "./retry.ts";
 import { withProvisionRetry } from "./retry.ts";
@@ -18,11 +17,7 @@ import {
   dockerComposeBuildProvider,
   materializeDockerComposeProviderCase,
 } from "./compose.ts";
-import {
-  collectDockerfileBuildFromIdentity,
-  dockerfileBuildProvider,
-  packDockerfileBuildContext,
-} from "./dockerfile-build.ts";
+import { collectDockerfileBuildFromIdentity, dockerfileBuildProvider } from "./dockerfile-build.ts";
 import {
   DockerfileAgentImageCoordinator,
   isDockerfileAgentCacheSafeInstaller,
@@ -39,7 +34,6 @@ import {
 import { normalizeSandboxPaths } from "./paths.ts";
 import { applyCommandDeadline } from "./deadline.ts";
 import { registerSandbox, unregisterSandbox } from "./registry.ts";
-import { omitUndefined } from "../shared/omit-undefined.ts";
 import { currentRunIdentity } from "./run-identity.ts";
 import {
   sandboxProviderBindingOf,
@@ -71,18 +65,6 @@ import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedbac
 import type { CustomProviderSandbox } from "./types.ts";
 import type { AgentIdentity, SandboxAgent } from "../agents/types.ts";
 import type { E2BSandboxLifetime } from "./e2b.ts";
-import {
-  acquireDockerProfileReservation,
-  acquireDockerProfileReservationEffect,
-  createDockerProfileBuild,
-  createDockerProfileContainer,
-  createDockerProfileLease,
-  lookupDockerProfileBuild,
-  releaseDockerProfileReservation,
-  type DockerProfileLease,
-  type DockerProfileRuntimeBinding,
-} from "./docker-profile/runtime.ts";
-
 export type SandboxRuntimeDeadline = SandboxRuntimeDeadlineDeclaration;
 
 /** Stable public reason for an Attempt that has reached a provider admission queue. */
@@ -243,9 +225,7 @@ function dockerCreateOptions(
   image: string,
   context: SandboxRuntimeMaterializeContext,
   provisionToken: string,
-  managed: Effect.Success<ReturnType<typeof managedContainerSession>> | undefined,
 ): import("./docker.ts").DockerSandboxOptions {
-  const binding = managed?.lease.binding;
   return {
     timeout: context.deadline._tag === "Bounded" ? context.deadline.timeoutMs : undefined,
     deadlineAt: context.deadline._tag === "Bounded" ? context.deadline.deadlineAt : undefined,
@@ -253,8 +233,6 @@ function dockerCreateOptions(
     image,
     workdir: undefined,
     user: plan.user._tag === "Configured" ? plan.user.value : undefined,
-    privileged: plan.privileged,
-    dockerAccess: plan.dockerAccess,
     resources: plan.resources,
     readiness: plan.readiness,
     lifetimeMs: configuredLifetime(plan.lifetime),
@@ -265,102 +243,7 @@ function dockerCreateOptions(
       context.runId,
       sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
     ),
-    dockerSocketPath: binding?.dockerSocketPath,
-    dns: binding?.profile.policy.level === "managed-rootless/v1" ? binding.profile.policy.network.dns.servers : [],
-    managedLabels: managed?.labels ?? {},
-    rootlessAttestation:
-      binding === undefined
-        ? undefined
-        : {
-            daemonId: binding.daemonId,
-            dataRoot: binding.profile.backend.filesystem.dockerRootDir,
-          },
-    profileBeforeCache:
-      managed === undefined
-        ? undefined
-        : {
-            lease: managed.lease,
-            currentReservation: () => managed.reservation,
-            replaceReservation: managed.replaceReservation,
-          },
-    afterStop: managed?.finish ?? (async () => {}),
   };
-}
-
-function managedContainerSession(
-  binding: DockerProfileRuntimeBinding,
-  resources: Readonly<import("./layer.ts").DockerSandboxResources>,
-  context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<
-  {
-    readonly lease: DockerProfileLease;
-    readonly reservation: import("./docker-profile/runtime.ts").DockerProfileReservation;
-    readonly labels: Readonly<Record<string, string>>;
-    readonly replaceReservation: Effect.Effect<import("./docker-profile/runtime.ts").DockerProfileReservation, Error>;
-    readonly finish: () => Promise<void>;
-  },
-  Error,
-  Scope.Scope
-> {
-  return Effect.gen(function* () {
-    const scope = yield* Effect.scope;
-    const lease = yield* Effect.acquireRelease(
-      providerBoundaryEffect(() => createDockerProfileLease(binding)),
-      (owned) => providerBoundaryEffect(() => owned.stopHeartbeat()).pipe(Effect.orDie),
-    );
-    const requestedResources = {
-      cpus: resources.cpus ?? 0,
-      memoryBytes: resources.memoryBytes ?? 0,
-      pids: resources.pidsLimit ?? 0,
-      ephemeralDiskBytes: resources.dockerDataBytes ?? 0,
-      containers: 1,
-    } as const;
-    const admission = dockerProfileAdmission(context);
-    let owner = yield* acquireDockerProfileReservationEffect(
-      lease,
-      "container",
-      requestedResources,
-      admission,
-      context.signal,
-    );
-    const replaceReservation = Effect.uninterruptibleMask((restore) =>
-      Effect.gen(function* () {
-        // The host must scrub/retire the current slot before another private slot can
-        // be granted. Release is uninterruptible; the new scoped acquisition remains
-        // interruptible while queued and owns its finalizer before it can be observed.
-        yield* providerBoundaryEffect(() => owner.release());
-        const replacement = yield* restore(
-          acquireDockerProfileReservationEffect(lease, "container", requestedResources, admission, context.signal).pipe(
-            Effect.provideService(Scope.Scope, scope),
-          ),
-        );
-        owner = replacement;
-        return replacement.reservation;
-      }),
-    );
-    return {
-      lease,
-      get reservation() {
-        return owner.reservation;
-      },
-      get labels() {
-        return {
-          "niceeval.profile-id": binding.profile.profileId,
-          "niceeval.invocation-id": lease.invocationId,
-          "niceeval.reservation-id": owner.reservation.reservationId,
-          "niceeval.provision-token": owner.reservation.provisionToken,
-        };
-      },
-      replaceReservation,
-      finish: async () => {
-        // Do not stop the heartbeat here: cancellation can land after a new
-        // owner registered its Scope finalizer but before the mutable current
-        // pointer advances. Scope closes every reservation owner (newest first)
-        // and only then runs the older lease finalizer.
-        await owner.release();
-      },
-    };
-  });
 }
 
 /**
@@ -406,17 +289,6 @@ function boundAdmission(context: SandboxRuntimeMaterializeContext): SandboxRunti
 
 function admitImmediately(context: SandboxRuntimeMaterializeContext): Effect.Effect<void> {
   return boundAdmission(context)?.granted ?? Effect.void;
-}
-
-function dockerProfileAdmission(
-  context: SandboxRuntimeMaterializeContext,
-): import("./docker-profile/runtime.ts").DockerProfileReservationAdmission {
-  const admission = boundAdmission(context);
-  return {
-    queued: admission?.queued("provider-capacity") ?? Effect.void,
-    granted: admission?.granted ?? Effect.void,
-    slot: admission?.slot === undefined ? undefined : admission.slot,
-  };
 }
 
 export function wrapSingleSandbox(
@@ -590,7 +462,7 @@ export function materializeDockerfileProviderPlan(
             ),
           )
         : Effect.andThen(
-            plan.profileBinding === undefined ? admitImmediately(context) : Effect.void,
+            admitImmediately(context),
             Effect.flatMap(
               resolveDockerfileAgentImage(plan, context, locator).pipe(
                 Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
@@ -602,49 +474,15 @@ export function materializeDockerfileProviderPlan(
                     const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
                       () => import("./docker.ts"),
                     );
-                    const managed =
-                      plan.profileBinding === undefined
-                        ? undefined
-                        : yield* managedContainerSession(plan.profileBinding, plan.resources, context);
-                    const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
-                    return yield* Effect.gen(function* () {
-                      const createOptions = dockerCreateOptions(
-                        plan,
-                        resolved.locator,
-                        context,
-                        provisionToken,
-                        managed,
-                      );
-                      const backend = yield* withProvisionRetry(
-                        managed === undefined
-                          ? DockerSandbox.createEffect(createOptions)
-                          : providerBoundaryEffect(() =>
-                              DockerSandbox.createControlled(createOptions, (create, signal) =>
-                                createDockerProfileContainer(
-                                  managed.lease,
-                                  managed.reservation.reservationId,
-                                  omitUndefined({ ...create, attemptId: context.evalId }),
-                                  signal,
-                                ),
-                              ),
-                            ),
-                        classifyProvisionError,
-                        boundProvisionSlot(context),
-                        context.feedback,
-                        managed === undefined
-                          ? providerBoundaryEffect(() =>
-                              reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath),
-                            )
-                          : Effect.void,
-                      );
-                      return wrapAttemptCapturedSandbox(backend, context, { image: resolved.locator });
-                    }).pipe(
-                      Effect.onError(() =>
-                        managed === undefined
-                          ? Effect.void
-                          : providerBoundaryEffect(() => managed.finish()).pipe(Effect.ignore),
-                      ),
+                    const provisionToken = randomUUID();
+                    const backend = yield* withProvisionRetry(
+                      DockerSandbox.createEffect(dockerCreateOptions(plan, resolved.locator, context, provisionToken)),
+                      classifyProvisionError,
+                      boundProvisionSlot(context),
+                      context.feedback,
+                      providerBoundaryEffect(() => reconcileProvision(provisionToken)),
                     );
+                    return wrapAttemptCapturedSandbox(backend, context, { image: resolved.locator });
                   }),
                 ),
             ),
@@ -667,11 +505,6 @@ function resolveDockerfileAgentImage(
   context: SandboxRuntimeMaterializeContext,
   taskLocator: string,
 ): Effect.Effect<{ readonly status: "hit" | "built" | "unsupported"; readonly locator: string }, Error> {
-  // Derived Agent image coordination is still bound to the default Docker endpoint.
-  // A profile Dockerfile must never cross daemons, so consume the task image directly.
-  if (plan.profileBinding !== undefined || plan.dockerAccess !== undefined) {
-    return Effect.succeed({ status: "unsupported", locator: taskLocator });
-  }
   const request = dockerfileAgentCacheRequest(
     plan,
     context.agent,
@@ -795,43 +628,19 @@ export function materializeDockerImageProviderPlan(
   return materializationEffect(
     context,
     Effect.gen(function* () {
-      if (plan.profileBinding === undefined) yield* admitImmediately(context);
+      yield* admitImmediately(context);
       const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
         () => import("./docker.ts"),
       );
-      const managed =
-        plan.profileBinding === undefined
-          ? undefined
-          : yield* managedContainerSession(plan.profileBinding, plan.resources, context);
-      const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
-      return yield* Effect.gen(function* () {
-        const createOptions = dockerCreateOptions(plan, plan.image, context, provisionToken, managed);
-        const backend = yield* withProvisionRetry(
-          managed === undefined
-            ? DockerSandbox.createEffect(createOptions)
-            : providerBoundaryEffect(() =>
-                DockerSandbox.createControlled(createOptions, (create, signal) =>
-                  createDockerProfileContainer(
-                    managed.lease,
-                    managed.reservation.reservationId,
-                    omitUndefined({ ...create, attemptId: context.evalId }),
-                    signal,
-                  ),
-                ),
-              ),
-          classifyProvisionError,
-          boundProvisionSlot(context),
-          context.feedback,
-          managed === undefined
-            ? providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath))
-            : Effect.void,
-        );
-        return wrapAttemptCapturedSandbox(backend, context, { image: plan.image });
-      }).pipe(
-        Effect.onError(() =>
-          managed === undefined ? Effect.void : providerBoundaryEffect(() => managed.finish()).pipe(Effect.ignore),
-        ),
+      const provisionToken = randomUUID();
+      const backend = yield* withProvisionRetry(
+        DockerSandbox.createEffect(dockerCreateOptions(plan, plan.image, context, provisionToken)),
+        classifyProvisionError,
+        boundProvisionSlot(context),
+        context.feedback,
+        providerBoundaryEffect(() => reconcileProvision(provisionToken)),
       );
+      return wrapAttemptCapturedSandbox(backend, context, { image: plan.image });
     }),
   );
 }
@@ -1136,7 +945,6 @@ export function collectDockerfileProviderBuildPreparation(
       target: plan.target,
       platform: plan.platform,
       expected: plan.build,
-      dockerSocketPath: plan.profileBinding?.dockerSocketPath,
     }).pipe(Effect.mapError((cause) => buildFailure(published, "sandbox.build-input-drift", cause)));
     return yield* Effect.try({
       try: () => {
@@ -1145,71 +953,9 @@ export function collectDockerfileProviderBuildPreparation(
             "Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.",
           );
         }
-        const provider = dockerfileBuildProvider([collection]);
-        const managedSource = (locator: string, source: "cache" | "build") => ({
-          locator,
-          source,
-          acquireUse: async () => ({ locator, release() {} }),
-          release() {},
-        });
-        const managedProvider: SandboxBuildProvider =
-          plan.profileBinding === undefined
-            ? provider
-            : {
-                async lookup(work) {
-                  const result = await lookupDockerProfileBuild(plan.profileBinding!, work.buildKey);
-                  return result.hit
-                    ? { _tag: "Hit", source: managedSource(result.locator, "cache") }
-                    : { _tag: "Miss" };
-                },
-                async build(work, buildContext) {
-                  const lease = await createDockerProfileLease(plan.profileBinding!);
-                  let reservation: import("./docker-profile/runtime.ts").DockerProfileReservation | undefined;
-                  try {
-                    reservation = await acquireDockerProfileReservation(
-                      lease,
-                      "build",
-                      {
-                        cpus: 0,
-                        memoryBytes: 0,
-                        pids: 0,
-                        containers: 0,
-                        ephemeralDiskBytes: 0,
-                      },
-                      buildContext.signal,
-                    );
-                    const dockerfile = relative(collection.details.contextDir, collection.details.dockerfilePath)
-                      .split(sep)
-                      .join("/");
-                    const result = await createDockerProfileBuild(
-                      lease,
-                      reservation.reservationId,
-                      {
-                        buildKey: work.buildKey,
-                        platform: collection.details.platform,
-                        dockerfile,
-                        ...(collection.details.buildArgs === undefined
-                          ? {}
-                          : { buildArgs: collection.details.buildArgs }),
-                        ...(collection.details.target === undefined ? {} : { target: collection.details.target }),
-                      },
-                      packDockerfileBuildContext(collection.details),
-                      buildContext.signal,
-                    );
-                    await releaseDockerProfileReservation(lease, reservation.reservationId);
-                    reservation = undefined;
-                    return managedSource(result.locator, "build");
-                  } finally {
-                    if (reservation !== undefined) {
-                      await releaseDockerProfileReservation(lease, reservation.reservationId).catch(() => undefined);
-                    }
-                    await lease.stopHeartbeat().catch(() => undefined);
-                  }
-                },
-              };
         return Option.some({
           works: [collection.work],
-          provider: managedProvider,
+          provider: dockerfileBuildProvider([collection]),
         });
       },
       catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
@@ -1504,10 +1250,6 @@ export function acquireSandboxRunPlan(
               )
           : binding.materialize(context);
       const release = (owned: MaterializedSandboxCase) => releaseOwned(input, owned);
-      // Profile admission registers its reservation owner before queueing. Its
-      // queue/reacquire segment must remain interruptible so an Attempt deadline
-      // can release a granted reservation while scheduler permits are unavailable.
-      // Other providers keep the conservative uninterruptible acquisition gate.
       let acquired: MaterializedSandboxCase | undefined;
       const owned = binding.interruptibleAcquisition
         ? Effect.acquireRelease(
