@@ -1080,10 +1080,6 @@ export function showSession(
   );
 }
 
-function shortRunId(runId: string): string {
-  return runId.slice(0, 8);
-}
-
 function ageLabel(iso: string, nowMs: number): string {
   const elapsed = Math.max(0, nowMs - Date.parse(iso));
   if (elapsed < 1_000) return "now";
@@ -1093,16 +1089,17 @@ function ageLabel(iso: string, nowMs: number): string {
 }
 
 function renderExperimentLine(experiment: SessionExperimentRecord): string {
+  const address = `run:${experiment.runId}`;
   if (experiment.published) {
-    return `  ${experiment.experimentId}  niceeval show run:${experiment.runId}`;
+    return `  ${experiment.experimentId}  niceeval show ${address}`;
   }
-  if (experiment.lifecycle === "terminal") return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}`;
+  if (experiment.lifecycle === "terminal") return `  ${experiment.experimentId}  ${address}`;
   const counters = [
     experiment.running ? `${experiment.running} running` : "",
     experiment.queued ? `${experiment.queued} queued` : "",
     experiment.elsewhere ? `${experiment.elsewhere} elsewhere` : "",
   ].filter(Boolean);
-  return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}  ${experiment.state}${counters.length ? ` · ${counters.join(" · ")}` : ""}`;
+  return `  ${experiment.experimentId}  ${address}  ${experiment.state}${counters.length ? ` · ${counters.join(" · ")}` : ""}`;
 }
 
 export function renderSessionListText(document: SessionListDocument, nowMs = Date.now(), all = false): string {

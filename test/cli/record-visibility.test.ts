@@ -4,7 +4,7 @@ import { setTimeout } from "node:timers/promises";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { Effect } from "effect";
-import { experimentHost } from "niceeval/experiment/host";
+import { decodeSessionListDocument, decodeSessionShowDocument, experimentHost } from "niceeval/experiment/host";
 import { decodeInspectionDocument } from "niceeval/inspection";
 import { runHost } from "niceeval/run/host";
 import { runCliInProcess } from "../../packages/niceeval/src/cli/in-process.ts";
@@ -12,9 +12,18 @@ import { createRecordProject, openGate, waitForGate } from "../integration/fixtu
 
 const config = { maxConcurrency: 2, maxRetries: 0 };
 let cwd: string;
+let invocationId: string;
 let runId: string;
 let locator: string;
 let running: Promise<unknown>;
+const invocationRead = fc.tuple(fc.constantFrom("list", "show"), fc.boolean());
+const invocationExamples: [("list" | "show"), boolean][] = [
+  ["list", false],
+  ["show", false],
+  ["list", true],
+  ["show", true],
+];
+const invocationRoundTrips = new Map<string, Awaited<ReturnType<typeof readInvocationRun>>>();
 
 beforeAll(async () => {
   cwd = await createRecordProject("niceeval-record-visibility-", { held: true });
@@ -27,16 +36,20 @@ beforeAll(async () => {
   for (const deadline = Date.now() + 8_000; ; ) {
     const [summary] = (await Effect.runPromise(runHost.list({ cwd }))).runs;
     if (summary?.coverage.published === 1) {
+      invocationId = summary.invocationId;
       runId = summary.runId;
       const published = (await Effect.runPromise(runHost.get({ cwd, runId }))).run.slots.find(
         ({ publication }) => publication.state === "published",
       )!.publication;
       if (published.state !== "published") throw new Error("unreachable");
       locator = published.attemptLocator;
-      return;
+      break;
     }
     if (Date.now() >= deadline) throw new Error("The first Attempt did not publish");
     await setTimeout(10);
+  }
+  for (const [verb, json] of invocationExamples) {
+    invocationRoundTrips.set(JSON.stringify([verb, json]), await readInvocationRun(verb, json));
   }
 }, 20_000);
 
@@ -105,5 +118,46 @@ test("a published Attempt is readable and its Run lists as active with pending s
       },
     ),
     { numRuns: 2, examples: [[["attempt-json", "run-human"]], [["attempt-json", "run-json"]]] },
+  );
+});
+
+async function readInvocationRun(verb: "list" | "show", json: boolean) {
+  const invocation = verb === "list" ? ["invocation", "list"] : ["invocation", "show", invocationId];
+  if (json) invocation.push("--json");
+  const result = await cli(invocation);
+  if (result.code !== 0) throw new Error(`${invocation.join(" ")}: ${result.stderr}`);
+
+  let address: string | undefined;
+  if (json) {
+    const payload: unknown = JSON.parse(result.stdout);
+    const session =
+      verb === "list" ? decodeSessionListDocument(payload).sessions[0] : decodeSessionShowDocument(payload).session;
+    const experiment = session && "experiments" in session ? session.experiments[0] : undefined;
+    if (experiment !== undefined) address = `run:${experiment.runId}`;
+  } else {
+    address = /(?:^|\s)(@?run:\S+)/u.exec(result.stdout)?.[1];
+  }
+  if (address === undefined) throw new Error(`Missing Run address in ${invocation.join(" ")}:\n${result.stdout}`);
+  return { address, detail: await cli(["show", address, "--json"]) };
+}
+
+// @feature docs/feature/run/README.md#publication-visibility
+// @use-case docs/feature/run/use-case/观察运行中的批次.md#show
+test("Run IDs from Invocation status open the same active Run in show", () => {
+  fc.assert(
+    fc.property(invocationRead, ([verb, json]) => {
+      const observation = invocationRoundTrips.get(JSON.stringify([verb, json]));
+      if (observation === undefined) throw new Error(`Missing observation for invocation ${verb} (json=${json})`);
+      const { address, detail } = observation;
+      expect(detail.code, `show ${address}: ${detail.stderr}\n${detail.stdout}`).toBe(0);
+      const decoded = decodeInspectionDocument(JSON.parse(detail.stdout));
+      if (!decoded.success) throw new Error(decoded.reason);
+      expect(decoded.value).toMatchObject({
+        operation: "run.get",
+        outcome: "success",
+        run: { value: { runId, state: "active" } },
+      });
+    }),
+    { numRuns: 1, examples: invocationExamples.map((action) => [action]) },
   );
 });
