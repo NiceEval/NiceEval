@@ -22,6 +22,7 @@ const agent = claudeCodeAgent({
 
 `skills`、`mcpServers` 和 Claude Code 原生 `plugins` 均在 before 阶段安装。
 Marketplace 连接不代表启用其中所有插件，每项必须显式给出 Plugin 名。
+
 带 `ref` 的 marketplace 先按 ref clone 到 Sandbox，再以本地路径连接，这样 ref 才能固定到 commit。
 来源是 `anthropics/*` GitHub 仓库时不能这样做：Claude Code 只接受来自 Anthropic GitHub 组织的远程来源注册官方保留名（如 `claude-plugins-official`），本地路径会被拒绝；CLI 的远程来源只能按 branch 或 tag 浅克隆，无法冻结到 commit。
 因此这类来源声明 `ref` 时，`claudeCodeAgent()` 在构造时就以 `TypeError` 拒绝，不留到 before 阶段才失败；去掉 `ref` 即按官方远程来源连接。
