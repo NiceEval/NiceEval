@@ -105,6 +105,7 @@ const ExpFailureEventSchema = Schema.Struct({
   locator: Schema.String,
   evalId: Schema.String,
   experimentId: Schema.String,
+  displayName: Schema.String,
   verdict: Schema.Literals(["failed", "errored"]),
   fact: Schema.String,
   matcher: Schema.optional(Schema.String),
@@ -117,6 +118,7 @@ export const ExpErrorEventSchema = Schema.Struct({
   locator: Schema.String,
   evalId: Schema.String,
   experimentId: Schema.String,
+  displayName: Schema.String,
   phase: Schema.String,
   reason: Schema.String,
 });
@@ -127,6 +129,7 @@ const ExpEvalBaseSchema = Schema.Struct({
   locator: Schema.String,
   evalId: Schema.String,
   experimentId: Schema.String,
+  displayName: Schema.String,
   verdict: Schema.Literals(["passed", "failed", "errored", "skipped"]),
   attempts: NonNegativeIntegerSchema,
 });
@@ -170,6 +173,7 @@ const ExpNoticeEventSchema = Schema.Struct({
   message: Schema.String,
   phase: Schema.optional(Schema.String),
   experimentId: Schema.optional(Schema.String),
+  displayName: Schema.optional(Schema.String),
   evalId: Schema.optional(Schema.String),
   resource: Schema.optional(Schema.Literal("case-lock")),
   previousPid: Schema.optional(NonNegativeIntegerSchema),
@@ -182,6 +186,7 @@ const ExpWarningEventSchema = Schema.Struct({
   message: Schema.String,
   phase: Schema.optional(Schema.String),
   experimentId: Schema.optional(Schema.String),
+  displayName: Schema.optional(Schema.String),
   evalId: Schema.optional(Schema.String),
   planned: Schema.optional(NonNegativeIntegerSchema),
   errored: Schema.optional(NonNegativeIntegerSchema),
@@ -189,6 +194,7 @@ const ExpWarningEventSchema = Schema.Struct({
 const ExpBudgetExhaustedEventSchema = Schema.Struct({
   event: Schema.Literal("budget_exhausted"),
   experimentId: Schema.String,
+  displayName: Schema.String,
   spent: NonNegativeIntegerSchema,
   unstarted: NonNegativeIntegerSchema,
 });
@@ -207,12 +213,14 @@ const ExpJudgePrecheckEventSchema = Schema.Struct({
 const ExpExperimentHookEventSchema = Schema.Struct({
   event: Schema.Literals(["experiment_setup", "experiment_teardown"]),
   experimentId: Schema.String,
+  displayName: Schema.String,
   status: Schema.Literals(["started", "done", "failed"]),
   durationMs: Schema.optional(NonNegativeIntegerSchema),
 });
 const ExpLockWaitEventSchema = Schema.Struct({
   event: Schema.Literal("lock_wait"),
   experimentId: Schema.String,
+  displayName: Schema.String,
   evalId: Schema.String,
   status: Schema.Literals(["started", "resolved"]),
   holderPid: Schema.optional(NonNegativeIntegerSchema),

@@ -13,6 +13,22 @@ const PRIMARY_ERROR_HEAD = "502 Bad Gateway · DOCKER_PROVIDER_TIMEOUT";
 const PRIMARY_ERROR_TAIL = "request req_docker_primary_789";
 const SECONDARY_ERROR_HEAD = "409 Conflict · DOCKER_BUILD_DENIED";
 const SECONDARY_ERROR_TAIL = "request req_docker_secondary_987";
+
+function readNext(output: string, runIds: readonly string[]): string {
+  const next = output.slice(output.lastIndexOf("NEXT")).trim();
+  const [, printedIds, cutoff, commands] = /^NEXT (.+?) publicationCutoff (\{[^}]+\}) (.+)$/u.exec(next) ?? [];
+  if (printedIds === undefined || cutoff === undefined || commands === undefined)
+    throw new Error(`Invalid NEXT panel: ${next}`);
+  const ids = printedIds.split(" ");
+  expect([...ids].sort()).toEqual(runIds);
+  expect(JSON.parse(cutoff)).toEqual({
+    storeGeneration: expect.stringMatching(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u),
+    revision: expect.any(Number),
+  });
+  expect(commands).toContain(`show: niceeval show run:${ids[0]} view: niceeval view run:${ids[0]}`);
+  return commands;
+}
+
 // @feature docs/feature/experiments/README.md
 // @regression memory/human-short-error-and-score-summary.md
 // @regression memory/pre-dispatch-run-diagnostics.md
@@ -81,7 +97,7 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
       const runIds = listed.runsList().selection.selectedRunIds;
       expect(runIds).toHaveLength(7);
       const summaries = await Promise.all(
-        runIds.map(async (runId, index) => {
+        runIds.map(async (runId) => {
           const queried = await niceeval.run(["show", `run:${runId}`, "--json"]);
           expect(queried.exitCode, queried.diagnostic()).toBe(0);
           return queried.run();
@@ -164,14 +180,14 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
           .sort();
       const shortRuns = runsFor(true);
       expect(shortRuns).toHaveLength(1);
-      const shortNext = shortOutput.slice(shortOutput.lastIndexOf("NEXT")).trim();
-      expect(shortNext).toBe(`NEXT show: niceeval show run:${shortRuns[0]} view: niceeval view run:${shortRuns[0]}`);
+      const shortNext = readNext(shortOutput, shortRuns);
+      expect(shortNext).toBe(`show: niceeval show run:${shortRuns[0]} view: niceeval view run:${shortRuns[0]}`);
 
       const providerRuns = runsFor(false);
       expect(providerRuns).toHaveLength(6);
-      const providerNext = compact.slice(compact.lastIndexOf("NEXT")).trim();
+      const providerNext = readNext(compact, providerRuns);
       const nextCommands =
-        /^NEXT show: niceeval show run:([0-9a-f-]+) view: niceeval view run:\1 \+5 more — niceeval run list --invocation (\S+)$/u;
+        /^show: niceeval show run:([0-9a-f-]+) view: niceeval view run:\1 \+5 more — niceeval run list --invocation (\S+)$/u;
       expect(providerNext).toMatch(nextCommands);
       const [, representativeRun, invocationId] = nextCommands.exec(providerNext)!;
       expect(providerRuns).toContain(representativeRun);
@@ -183,19 +199,32 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
 
       expect(shortOutput).not.toContain("details: niceeval view");
       expect(compact).not.toContain("details: niceeval view");
-      const errorLocators = summaries
-        .flatMap(({ run }) => run.plannedAttempts)
-        .flatMap(({ publication, state }) =>
-          publication.state === "published" && state === "executed" ? [publication.attemptLocator] : [],
-        );
-      expect(errorLocators).toHaveLength(7);
-      for (const [index, locator] of errorLocators.entries()) {
+      const errorAttempts = summaries.flatMap(({ run }) =>
+        run.plannedAttempts.flatMap(({ publication, state }) =>
+          publication.state === "published" && state === "executed"
+            ? [{ locator: publication.attemptLocator, experimentId: run.value.experimentId }]
+            : [],
+        ),
+      );
+      expect(errorAttempts).toHaveLength(7);
+      const traceReasons = new Map([
+        ["short-error", /Missing API_KEY; configure the provider before running/u],
+        ["provider-error/e2b", /401 Unauthorized — E2B .*request req_e2b_feedback_123/u],
+        ["provider-error/vercel", /403 Forbidden — Vercel .*request iad1::feedback-456/u],
+        [
+          "provider-error/prefix",
+          /Incus POST .* failed: PREFIX_ALLOCA.*\[\d+ bytes omitted\].*request req_prefix_capacity_123/u,
+        ],
+      ]);
+      for (const { locator, experimentId } of errorAttempts) {
+        const reason = traceReasons.get(experimentId);
+        if (reason === undefined) throw new Error(`Missing expected trace reason for ${experimentId}`);
         const queried = await niceeval.run(["show", locator, "execution", "--json"]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         const document = queried.attemptTrace();
         expect(document).toMatchObject({ operation: "attempt.trace", issues: [] });
-        expect(JSON.stringify(document.trace)).toMatch(
-          /401 Unauthorized|403 Forbidden|Missing API_KEY|PREFIX_ALLOCATION_FAILED/u,
+        expect(document.trace.diagnostics.items, queried.diagnostic()).toEqual(
+          expect.arrayContaining([expect.objectContaining({ summary: expect.stringMatching(reason) })]),
         );
       }
 

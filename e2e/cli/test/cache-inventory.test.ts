@@ -25,7 +25,7 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
 
     const dockerHelp = await niceeval.run(["docker", "--help"]);
     expect(dockerHelp.exitCode, dockerHelp.diagnostic()).toBe(0);
-    expect(dockerHelp.stdout).toContain("profile");
+    expect(dockerHelp.stdout).not.toContain("profile");
     expect(dockerHelp.stdout).toContain("cache");
 
     const cacheHelp = await niceeval.run(["docker", "cache", "--help"]);

@@ -1,3 +1,4 @@
+import { dirname, resolve } from "node:path";
 import { Predicate, Schema } from "effect";
 
 import { matchesTitlePath, titleTemplate } from "./title-template.ts";
@@ -45,7 +46,10 @@ const PlaywrightSuite = Schema.Struct({
     ),
   ),
 });
-const PlaywrightReport = Schema.Struct({ suites: Schema.Array(Schema.Unknown) });
+const PlaywrightReport = Schema.Struct({
+  config: Schema.Struct({ configFile: Schema.String, rootDir: Schema.String }),
+  suites: Schema.Array(Schema.Unknown),
+});
 
 const decodeJson = (stdout: string): unknown => {
   const trimmed = stdout.trim();
@@ -170,18 +174,25 @@ const selectedPlaywright = (input: unknown, selection: NativeSelection): NativeT
   const visit = (value: unknown, parents: readonly string[], inheritedFile?: string): void => {
     const suite = Schema.decodeUnknownSync(PlaywrightSuite)(value);
     const path = suite.title === undefined || suite.title.length === 0 ? parents : [...parents, suite.title];
-    for (const spec of suite.specs ?? [])
+    const file = suite.file ?? inheritedFile;
+    for (const spec of suite.specs ?? []) {
+      const specFile = spec.file ?? file;
       for (const test of spec.tests)
         observed.push({
-          ...((spec.file ?? suite.file ?? inheritedFile) ? { file: spec.file ?? suite.file ?? inheritedFile } : {}),
+          ...(specFile === undefined ? {} : { file: resolve(report.config.rootDir, specFile) }),
           titlePath: [...path, spec.title],
           outcome: test.status === "expected" ? "passed" : test.status === "unexpected" ? "failed" : test.status,
           retries: Math.max(0, ...test.results.map((result) => result.retry)),
         });
-    for (const child of suite.suites ?? []) visit(child, path, suite.file ?? inheritedFile);
+    }
+    for (const child of suite.suites ?? []) visit(child, path, file);
   };
   for (const suite of report.suites) visit(suite, []);
-  return selectedObservation(observed, selection);
+  // Playwright reports files relative to its rootDir; inventory paths start beside the config.
+  return selectedObservation(observed, {
+    ...selection,
+    ...(selection.file === undefined ? {} : { file: resolve(dirname(report.config.configFile), selection.file) }),
+  });
 };
 
 export const VITEST_JSON_REPORTER_PATH = ".e2e-artifacts/niceeval-json-reporter.mjs";
