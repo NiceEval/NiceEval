@@ -8,6 +8,7 @@ import { attemptArtifactsRecordAttachment, runArtifactsRecordAttachment } from "
 import { assertionsRecordAttachment } from "./assertions/definition.ts";
 import { fileChangesRecordAttachment } from "./file-changes/definition.ts";
 import { executionTracesRecordCollection } from "./execution-traces/definition.ts";
+import { executionTraceIndexRecordCollection } from "./execution-traces/index-definition.ts";
 import {
   attemptRunnerActivitiesRecordAttachment,
   runRunnerActivitiesRecordAttachment,
@@ -40,6 +41,7 @@ export const NiceEvalRecordAttachments = Object.freeze({
   }),
   fileChanges: fileChangesRecordAttachment,
   executionTraces: executionTracesRecordCollection,
+  executionTraceIndex: executionTraceIndexRecordCollection,
   identityManifests: identityManifestsRecordAttachment,
   sources: sourcesRecordAttachment,
   artifacts: Object.freeze({
@@ -70,6 +72,7 @@ export const NiceEvalCurrentRecordAttachments = Object.freeze({
   }),
   fileChanges: current(fileChangesRecordAttachment),
   executionTraces: current(executionTracesRecordCollection),
+  executionTraceIndex: current(executionTraceIndexRecordCollection),
   identityManifests: current(identityManifestsRecordAttachment),
   sources: current(sourcesRecordAttachment),
   artifacts: Object.freeze({

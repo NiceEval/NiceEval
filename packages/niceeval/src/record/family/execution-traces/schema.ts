@@ -173,7 +173,7 @@ export function parseTraceArtifactJson(chunks: Iterable<Uint8Array>): unknown {
   return JSON.parse(text + decoder.decode());
 }
 
-const CollectionSchema = Schema.Union([
+export const ExecutionTraceCollectionSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("complete"),
     limitations: Schema.Tuple([]),
@@ -196,7 +196,7 @@ const ScopeSchema = Schema.Struct({
 });
 const InputScopeSchema = ScopeSchema.mapFields((fields) => ({ ...fields, boundary: TraceInputJsonSchema }));
 
-const ArchiveSchema = Schema.Struct({
+export const ExecutionTraceArchiveRecordSchema = Schema.Struct({
   system: IdentifierSchema.pipe(
     Schema.check(
       Schema.makeFilter((value) => !/[\p{Cc}\uD800-\uDFFF]/u.test(value), {
@@ -208,7 +208,10 @@ const ArchiveSchema = Schema.Struct({
   sha256: Schema.optional(Sha256Schema),
   byteLength: Schema.optional(NonNegativeSafeIntegerSchema),
 });
-const InputArchiveSchema = ArchiveSchema.mapFields((fields) => ({ ...fields, locator: TraceInputJsonSchema }));
+const InputArchiveSchema = ExecutionTraceArchiveRecordSchema.mapFields((fields) => ({
+  ...fields,
+  locator: TraceInputJsonSchema,
+}));
 
 const LinkSchema = Schema.Union([
   Schema.Struct({ relation: IdentifierSchema, targetKey: IdentifierSchema }),
@@ -302,23 +305,38 @@ const InputEventSchema = Schema.Struct({
   display: Schema.optional(Schema.Array(InputDisplayBlockSchema)),
 });
 
-export const ExecutionTraceInputSchema = Schema.Struct({
+export const ExecutionTraceInputHeaderSchema = Schema.Struct({
   traceId: IdentifierSchema,
   schema: Schema.Struct({ id: IdentifierSchema }),
   archive: Schema.optional(InputArchiveSchema),
-  collection: CollectionSchema,
-  scopes: Schema.Array(InputScopeSchema),
-  events: Schema.Array(InputEventSchema),
 });
+
+export const ExecutionTraceInputSchema = ExecutionTraceInputHeaderSchema.pipe(
+  Schema.fieldsAssign({
+    collection: ExecutionTraceCollectionSchema,
+    scopes: Schema.Array(InputScopeSchema),
+    events: Schema.Array(InputEventSchema),
+  }),
+);
+
+export const ExecutionTraceStreamItemSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("scope"), scope: InputScopeSchema }),
+  Schema.Struct({ kind: Schema.Literal("event"), event: InputEventSchema }),
+  Schema.Struct({ kind: Schema.Literal("end"), collection: ExecutionTraceCollectionSchema }),
+]);
 
 export const ExecutionTraceHeaderRecordSchema = Schema.Struct({
   kind: Schema.Literal("trace-header"),
   traceId: IdentifierSchema,
   sourceTraceId: IdentifierSchema,
   schema: Schema.Struct({ id: IdentifierSchema }),
-  archive: Schema.optional(ArchiveSchema),
-  collection: CollectionSchema,
+  archive: Schema.optional(ExecutionTraceArchiveRecordSchema),
+  collection: ExecutionTraceCollectionSchema,
   scopes: Schema.Array(ScopeSchema),
+  index: Schema.optional(Schema.Literal("published")),
+  scopeCount: Schema.optional(NonNegativeSafeIntegerSchema),
+  eventCount: Schema.optional(NonNegativeSafeIntegerSchema),
+  evidenceCount: Schema.optional(NonNegativeSafeIntegerSchema),
 });
 
 export const ExecutionTraceEventRecordSchema = Schema.Struct({
@@ -376,9 +394,23 @@ export const ExecutionTraceRecordSchema = Schema.Union([
   ExecutionTraceEventRecordSchema,
 ]);
 
+export const ExecutionTraceScopeRecordSchema = Schema.Struct({
+  kind: Schema.Literal("scope"),
+  traceId: IdentifierSchema,
+  ordinal: NonNegativeSafeIntegerSchema,
+  scope: ScopeSchema,
+});
+export const ExecutionTraceStoredRecordSchema = Schema.Union([
+  ExecutionTraceHeaderRecordSchema,
+  ExecutionTraceEventRecordSchema,
+  ExecutionTraceScopeRecordSchema,
+]);
+
 export type ExecutionTraceHeaderRecord = Schema.Schema.Type<typeof ExecutionTraceHeaderRecordSchema>;
 export type ExecutionTraceEventRecord = Schema.Schema.Type<typeof ExecutionTraceEventRecordSchema>;
 export type ExecutionTraceRecord = Schema.Schema.Type<typeof ExecutionTraceRecordSchema>;
+export type ExecutionTraceScopeRecord = Schema.Schema.Type<typeof ExecutionTraceScopeRecordSchema>;
+export type ExecutionTraceStoredRecord = Schema.Schema.Type<typeof ExecutionTraceStoredRecordSchema>;
 export type ExecutionDisplayBlockRecord = Schema.Schema.Type<typeof ExecutionDisplayBlockRecordSchema>;
 
 export const ExecutionTraceRecordLimits = Object.freeze({

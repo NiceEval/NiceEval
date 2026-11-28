@@ -1,9 +1,18 @@
 import { createHash, randomBytes } from "node:crypto";
 import { openSync, readSync, closeSync } from "node:fs";
+import { setImmediate } from "node:timers/promises";
 
 import { Data, Result, Schema, SchemaIssue } from "effect";
 
-import type { ExecutionTraceInput, ExecutionTraceReceipt, TraceJson } from "../adapter-execution-trace.ts";
+import type { AdapterCreateContext } from "../adapter.ts";
+import type {
+  ExecutionTraceInput,
+  ExecutionTraceReceipt,
+  ExecutionTraceStreamInput,
+  ExecutionTraceStreamItem,
+  ExecutionTraceStreamReceipt,
+  TraceJson,
+} from "../adapter-execution-trace.ts";
 import {
   canonicalTraceJsonChunks,
   displayTextHasForbiddenCharacter,
@@ -11,13 +20,26 @@ import {
   snapshotTraceJson,
   ExecutionDisplayImageMediaTypes,
   ExecutionTraceInputSchema,
+  ExecutionTraceInputHeaderSchema,
+  ExecutionTraceStreamItemSchema,
   type ExecutionDisplayBlockRecord,
   type ExecutionTraceEventRecord,
   type ExecutionTraceHeaderRecord,
   type ExecutionTraceRecord,
+  type ExecutionTraceStoredRecord,
 } from "../record/family/execution-traces/schema.ts";
+import type { DiagnosticInput } from "../shared/types.ts";
+import { sqliteError, type SqliteRecordError } from "../record/sqlite/errors.ts";
 import type { EvalResult } from "./types.ts";
 import type { CapturedAdapterAttachment } from "./adapter-attachments.ts";
+import { AdapterTracePull } from "./adapter-trace-pull.ts";
+import {
+  AdapterTraceStaging,
+  InvalidStagedTrace,
+  type StagedTraceItem,
+  type TraceEvidenceCache,
+  type VerifiedEvidenceTarget,
+} from "./adapter-trace-staging.ts";
 
 export class AdapterExecutionTraceError extends Data.TaggedError("AdapterExecutionTraceError")<{
   readonly code:
@@ -31,21 +53,35 @@ export class AdapterExecutionTraceError extends Data.TaggedError("AdapterExecuti
 }> {}
 
 export interface AcceptedExecutionTrace {
+  readonly mode: "array";
   readonly sourceTraceId: string;
   readonly canonicalInputDigest: string;
   readonly receipt: ExecutionTraceReceipt;
   readonly records: readonly ExecutionTraceRecord[];
+  readonly summary: ExecutionTraceStreamReceipt;
+}
+
+interface AcceptedStreamTrace {
+  readonly mode: "stream";
+  readonly canonicalInputDigest: string;
+  readonly summary: ExecutionTraceStreamReceipt;
+  readonly records: Iterable<ExecutionTraceStoredRecord>;
+  readonly staging: AdapterTraceStaging;
+  arrayReceipt?: ExecutionTraceReceipt;
 }
 
 export interface AdapterExecutionTraceSnapshot {
-  readonly traces: readonly AcceptedExecutionTrace[];
+  readonly traces: readonly (AcceptedExecutionTrace | AcceptedStreamTrace)[];
   readonly failure: AdapterExecutionTraceError | undefined;
+  readonly storageFailure: SqliteRecordError | undefined;
 }
 
 const captures = new WeakMap<EvalResult, AdapterExecutionTraceSnapshot>();
 
 export function retainAdapterExecutionTraces(result: EvalResult, snapshot: AdapterExecutionTraceSnapshot): void {
-  if (snapshot.traces.length > 0 || snapshot.failure !== undefined) captures.set(result, snapshot);
+  if (snapshot.traces.length > 0 || snapshot.failure !== undefined || snapshot.storageFailure !== undefined) {
+    captures.set(result, snapshot);
+  }
 }
 
 export function adapterExecutionTracesForResult(result: EvalResult): AdapterExecutionTraceSnapshot | undefined {
@@ -53,11 +89,10 @@ export function adapterExecutionTracesForResult(result: EvalResult): AdapterExec
 }
 
 export interface AdapterExecutionTraceCollector {
-  readonly recordTrace: <Event extends import("../adapter-execution-trace.ts").ExecutionTraceEvent>(
-    input: ExecutionTraceInput<Event>,
-  ) => Promise<ExecutionTraceReceipt>;
+  readonly recordTrace: AdapterCreateContext["recordTrace"];
   readonly failure: () => AdapterExecutionTraceError | undefined;
-  readonly close: () => void;
+  readonly close: () => Promise<void>;
+  readonly dispose: () => void;
   readonly snapshot: () => AdapterExecutionTraceSnapshot;
 }
 
@@ -78,12 +113,6 @@ function invalidEnvelope(error: Schema.SchemaError): AdapterExecutionTraceError 
     return traceError("execution-display-invalid", `${path}: invalid display block shape.`);
   }
   return traceError("execution-trace-invalid", "Execution trace envelope is invalid.");
-}
-
-interface VerifiedEvidenceTarget {
-  readonly artifactSha256: string;
-  readonly targetSha256: string;
-  readonly targetByteLength: number;
 }
 
 function traceError(code: AdapterExecutionTraceError["code"], message: string): AdapterExecutionTraceError {
@@ -342,13 +371,91 @@ function durableDisplay(
   return blocks.length === 0 ? undefined : (blocks as [ExecutionDisplayBlockRecord, ...ExecutionDisplayBlockRecord[]]);
 }
 
-function verifySemantics(input: Schema.Schema.Type<typeof ExecutionTraceInputSchema>): void {
-  if (input.collection.limitations.some(({ code }) => code.startsWith("niceeval."))) {
-    throw traceError(
-      "execution-trace-invalid",
-      "Execution trace limitation codes starting with niceeval. are reserved.",
-    );
+function durableEvent(
+  traceId: string,
+  eventId: string,
+  ordinal: number,
+  event: InputEvent,
+  byArtifactId: ReadonlyMap<string, CapturedAdapterAttachment>,
+  parsedArtifacts: Map<string, unknown>,
+  verifiedTargets: TraceEvidenceCache,
+  mintEvidenceId: () => string,
+): ExecutionTraceEventRecord {
+  const durableEvidence: ExecutionTraceEventRecord["evidence"][number][] = [];
+  for (const evidence of event.evidence ?? []) {
+    const artifact = byArtifactId.get(evidence.artifactId);
+    if (artifact === undefined) {
+      throw traceError(
+        "execution-trace-evidence-missing",
+        `Evidence artifact ${evidence.artifactId} is not attached to this Attempt.`,
+      );
+    }
+    const targetKey = JSON.stringify([artifact.artifactId, artifact.sha256, evidence.pointer]);
+    let verified = verifiedTargets.get(targetKey);
+    if (verified === undefined) {
+      const artifactCacheKey = `${artifact.artifactId}\u0000${artifact.sha256}`;
+      let artifactJson = parsedArtifacts.get(artifactCacheKey);
+      if (artifactJson === undefined) {
+        artifactJson = parseArtifactJson(artifact);
+        parsedArtifacts.set(artifactCacheKey, artifactJson);
+      }
+      const target = resolvePointer(artifactJson, evidence.pointer);
+      if (target === undefined) {
+        throw traceError(
+          "execution-trace-evidence-missing",
+          `Evidence pointer ${evidence.pointer} does not resolve in ${artifact.artifactId}.`,
+        );
+      }
+      const canonicalTarget = snapshotTraceJson(target);
+      if (Result.isFailure(canonicalTarget)) {
+        throw traceError("execution-trace-evidence-missing", "Execution trace evidence target is invalid.");
+      }
+      const targetIdentity = digestCanonicalTraceJson(canonicalTarget.success);
+      verified = {
+        artifactSha256: artifact.sha256,
+        targetSha256: targetIdentity.sha256,
+        targetByteLength: targetIdentity.byteLength,
+      };
+      verifiedTargets.set(targetKey, verified);
+    }
+    const evidenceId = mintEvidenceId();
+    durableEvidence.push({
+      key: evidence.key,
+      label: evidence.label,
+      artifactId: evidence.artifactId,
+      pointer: evidence.pointer,
+      evidenceId,
+      ...verified,
+    });
   }
+  return {
+    kind: "event",
+    traceId,
+    eventId,
+    ordinal,
+    key: event.key,
+    type: event.type,
+    source: event.source,
+    ...(event.actor === undefined ? {} : { actor: event.actor }),
+    ...(event.time === undefined ? {} : { time: event.time }),
+    summary: event.summary,
+    ...(event.payload === undefined ? {} : { payload: event.payload as TraceJson }),
+    links: (event.links ?? []).map((link) =>
+      "targetKey" in link
+        ? { relation: link.relation, targetKey: link.targetKey }
+        : { relation: link.relation, unresolved: link.unresolved },
+    ),
+    evidence: durableEvidence,
+    scopeMemberships: event.scopeMemberships ?? [],
+    ...(() => {
+      const display = durableDisplay(event.display, ordinal, byArtifactId);
+      return display === undefined ? {} : { display };
+    })(),
+  };
+}
+
+function verifySemantics(input: Schema.Schema.Type<typeof ExecutionTraceInputSchema>): void {
+  collectionDeclaration(input.collection);
   const scopeIds = new Set<string>();
   for (const scope of input.scopes) {
     if (scopeIds.has(scope.scopeId))
@@ -406,10 +513,293 @@ function verifySemantics(input: Schema.Schema.Type<typeof ExecutionTraceInputSch
   }
 }
 
+type TraceInputHeader = Schema.Schema.Type<typeof ExecutionTraceInputHeaderSchema>;
+
+const decodeStreamHeader = Schema.decodeUnknownResult(ExecutionTraceInputHeaderSchema, { onExcessProperty: "error" });
+const decodeStreamItem = Schema.decodeUnknownResult(ExecutionTraceStreamItemSchema, { onExcessProperty: "error" });
+
+function canonicalItem(value: unknown): string {
+  return [...canonicalTraceJsonChunks(value as TraceJson)].join("");
+}
+
+function traceDigest(
+  header: TraceInputHeader,
+  collection: ExecutionTraceHeaderRecord["collection"],
+  scopes: Iterable<string>,
+  events: Iterable<string>,
+): string {
+  const hash = createHash("sha256");
+  hash.update(canonicalItem(header)).update("\n").update(canonicalItem(collection)).update("\n");
+  for (const scope of scopes) hash.update(scope).update("\n");
+  hash.update("\n");
+  for (const event of events) hash.update(event).update("\n");
+  return hash.digest("hex");
+}
+
+function* canonicalItems(values: Iterable<unknown>): Generator<string> {
+  for (const value of values) yield canonicalItem(value);
+}
+
+function plainFields(value: unknown, allowed: readonly string[]): Record<string, unknown> {
+  if (typeof value !== "object" || value === null) {
+    throw traceError("execution-trace-invalid", "Execution trace stream envelope is invalid.");
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== null && prototype !== Object.prototype) {
+    throw traceError("execution-trace-invalid", "Execution trace stream envelope must be a plain object.");
+  }
+  const fields: Record<string, unknown> = Object.create(null);
+  for (const key of Reflect.ownKeys(value)) {
+    const property = Object.getOwnPropertyDescriptor(value, key);
+    if (typeof key !== "string" || !allowed.includes(key) || property?.enumerable !== true || !("value" in property)) {
+      throw traceError("execution-trace-invalid", "Execution trace stream envelope contains an invalid field.");
+    }
+    fields[key] = property.value;
+  }
+  return fields;
+}
+
+function streamInput(input: ExecutionTraceStreamInput): {
+  readonly header: TraceInputHeader;
+  readonly start: ExecutionTraceStreamInput["events"]["stream"];
+  readonly caller: AbortSignal | undefined;
+} {
+  const { events, signal, ...fields } = plainFields(input, ["traceId", "schema", "archive", "events", "signal"]);
+  const { stream } = plainFields(events, ["stream"]);
+  if (typeof stream !== "function" || (signal !== undefined && !(signal instanceof AbortSignal))) {
+    throw traceError("execution-trace-invalid", "Execution trace stream factory or signal is invalid.");
+  }
+  const json = snapshotTraceJson(fields);
+  if (Result.isFailure(json)) throw traceError("execution-trace-invalid", "Execution trace header is not plain JSON.");
+  const header = decodeStreamHeader(json.success);
+  if (Result.isFailure(header)) throw invalidEnvelope(header.failure);
+  return { header: header.success, start: stream as ExecutionTraceStreamInput["events"]["stream"], caller: signal };
+}
+
+function collectionDeclaration(collection: ExecutionTraceHeaderRecord["collection"]): void {
+  if (collection.limitations.some(({ code }) => code.startsWith("niceeval."))) {
+    throw traceError(
+      "execution-trace-invalid",
+      "Execution trace limitation codes starting with niceeval. are reserved.",
+    );
+  }
+}
+
+function freezeCollection(collection: ExecutionTraceHeaderRecord["collection"]): void {
+  for (const limit of collection.limitations) Object.freeze(limit);
+  Object.freeze(collection.limitations);
+  Object.freeze(collection);
+}
+
+function verifyStreamEvent(event: InputEvent, ordinal: number): void {
+  verifyDisplay(event, ordinal);
+  const evidenceKeys = new Set<string>();
+  for (const evidence of event.evidence ?? []) {
+    if (evidenceKeys.has(evidence.key) || jsonPointerSegments(evidence.pointer) === undefined) {
+      throw traceError("execution-trace-invalid", "Execution trace evidence key or pointer is invalid.");
+    }
+    evidenceKeys.add(evidence.key);
+  }
+  const memberships = new Set<string>();
+  for (const { scopeId } of event.scopeMemberships ?? []) {
+    if (memberships.has(scopeId)) {
+      throw traceError(
+        "execution-trace-invalid",
+        "Execution trace memberships must uniquely reference declared scopes.",
+      );
+    }
+    memberships.add(scopeId);
+  }
+}
+
+function receiptEvent(record: ExecutionTraceEventRecord): ExecutionTraceReceipt["events"][number] {
+  return Object.freeze({
+    key: record.key,
+    eventId: record.eventId,
+    evidence: Object.freeze(record.evidence.map(({ key, evidenceId }) => Object.freeze({ key, evidenceId }))),
+  });
+}
+
+function arrayReceipt(trace: AcceptedExecutionTrace | AcceptedStreamTrace): ExecutionTraceReceipt {
+  if (trace.mode === "array") return trace.receipt;
+  if (trace.arrayReceipt !== undefined) return trace.arrayReceipt;
+  const events: ExecutionTraceReceipt["events"][number][] = [];
+  for (const record of trace.records) if (record.kind === "event") events.push(receiptEvent(record));
+  return (trace.arrayReceipt = Object.freeze({
+    state: "accepted",
+    traceId: trace.summary.traceId,
+    events: Object.freeze(events),
+  }));
+}
+
+const TRACE_BATCH_ROWS = 64;
+const TRACE_BATCH_BYTES = 256 * 1024;
+
+interface StreamSubmission {
+  readonly producer: ReturnType<typeof streamInput>;
+  readonly pull: AdapterTracePull;
+  readonly resolve: (receipt: ExecutionTraceStreamReceipt) => void;
+  readonly reject: (cause: unknown) => void;
+  readonly promise: Promise<ExecutionTraceStreamReceipt>;
+  running: boolean;
+}
+
+async function consumeTrace(
+  submission: StreamSubmission,
+  artifacts: () => readonly CapturedAdapterAttachment[],
+  traceId: string,
+  staging: AdapterTraceStaging,
+): Promise<AcceptedStreamTrace & { readonly accept: () => Promise<void> }> {
+  const {
+    producer: { header: source, start },
+    pull,
+  } = submission;
+  const verifiedTargets = staging.evidenceCache("capture");
+  let iterator: AsyncIterator<ExecutionTraceStreamItem> | undefined;
+  let cut = pull.cut;
+  let collection: ExecutionTraceHeaderRecord["collection"] | undefined;
+  let total = 0;
+  let scopeOrdinal = 0;
+  let eventOrdinal = 0;
+  let batch: StagedTraceItem[] = [];
+  let batchBytes = 0;
+  const flush = () => {
+    staging.append(batch);
+    batch = [];
+    batchBytes = 0;
+  };
+
+  try {
+    if (cut === undefined) {
+      try {
+        iterator = start(pull.signal)[Symbol.asyncIterator]();
+        if (typeof iterator.next !== "function") throw new TypeError("Expected an async iterator.");
+      } catch {
+        cut = pull.cut ?? "producer-error";
+      }
+    }
+    while (iterator !== undefined && cut === undefined && collection === undefined) {
+      const next = await pull.next(iterator);
+      cut = pull.cut ?? (next.kind === "cut" ? next.reason : undefined);
+      if (cut !== undefined || next.kind === "cut") break;
+      if (next.item.done) {
+        cut = "unterminated";
+        break;
+      }
+      const json = snapshotTraceJson(next.item.value);
+      if (Result.isFailure(json)) {
+        throw traceError("execution-trace-invalid", "Execution trace stream item is not finite plain JSON.");
+      }
+      const decoded = decodeStreamItem(json.success);
+      if (Result.isFailure(decoded))
+        throw traceError("execution-trace-invalid", "Execution trace stream item is invalid.");
+      const item = decoded.success;
+      if (item.kind === "end") {
+        collectionDeclaration(item.collection);
+        collection = item.collection;
+        break;
+      }
+      let record: StagedTraceItem["record"];
+      if (item.kind === "scope") {
+        record = { kind: "scope", traceId, ordinal: scopeOrdinal++, scope: item.scope };
+      } else {
+        verifyStreamEvent(item.event, eventOrdinal);
+        const needsArtifacts =
+          (item.event.evidence?.length ?? 0) > 0 || item.event.display?.some(({ kind }) => kind === "image");
+        const attached = needsArtifacts ? artifacts().map((artifact) => [artifact.artifactId, artifact] as const) : [];
+        record = durableEvent(
+          traceId,
+          stableId("ee"),
+          eventOrdinal++,
+          item.event,
+          new Map(attached),
+          new Map(),
+          verifiedTargets,
+          () => stableId("ev"),
+        );
+      }
+      const canonical = canonicalItem(item.kind === "scope" ? item.scope : item.event);
+      const encoded = canonicalItem(record);
+      const size = Buffer.byteLength(canonical) + Buffer.byteLength(encoded);
+      if (batch.length > 0 && batchBytes + size > TRACE_BATCH_BYTES) flush();
+      batch.push({ sequence: total++, record, canonical, encoded });
+      batchBytes += size;
+      if (batch.length >= TRACE_BATCH_ROWS || batchBytes >= TRACE_BATCH_BYTES) {
+        flush();
+        await setImmediate();
+      }
+    }
+  } finally {
+    pull.close(iterator);
+  }
+
+  flush();
+  const end = await staging.prefix(total, collection !== undefined);
+  await staging.verifyCauses(end);
+  const counts = staging.counts(end);
+  const droppedItems = total - end;
+  const reason = cut ?? "unterminated";
+  const ending =
+    collection === undefined ? { kind: "cut" as const, reason, droppedItems } : { kind: "declared" as const };
+
+  collection ??= {
+    state: "partial",
+    limitations: [
+      {
+        code: "niceeval.trace-stream-cut",
+        message: "Trace stream cut: " + reason + ". Dropped items: " + droppedItems + ".",
+      },
+    ],
+  };
+  freezeCollection(collection);
+  Object.freeze(ending);
+  const canonicalInputDigest = traceDigest(
+    source,
+    collection,
+    staging.canonical("scope", end),
+    staging.canonical("event", end),
+  );
+  const header: ExecutionTraceHeaderRecord = {
+    kind: "trace-header",
+    traceId,
+    sourceTraceId: source.traceId,
+    schema: source.schema,
+    ...(source.archive === undefined ? {} : { archive: source.archive }),
+    collection,
+    index: "published",
+    scopes: [],
+    ...counts,
+  };
+  const summary: ExecutionTraceStreamReceipt = Object.freeze({
+    state: "accepted",
+    traceId,
+    collection,
+    ending,
+    ...counts,
+  });
+  return {
+    mode: "stream",
+    staging,
+    summary,
+    canonicalInputDigest,
+    accept: () => staging.accept(end, total, canonicalItem(header), canonicalInputDigest),
+    records: { [Symbol.iterator]: () => staging.records() },
+  };
+}
+
 export function createAdapterExecutionTraceCollector(
   artifacts: () => readonly CapturedAdapterAttachment[],
+  options: {
+    readonly diagnostic: (input: DiagnosticInput) => void;
+    readonly track: (promise: Promise<ExecutionTraceStreamReceipt>) => void;
+  },
 ): AdapterExecutionTraceCollector {
-  const accepted = new Map<string, AcceptedExecutionTrace>();
+  const accepted = new Map<string, AcceptedExecutionTrace | AcceptedStreamTrace>();
+  const submissions = new Map<string, StreamSubmission>();
+  let running = 0;
+  let storageFailure: SqliteRecordError | undefined;
+  let arrayFailure: AdapterExecutionTraceError | undefined;
+  let closing: Promise<void> | undefined;
   const acceptedIds = new Set<string>();
   let closed = false;
   let firstFailure: AdapterExecutionTraceError | undefined;
@@ -428,13 +818,14 @@ export function createAdapterExecutionTraceCollector(
       cause instanceof AdapterExecutionTraceError
         ? cause
         : traceError("execution-trace-failed", "Execution trace capture failed.");
-    if (!closed) firstFailure ??= error;
+    if (!closed) {
+      firstFailure ??= error;
+      arrayFailure ??= error;
+    }
     return error;
   };
 
-  const recordTrace = <Event extends import("../adapter-execution-trace.ts").ExecutionTraceEvent>(
-    input: ExecutionTraceInput<Event>,
-  ): Promise<ExecutionTraceReceipt> => {
+  const recordArray = (input: ExecutionTraceInput): Promise<ExecutionTraceReceipt> => {
     try {
       if (closed) throw traceError("execution-trace-closed", "Execution trace collection is closed.");
       const canonical = snapshotTraceJson(input);
@@ -451,18 +842,25 @@ export function createAdapterExecutionTraceCollector(
         }
         throw traceError("execution-trace-invalid", "Execution trace must be finite plain JSON with valid UTF-8 text.");
       }
-      const canonicalInputDigest = digestCanonicalTraceJson(canonical.success).sha256;
       const decoded = exactDecode(canonical.success);
       if (Result.isFailure(decoded)) throw invalidEnvelope(decoded.failure);
       const snapshot = decoded.success;
+      if (submissions.has(snapshot.traceId)) {
+        const error = traceError("execution-trace-conflict", "An execution trace stream for traceId is already open.");
+        captureFailure(error, snapshot.traceId);
+        return rejectSettled(error);
+      }
       verifySemantics(snapshot);
+      const { events, scopes, collection, ...headerInput } = snapshot;
+      freezeCollection(collection);
+      const canonicalInputDigest = traceDigest(headerInput, collection, canonicalItems(scopes), canonicalItems(events));
 
       const prior = accepted.get(snapshot.traceId);
       if (prior !== undefined) {
         if (prior.canonicalInputDigest !== canonicalInputDigest) {
           throw traceError("execution-trace-conflict", "Conflicting snapshot for execution trace traceId.");
         }
-        return Promise.resolve(prior.receipt);
+        return Promise.resolve(arrayReceipt(prior));
       }
       const byArtifactId = new Map(artifacts().map((artifact) => [artifact.artifactId, artifact] as const));
       const parsedArtifacts = new Map<string, unknown>();
@@ -470,6 +868,7 @@ export function createAdapterExecutionTraceCollector(
       const pendingIds = new Set<string>();
       const traceId = mintStableId("et", pendingIds);
       const receiptEvents: Array<ExecutionTraceReceipt["events"][number]> = [];
+      let evidenceCount = 0;
       const records: ExecutionTraceRecord[] = [];
       const header: ExecutionTraceHeaderRecord = {
         kind: "trace-header",
@@ -477,10 +876,8 @@ export function createAdapterExecutionTraceCollector(
         sourceTraceId: snapshot.traceId,
         schema: snapshot.schema,
         ...(snapshot.archive === undefined ? {} : { archive: snapshot.archive }),
-        collection: {
-          state: snapshot.collection.state,
-          limitations: snapshot.collection.limitations,
-        } as ExecutionTraceHeaderRecord["collection"],
+        collection,
+        index: "published",
         scopes: snapshot.scopes.map((scope) => ({
           scopeId: scope.scopeId,
           label: scope.label,
@@ -491,87 +888,19 @@ export function createAdapterExecutionTraceCollector(
 
       for (const [ordinal, event] of snapshot.events.entries()) {
         const eventId = mintStableId("ee", pendingIds);
-        const receiptEvidence: Array<{ readonly key: string; readonly evidenceId: string }> = [];
-        const durableEvidence: ExecutionTraceEventRecord["evidence"][number][] = [];
-        for (const evidence of event.evidence ?? []) {
-          const artifact = byArtifactId.get(evidence.artifactId);
-          if (artifact === undefined) {
-            throw traceError(
-              "execution-trace-evidence-missing",
-              `Evidence artifact ${evidence.artifactId} is not attached to this Attempt.`,
-            );
-          }
-          const artifactCacheKey = `${artifact.artifactId}\u0000${artifact.sha256}`;
-          let artifactJson = parsedArtifacts.get(artifactCacheKey);
-          if (artifactJson === undefined) {
-            artifactJson = parseArtifactJson(artifact);
-            parsedArtifacts.set(artifactCacheKey, artifactJson);
-          }
-          const targetKey = `${artifact.artifactId}\u0000${artifact.sha256}\u0000${evidence.pointer}`;
-          let verified = verifiedTargets.get(targetKey);
-          if (verified === undefined) {
-            const target = resolvePointer(artifactJson, evidence.pointer);
-            if (target === undefined) {
-              throw traceError(
-                "execution-trace-evidence-missing",
-                `Evidence pointer ${evidence.pointer} does not resolve in ${artifact.artifactId}.`,
-              );
-            }
-            const canonicalTarget = snapshotTraceJson(target);
-            if (Result.isFailure(canonicalTarget)) {
-              throw traceError("execution-trace-evidence-missing", "Execution trace evidence target is invalid.");
-            }
-            const targetIdentity = digestCanonicalTraceJson(canonicalTarget.success);
-            verified = {
-              artifactSha256: artifact.sha256,
-              targetSha256: targetIdentity.sha256,
-              targetByteLength: targetIdentity.byteLength,
-            };
-            verifiedTargets.set(targetKey, verified);
-          }
-          const evidenceId = mintStableId("ev", pendingIds);
-          receiptEvidence.push(Object.freeze({ key: evidence.key, evidenceId }));
-          durableEvidence.push({
-            key: evidence.key,
-            label: evidence.label,
-            artifactId: evidence.artifactId,
-            pointer: evidence.pointer,
-            evidenceId,
-            ...verified,
-          });
-        }
-        const durable: ExecutionTraceEventRecord = {
-          kind: "event",
+        const durable = durableEvent(
           traceId,
           eventId,
           ordinal,
-          key: event.key,
-          type: event.type,
-          source: event.source,
-          ...(event.actor === undefined ? {} : { actor: event.actor }),
-          ...(event.time === undefined ? {} : { time: event.time }),
-          summary: event.summary,
-          ...(event.payload === undefined ? {} : { payload: event.payload as TraceJson }),
-          links: (event.links ?? []).map((link) =>
-            "targetKey" in link
-              ? { relation: link.relation, targetKey: link.targetKey }
-              : { relation: link.relation, unresolved: link.unresolved },
-          ),
-          evidence: durableEvidence,
-          scopeMemberships: event.scopeMemberships ?? [],
-          ...(() => {
-            const display = durableDisplay(event.display, ordinal, byArtifactId);
-            return display === undefined ? {} : { display };
-          })(),
-        };
-        records.push(durable);
-        receiptEvents.push(
-          Object.freeze({
-            key: event.key,
-            eventId,
-            evidence: Object.freeze(receiptEvidence),
-          }),
+          event,
+          byArtifactId,
+          parsedArtifacts,
+          verifiedTargets,
+          () => mintStableId("ev", pendingIds),
         );
+        records.push(durable);
+        receiptEvents.push(receiptEvent(durable));
+        evidenceCount += durable.evidence.length;
       }
 
       const receipt: ExecutionTraceReceipt = Object.freeze({
@@ -580,6 +909,16 @@ export function createAdapterExecutionTraceCollector(
         events: Object.freeze(receiptEvents),
       });
       const retained: AcceptedExecutionTrace = {
+        mode: "array",
+        summary: Object.freeze({
+          state: "accepted",
+          traceId,
+          ending: Object.freeze({ kind: "declared" as const }),
+          collection,
+          scopeCount: scopes.length,
+          eventCount: events.length,
+          evidenceCount,
+        }),
         sourceTraceId: snapshot.traceId,
         canonicalInputDigest,
         receipt,
@@ -593,22 +932,209 @@ export function createAdapterExecutionTraceCollector(
     }
   };
 
+  function captureFailure(error: AdapterExecutionTraceError, traceId?: string): void {
+    firstFailure ??= error;
+    options.diagnostic({
+      level: "warning",
+      code: error.code,
+      message: traceId === undefined ? error.message : JSON.stringify(traceId) + ": " + error.message,
+    });
+  }
+
+  async function admit(submission: StreamSubmission): Promise<void> {
+    const sourceTraceId = submission.producer.header.traceId;
+    let staging: AdapterTraceStaging | undefined;
+    try {
+      staging = new AdapterTraceStaging();
+      const candidate = await consumeTrace(submission, artifacts, stableId("et"), staging);
+      const prior = accepted.get(sourceTraceId);
+      if (prior !== undefined && prior.canonicalInputDigest !== candidate.canonicalInputDigest) {
+        throw traceError("execution-trace-conflict", "Conflicting snapshot for execution trace traceId.");
+      }
+      if (prior === undefined) {
+        await candidate.accept();
+        accepted.set(sourceTraceId, candidate);
+        staging = undefined;
+        const ending = candidate.summary.ending;
+        if (ending.kind === "cut")
+          options.diagnostic({
+            code: "niceeval.trace-stream-cut",
+            level: "warning",
+            message:
+              "Trace " +
+              JSON.stringify(sourceTraceId) +
+              " cut: " +
+              ending.reason +
+              ". Dropped items: " +
+              ending.droppedItems +
+              ".",
+          });
+      }
+      submission.resolve((prior ?? candidate).summary);
+    } catch (cause) {
+      const error =
+        cause instanceof AdapterExecutionTraceError
+          ? cause
+          : cause instanceof InvalidStagedTrace
+            ? traceError("execution-trace-invalid", cause.message)
+            : traceError("execution-trace-failed", "Execution trace storage failed.");
+      if (!(cause instanceof AdapterExecutionTraceError) && !(cause instanceof InvalidStagedTrace)) {
+        storageFailure ??= sqliteError("record-sqlite-error", "stage-execution-trace", error.message, cause);
+      }
+      captureFailure(error, sourceTraceId);
+      submission.reject(error);
+    } finally {
+      staging?.close();
+      submissions.delete(sourceTraceId);
+      running -= 1;
+      schedule();
+    }
+  }
+
+  function schedule(): void {
+    if (running >= 4) return;
+    for (const submission of submissions.values()) {
+      if (submission.running) continue;
+      submission.running = true;
+      running += 1;
+      void admit(submission);
+      if (running >= 4) break;
+    }
+  }
+
+  function recordStream(input: ExecutionTraceStreamInput): Promise<ExecutionTraceStreamReceipt> {
+    if (closed) return rejectSettled(traceError("execution-trace-closed", "Execution trace collection is closed."));
+    try {
+      const producer = streamInput(input);
+      if (submissions.has(producer.header.traceId)) {
+        throw traceError("execution-trace-conflict", "An execution trace stream for traceId is already open.");
+      }
+      let resolve!: StreamSubmission["resolve"];
+      let reject!: StreamSubmission["reject"];
+      const promise = new Promise<ExecutionTraceStreamReceipt>((accept, fail) => {
+        resolve = accept;
+        reject = fail;
+      });
+      void promise.catch(() => undefined);
+      submissions.set(producer.header.traceId, {
+        producer,
+        pull: new AdapterTracePull(producer.caller),
+        resolve,
+        reject,
+        promise,
+        running: false,
+      });
+      options.track(promise);
+      schedule();
+      return promise;
+    } catch (cause) {
+      const error =
+        cause instanceof AdapterExecutionTraceError
+          ? cause
+          : traceError("execution-trace-invalid", "Execution trace stream envelope is invalid.");
+      captureFailure(error);
+      return rejectSettled(error);
+    }
+  }
+
+  function recordTrace(input: ExecutionTraceInput): Promise<ExecutionTraceReceipt>;
+  function recordTrace(input: ExecutionTraceStreamInput): Promise<ExecutionTraceStreamReceipt>;
+  function recordTrace(
+    input: ExecutionTraceInput | ExecutionTraceStreamInput,
+  ): Promise<ExecutionTraceReceipt | ExecutionTraceStreamReceipt> {
+    if (closed) return rejectSettled(traceError("execution-trace-closed", "Execution trace collection is closed."));
+    try {
+      const events =
+        input === null || typeof input !== "object"
+          ? undefined
+          : Object.getOwnPropertyDescriptor(input, "events")?.value;
+      return events !== null && typeof events === "object" && !Array.isArray(events)
+        ? recordStream(input as ExecutionTraceStreamInput)
+        : recordArray(input as ExecutionTraceInput);
+    } catch {
+      return rejectSettled(fail(traceError("execution-trace-invalid", "Execution trace input is invalid.")));
+    }
+  }
+
   return {
     recordTrace,
-    failure: () => firstFailure,
+    failure: () => arrayFailure,
     close: () => {
-      if (closed) return;
+      if (closing !== undefined) return closing;
       closed = true;
-      sealed = {
-        traces: [...accepted.values()],
-        failure: firstFailure,
-      };
+      const pending = [...submissions.values()];
+      for (const submission of pending) submission.pull.stop("admission-closed");
+      closing = Promise.allSettled(pending.map((submission) => submission.promise)).then(() => {
+        sealed = { traces: [...accepted.values()], failure: firstFailure, storageFailure };
+      });
+      return closing;
+    },
+    dispose: () => {
+      for (const trace of accepted.values()) if (trace.mode === "stream") trace.staging.close();
     },
     snapshot: () => {
       if (sealed === undefined) throw new Error("Execution trace collection must close before taking its snapshot.");
       return sealed;
     },
   };
+}
+
+function validateEventEvidence(
+  record: ExecutionTraceEventRecord,
+  byArtifactId: ReadonlyMap<string, CapturedAdapterAttachment>,
+  parsedArtifacts: Map<string, unknown>,
+  verifiedTargets: TraceEvidenceCache,
+): void {
+  for (const block of record.display ?? []) {
+    if (block.kind !== "image") continue;
+    const artifact = byArtifactId.get(block.artifactId);
+    if (
+      artifact === undefined ||
+      artifact.sha256 !== block.sha256 ||
+      artifact.byteLength !== block.byteLength ||
+      artifact.mediaType !== block.mediaType
+    ) {
+      throw traceError("execution-trace-evidence-missing", "Execution display image artifact closure is invalid.");
+    }
+  }
+  for (const evidence of record.evidence) {
+    const artifact = byArtifactId.get(evidence.artifactId);
+    if (artifact === undefined || artifact.sha256 !== evidence.artifactSha256) {
+      throw traceError("execution-trace-evidence-missing", "Execution trace evidence artifact closure is invalid.");
+    }
+    const key = JSON.stringify([artifact.artifactId, artifact.sha256, evidence.pointer]);
+    let verified = verifiedTargets.get(key);
+    if (verified === undefined) {
+      const artifactCacheKey = `${artifact.artifactId}\u0000${artifact.sha256}`;
+      let artifactJson = parsedArtifacts.get(artifactCacheKey);
+      if (artifactJson === undefined) {
+        artifactJson = parseArtifactJson(artifact);
+        parsedArtifacts.set(artifactCacheKey, artifactJson);
+      }
+      const target = resolvePointer(artifactJson, evidence.pointer);
+      if (target === undefined)
+        throw traceError("execution-trace-evidence-missing", "Execution trace evidence pointer closure is invalid.");
+      const canonical = snapshotTraceJson(target);
+      if (Result.isFailure(canonical))
+        throw traceError(
+          "execution-trace-evidence-missing",
+          "Execution trace evidence target is invalid at publication.",
+        );
+      const targetIdentity = digestCanonicalTraceJson(canonical.success);
+      verified = {
+        artifactSha256: artifact.sha256,
+        targetSha256: targetIdentity.sha256,
+        targetByteLength: targetIdentity.byteLength,
+      };
+      verifiedTargets.set(key, verified);
+    }
+    if (verified.targetSha256 !== evidence.targetSha256 || verified.targetByteLength !== evidence.targetByteLength) {
+      throw traceError(
+        "execution-trace-evidence-missing",
+        "Execution trace evidence target digest closure is invalid.",
+      );
+    }
+  }
 }
 
 /**
@@ -626,6 +1152,14 @@ export function validateExecutionTracePublication(
   const traceIds = new Set<string>();
   const sourceTraceIds = new Set<string>();
   for (const trace of snapshot.traces) {
+    if (trace.mode === "stream") {
+      if (!trace.staging.requiresArtifactVerification) continue;
+      const cache = trace.staging.evidenceCache("publication");
+      for (const record of trace.records) {
+        if (record.kind === "event") validateEventEvidence(record, byArtifactId, new Map(), cache);
+      }
+      continue;
+    }
     const header = trace.records[0];
     const eventCount = trace.records.length - 1;
     if (
@@ -704,62 +1238,7 @@ export function validateExecutionTracePublication(
           causeEdges.set(record.key, targets);
         }
       }
-      for (const block of record.display ?? []) {
-        if (block.kind !== "image") continue;
-        const artifact = byArtifactId.get(block.artifactId);
-        if (
-          artifact === undefined ||
-          artifact.sha256 !== block.sha256 ||
-          artifact.byteLength !== block.byteLength ||
-          artifact.mediaType !== block.mediaType
-        ) {
-          throw traceError("execution-trace-evidence-missing", "Execution display image artifact closure is invalid.");
-        }
-      }
-      for (const evidence of record.evidence) {
-        const artifact = byArtifactId.get(evidence.artifactId);
-        if (artifact === undefined || artifact.sha256 !== evidence.artifactSha256) {
-          throw traceError("execution-trace-evidence-missing", "Execution trace evidence artifact closure is invalid.");
-        }
-        const artifactCacheKey = `${artifact.artifactId}\u0000${artifact.sha256}`;
-        let artifactJson = parsedArtifacts.get(artifactCacheKey);
-        if (artifactJson === undefined) {
-          artifactJson = parseArtifactJson(artifact);
-          parsedArtifacts.set(artifactCacheKey, artifactJson);
-        }
-        const key = `${artifact.artifactId}\u0000${artifact.sha256}\u0000${evidence.pointer}`;
-        let verified = verifiedTargets.get(key);
-        if (verified === undefined) {
-          const target = resolvePointer(artifactJson, evidence.pointer);
-          if (target === undefined)
-            throw traceError(
-              "execution-trace-evidence-missing",
-              "Execution trace evidence pointer closure is invalid.",
-            );
-          const canonical = snapshotTraceJson(target);
-          if (Result.isFailure(canonical))
-            throw traceError(
-              "execution-trace-evidence-missing",
-              "Execution trace evidence target is invalid at publication.",
-            );
-          const targetIdentity = digestCanonicalTraceJson(canonical.success);
-          verified = {
-            artifactSha256: artifact.sha256,
-            targetSha256: targetIdentity.sha256,
-            targetByteLength: targetIdentity.byteLength,
-          };
-          verifiedTargets.set(key, verified);
-        }
-        if (
-          verified.targetSha256 !== evidence.targetSha256 ||
-          verified.targetByteLength !== evidence.targetByteLength
-        ) {
-          throw traceError(
-            "execution-trace-evidence-missing",
-            "Execution trace evidence target digest closure is invalid.",
-          );
-        }
-      }
+      validateEventEvidence(record, byArtifactId, parsedArtifacts, verifiedTargets);
     }
     for (let index = 1; index < trace.records.length; index += 1) {
       const record = trace.records[index]!;

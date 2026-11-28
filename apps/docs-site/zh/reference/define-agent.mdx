@@ -181,6 +181,14 @@ recordTrace<Event extends import("./adapter-execution-trace.ts").ExecutionTraceE
 ): Promise<import("./adapter-execution-trace.ts").ExecutionTraceReceipt>;
 ```
 
+#### `recordTrace`
+
+```ts
+recordTrace<Event extends import("./adapter-execution-trace.ts").ExecutionTraceEvent>(
+  input: import("./adapter-execution-trace.ts").ExecutionTraceStreamInput<Event>,
+): Promise<import("./adapter-execution-trace.ts").ExecutionTraceStreamReceipt>;
+```
+
 #### `evalId`
 
 ```ts

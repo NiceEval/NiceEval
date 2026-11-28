@@ -15,9 +15,9 @@ chunk rows 按 Content identity 与 ordinal 唯一排列，单行受内部结构
 输入 Stream 的 chunk 不决定持久 ordinal、row size 或事务边界；物理分块不改变逻辑 bytes、digest 或 family 事实。
 作者不选择 path、table、index、pragma、transaction 或 chunk size。
 
-collection item 可以携带 family 定义的 item key。Host 按 owner、family 与 item key 建唯一索引，只比较 bytes，不解释业务含义。
-它让按领域键定位的读取不扫描整个 collection；哪些 family 使用 item key 及其校验规则由 family 所在的契约定义，
-例如[执行轨迹的身份索引](observability-attachments.md#身份索引)。
+固定 family 可发布专用定位 collection。Host 以受管暂存索引核对 owner、family 与定位键的唯一性。
+publication 校验定位 collection 与事实逐项闭合。定位 collection 按规范键顺序写入既有 ordinal 主键，保留通用行身份公式。
+使用与校验规则由 family 的契约定义，例如[执行轨迹的身份索引](observability-attachments.md#身份索引)。
 
 Host 在接纳前验证并冻结 command identity、canonical bytes 与 digest。
 mailbox 同时按 encoded bytes 和 command count 施加 backpressure，不通过丢弃 item 取得进展。

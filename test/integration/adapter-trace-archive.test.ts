@@ -152,6 +152,7 @@ test("archive participates in replay identity and illegal resubmissions preserve
           archive,
           collection: { state: "complete", limitations: [] },
           scopes: [],
+            index: "published",
           eventCount: 1,
         },
       ]);

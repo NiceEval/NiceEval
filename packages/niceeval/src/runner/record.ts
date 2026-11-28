@@ -70,6 +70,9 @@ import { adapterUsageForResult } from "./adapter-usage.ts";
 import { adapterAttachmentsForResult, releaseAdapterAttachments } from "./adapter-attachments.ts";
 import { adapterExecutionTracesForResult, validateExecutionTracePublication } from "./adapter-execution-trace.ts";
 import { executionTracesRecordCollection } from "../record/family/execution-traces/definition.ts";
+import { executionTraceIndexRecordCollection } from "../record/family/execution-traces/index-definition.ts";
+import { ExecutionTraceIndexProjection } from "../record/family/execution-traces/index-projection.ts";
+import type { ExecutionTraceStoredRecord } from "../record/family/execution-traces/schema.ts";
 import {
   planRunnerRecordRun,
   previewRunnerRunId,
@@ -372,6 +375,22 @@ function unsealedAttempt(slotId: SlotId): RunnerRecordUnsealedAttempt {
 
 function membershipStateInvalid(slotId: SlotId): RunnerRecordMembershipStateInvalid {
   return { code: "runner-record-membership-state-invalid" as const, slotId };
+}
+
+function* executionTracePublicationBatches<Row>(rows: Iterable<Row>): Generator<readonly Row[]> {
+  let batch: Row[] = [];
+  let bytes = 0;
+  for (const row of rows) {
+    const size = Buffer.byteLength(JSON.stringify(row));
+    if (batch.length > 0 && (batch.length >= 64 || bytes + size > 256 * 1024)) {
+      yield batch;
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(row);
+    bytes += size;
+  }
+  if (batch.length > 0) yield batch;
 }
 
 function attemptPublicationFailed(
@@ -831,6 +850,9 @@ export function openRunnerRecordCoordinator<E>(input: {
           yield* active.session.records.write(NiceEvalRecordAttachments.attemptNotes, attemptNotesForResult(result));
           const adapterUsage = adapterUsageForResult(result);
           const executionTraces = adapterExecutionTracesForResult(result);
+          if (executionTraces?.storageFailure !== undefined) {
+            return yield* Effect.fail(attemptPublicationFailed(active.public.locator, executionTraces.storageFailure));
+          }
           if (adapterUsage !== undefined) {
             yield* observability.write(
               active.session.records.write(NiceEvalRecordAttachments.adapterUsage, adapterUsage),
@@ -841,20 +863,44 @@ export function openRunnerRecordCoordinator<E>(input: {
           }
           if (executionTraces !== undefined && executionTraces.traces.length > 0) {
             validateExecutionTracePublication(executionTraces, attachmentSnapshot?.artifacts ?? []);
-            yield* active.session.records.appendAll(
-              executionTracesRecordCollection,
-              Stream.fromIterable(executionTraces.traces).pipe(
-                Stream.flatMap((trace) => Stream.fromIterable(trace.records)),
-              ),
-            );
-            yield* active.session.records.close(
-              executionTracesRecordCollection,
-              executionTraces.failure === undefined
-                ? { state: "complete" }
-                : {
-                    state: "partial",
-                    limitations: [{ code: "capture-failed", stage: "adapter" }],
-                  },
+            const { traces, failure } = executionTraces;
+            yield* Effect.acquireUseRelease(
+              Effect.sync(() => new ExecutionTraceIndexProjection()),
+              (projection) =>
+                Effect.gen(function* () {
+                  function* facts(): Generator<ExecutionTraceStoredRecord> {
+                    let ordinal = 0;
+                    for (const trace of traces) {
+                      for (const record of trace.records) {
+                        projection.add(record, ordinal++);
+                        yield record;
+                      }
+                    }
+                  }
+                  yield* Stream.runForEach(
+                    Stream.fromIterable(executionTracePublicationBatches(facts()), { chunkSize: 1 }),
+                    (batch) =>
+                      active.session.records.appendAll(executionTracesRecordCollection, Stream.fromIterable(batch)),
+                  );
+                  yield* active.session.records.close(
+                    executionTracesRecordCollection,
+                    failure === undefined
+                      ? { state: "complete" }
+                      : { state: "partial", limitations: [{ code: "capture-failed", stage: "adapter" }] },
+                  );
+                  projection.finish();
+                  yield* Stream.runForEach(
+                    Stream.fromIterable(executionTracePublicationBatches(projection.rows()), { chunkSize: 1 }),
+                    (batch) =>
+                      active.session.records.appendAll(executionTraceIndexRecordCollection, Stream.fromIterable(batch)),
+                  );
+                  yield* active.session.records.close(executionTraceIndexRecordCollection, { state: "complete" });
+                }),
+              (projection) =>
+                Effect.sync(() => {
+                  projection.close();
+                  for (const trace of traces) if (trace.mode === "stream") trace.staging.close();
+                }),
             );
           }
           const diagnosticFailures = observability.failureCount;

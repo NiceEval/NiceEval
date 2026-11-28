@@ -54,6 +54,9 @@ export class AdapterAttemptResources {
   private authorOpen = true;
   private readonly cleanups: Array<(context: AdapterCleanupContext) => void | Promise<void>> = [];
   private readonly handoffs = new Set<Promise<void>>();
+  private readonly traceHandoffs = new Set<Promise<void>>();
+  private waitingForHandoffs = false;
+  private traceOnlyTimeoutState = false;
   private cleanupReceipt: Promise<AdapterCleanupResult> | undefined;
   private wakeCleanup: (() => void) | undefined;
 
@@ -64,6 +67,10 @@ export class AdapterAttemptResources {
 
   get window(): AdapterResourceWindow {
     return this.windowState;
+  }
+
+  get traceOnlyTimeout(): boolean {
+    return this.traceOnlyTimeoutState;
   }
 
   assertForwardOpen(): void {
@@ -88,7 +95,8 @@ export class AdapterAttemptResources {
     this.wakeCleanup?.();
   }
 
-  trackHandoff<Value>(promise: Promise<Value>): Promise<Value> {
+  trackHandoff<Value>(promise: Promise<Value>, kind: "resource" | "trace" = "resource"): Promise<Value> {
+    const pending = kind === "trace" ? this.traceHandoffs : this.handoffs;
     let settled!: Promise<void>;
     settled = promise
       .then(
@@ -96,9 +104,10 @@ export class AdapterAttemptResources {
         () => undefined,
       )
       .finally(() => {
-        this.handoffs.delete(settled);
+        pending.delete(settled);
+        this.wakeCleanup?.();
       });
-    this.handoffs.add(settled);
+    pending.add(settled);
     return promise;
   }
 
@@ -133,7 +142,10 @@ export class AdapterAttemptResources {
       if (signal.aborted) resolve();
       else {
         onAbort = () => {
+          this.traceOnlyTimeoutState =
+            this.waitingForHandoffs && this.handoffs.size === 0 && this.traceHandoffs.size > 0;
           this.close();
+          this.wakeCleanup?.();
           resolve();
         };
         signal.addEventListener("abort", onAbort, { once: true });
@@ -159,15 +171,21 @@ export class AdapterAttemptResources {
           }
         }
         if (timedOut || this.cleanups.length > 0) continue;
-        if (this.handoffs.size === 0) break;
-        const changed = new Promise<void>((resolve) => {
+        if (this.handoffs.size === 0 && this.traceHandoffs.size === 0) break;
+        if (signal.aborted) {
+          timedOut = true;
+          break;
+        }
+        this.waitingForHandoffs = true;
+        await new Promise<void>((resolve) => {
           this.wakeCleanup = resolve;
         });
-        const outcome = await Promise.race([changed, ...this.handoffs, aborted]).then(() =>
-          signal.aborted ? ("aborted" as const) : ("settled" as const),
-        );
+        this.waitingForHandoffs = false;
         this.wakeCleanup = undefined;
-        if (outcome === "aborted") timedOut = true;
+        if (signal.aborted) {
+          timedOut = !this.traceOnlyTimeout;
+          break;
+        }
       }
     } finally {
       this.wakeCleanup = undefined;

@@ -1026,11 +1026,16 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   attachmentScope,
                   Effect.promise(() => ownedAttachments.dispose()),
                 );
-                adapterExecutionTraces = createAdapterExecutionTraceCollector(ownedAttachments.artifacts);
+                const traces = createAdapterExecutionTraceCollector(ownedAttachments.artifacts, {
+                  diagnostic: scopedFeedback.diagnostic,
+                  track: () => undefined,
+                });
+                adapterExecutionTraces = traces;
+                yield* Scope.addFinalizer(attachmentScope, Effect.sync(traces.dispose));
                 yield* Effect.addFinalizer(() =>
-                  Effect.sync(() => {
-                    adapterExecutionTraces?.close();
+                  Effect.promise(() => {
                     adapterAttachments?.close();
+                    return traces.close();
                   }),
                 );
               }
@@ -1078,7 +1083,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                 }
                 const resources = new AdapterAttemptResources(() => {
                   adapterUsageSnapshot = adapterUsage?.close();
-                  adapterExecutionTraces?.close();
+                  void adapterExecutionTraces?.close();
                   adapterAttachments?.close();
                 });
                 adapterResources = resources;
@@ -1096,7 +1101,13 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     attachmentScope,
                     Effect.promise(() => ownedAttachments.dispose()),
                   );
-                  adapterExecutionTraces = createAdapterExecutionTraceCollector(adapterAttachments.artifacts);
+                  const traces = createAdapterExecutionTraceCollector(adapterAttachments.artifacts, {
+                    diagnostic: scopedFeedback.diagnostic,
+                    track: (promise) => resources.trackHandoff(promise, "trace"),
+                  });
+                  adapterExecutionTraces = traces;
+                  yield* Scope.addFinalizer(attachmentScope, Effect.sync(traces.dispose));
+                  yield* Effect.addFinalizer(() => Effect.promise(traces.close));
                 }
 
                 // Scope LIFO freezes Assertions before releasing author resources.
@@ -2404,6 +2415,7 @@ function cleanupAdapterResources(
         ),
         Effect.catch((failure) =>
           Effect.sync(() => {
+            if (resources.traceOnlyTimeout) return;
             failed = true;
             input.onTimeout({ ...errorFromThrown(failure, "attempt.teardown"), code: "adapter-cleanup-timeout" });
             input.feedback.diagnostic({

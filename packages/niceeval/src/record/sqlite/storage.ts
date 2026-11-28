@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";
-import { Result } from "effect";
+import { isDeepStrictEqual } from "node:util";
+import { Result, Schema } from "effect";
 import { encodeAttemptLocator, parseAttemptLocator } from "../../attempt-locator.ts";
 import type { AttemptId } from "../model/identifiers.ts";
 import {
@@ -11,6 +12,16 @@ import {
   encodeMemberDocument,
 } from "../codec/core.ts";
 import { encodeRecordJsonUtf8 } from "../writer/limits.ts";
+import { executionTracesRecordCollection } from "../family/execution-traces/definition.ts";
+import {
+  executionTraceIndexRecordCollection,
+  ExecutionTraceIndexRecordSchema,
+} from "../family/execution-traces/index-definition.ts";
+import { ExecutionTraceIndexProjection } from "../family/execution-traces/index-projection.ts";
+import {
+  ExecutionTraceArchiveRecordSchema,
+  ExecutionTraceStoredRecordSchema,
+} from "../family/execution-traces/schema.ts";
 import {
   ATTACHMENT_INVENTORY_HANDLE,
   ATTACHMENT_PAYLOAD_HANDLE,
@@ -2978,6 +2989,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
         cause instanceof Error ? cause.message : `Attempt ${attemptId} locator is invalid`,
       );
     }
+    if (verifyPayloadBytes) verifyAttemptExecutionTraceIndex(connection, runId, attemptId);
   }
   const attachments = recordStatement(
     connection,
@@ -3499,11 +3511,114 @@ export function findAttemptLocatorCandidates(
   return { locator, ambiguous: originCount > 1, candidates };
 }
 
+const decodeTraceRecord = Schema.decodeUnknownResult(ExecutionTraceStoredRecordSchema, { onExcessProperty: "error" });
+const decodeTraceIndexRecord = Schema.decodeUnknownResult(ExecutionTraceIndexRecordSchema, {
+  onExcessProperty: "error",
+});
+const decodeTraceArchive = Schema.decodeUnknownResult(ExecutionTraceArchiveRecordSchema, { onExcessProperty: "error" });
+
+function* storedTraceItems(
+  connection: RecordDatabase,
+  attachmentId: string,
+  deadlineEpochMs: number | undefined,
+): Generator<{ readonly ordinal: number; readonly value: unknown }> {
+  const utf8 = new TextDecoder("utf-8", { fatal: true });
+  let after = -1;
+  for (;;) {
+    if (deadlineEpochMs !== undefined && Date.now() > deadlineEpochMs) {
+      throw sqliteError(
+        "record-resource-limit-exceeded",
+        "verify-execution-trace-index",
+        "Trace validation deadline expired.",
+      );
+    }
+    const page = readCollectionItemPage(connection, attachmentId, after, RECORD_SQLITE_MAX_PAGE_ROWS, true);
+    for (const item of page.items) {
+      if (
+        item.ordinal !== ++after ||
+        createHash("sha256").update(item.canonicalBytes).digest("hex") !== item.canonicalDigest ||
+        item.logicalIdentity !== collectionItemLogicalIdentity(item.ordinal, item.canonicalDigest)
+      )
+        throw new Error("Execution trace collection row identity is invalid.");
+      yield { ordinal: item.ordinal, value: JSON.parse(utf8.decode(item.canonicalBytes)) };
+    }
+    if (page.nextOrdinal === null) break;
+  }
+}
+
+/** Rebuilds the companion mapping from the same owner's canonical rows for both publication and hostile import. */
+export function verifyAttemptExecutionTraceIndex(
+  connection: RecordDatabase,
+  runId: string,
+  attemptId: string,
+  deadlineEpochMs?: number,
+): void {
+  const ownerAttachments = recordStatement(
+    connection,
+    "SELECT attachment_id,family FROM ne19_attachments WHERE owner_kind='attempt' AND owner_run_id=? " +
+      "AND owner_attempt_id=? AND family IN (?,?)",
+  ).all(runId, attemptId, executionTracesRecordCollection.family, executionTraceIndexRecordCollection.family);
+  const fact = ownerAttachments.find(({ family }) => family === executionTracesRecordCollection.family);
+  const index = ownerAttachments.find(({ family }) => family === executionTraceIndexRecordCollection.family);
+  if (fact === undefined && index === undefined) return;
+  try {
+    if (fact === undefined) throw new Error("Execution trace index has no owning trace collection.");
+    const facts = storedTraceItems(connection, text(fact, "attachment_id"), deadlineEpochMs);
+    if (index === undefined) {
+      for (const { value } of facts) {
+        if (typeof value !== "object" || value === null) continue;
+        const kind = Reflect.get(value, "kind");
+        if (kind === "scope" || (kind === "trace-header" && Reflect.has(value, "index"))) {
+          throw new Error("Execution trace declares a published index but its companion is missing.");
+        }
+        if (
+          kind === "trace-header" &&
+          Reflect.has(value, "archive") &&
+          Result.isFailure(decodeTraceArchive(Reflect.get(value, "archive")))
+        ) {
+          throw new Error("Execution trace archive envelope is invalid.");
+        }
+      }
+      return;
+    }
+    const projection = new ExecutionTraceIndexProjection();
+    try {
+      for (const { ordinal, value } of facts) {
+        const record = decodeTraceRecord(value);
+        if (Result.isFailure(record)) throw new Error("Execution trace record envelope is invalid.");
+        projection.add(record.success, ordinal);
+      }
+      if (projection.finish() !== "published") {
+        throw new Error("Execution trace index companion has no matching header declaration.");
+      }
+      const expected = projection.rows();
+      for (const { value } of storedTraceItems(connection, text(index, "attachment_id"), deadlineEpochMs)) {
+        const actual = decodeTraceIndexRecord(value);
+        const next = expected.next();
+        if (Result.isFailure(actual) || next.done || !isDeepStrictEqual(actual.success, next.value)) {
+          throw new Error("Execution trace index does not match its canonical records.");
+        }
+      }
+      if (!expected.next().done) throw new Error("Execution trace index is missing expected mappings.");
+    } finally {
+      projection.close();
+    }
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "record-resource-limit-exceeded") throw cause;
+    throw sqliteError(
+      "record-content-invalid",
+      "verify-execution-trace-index",
+      cause instanceof Error ? cause.message : "Execution trace index validation failed.",
+    );
+  }
+}
+
 export function readCollectionItemPage(
   connection: RecordDatabase,
   attachmentId: string,
   afterOrdinal: number,
   pageSize: number,
+  includeStaged = false,
 ): CollectionItemPage {
   if (!Number.isSafeInteger(afterOrdinal) || afterOrdinal < -1)
     throw sqliteError("record-content-invalid", "read-collection-page", "afterOrdinal must be -1 or greater");
@@ -3529,11 +3644,15 @@ export function readCollectionItemPage(
       FROM ne19_collection_items i
       JOIN ne19_attachments a ON a.attachment_id=i.attachment_id JOIN ne19_runs r ON r.run_id=a.owner_run_id
       ${collectionItemContentJoin}
-      WHERE i.attachment_id=? AND i.ordinal>? AND
+      WHERE i.attachment_id=? AND i.ordinal>? ${
+        includeStaged
+          ? ""
+          : `AND
         (r.status='sealed' OR EXISTS (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id)) AND
         (a.owner_kind='run' OR NOT EXISTS (SELECT 1 FROM ne19_run_resources rr WHERE rr.run_id=r.run_id) OR
          (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM ne19_attempt_publications p
-           WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id)))
+           WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id)))`
+      }
       ORDER BY i.ordinal LIMIT ?`,
   ).iterate(attachmentId, afterOrdinal, pageSize);
   for (const row of pageRows) {
@@ -3554,7 +3673,9 @@ export function readCollectionItemPage(
       payload:
         external === undefined
           ? payload
-          : readCollectionItemPayload(external, (id, after, size) => readContentChunkPage(connection, id, after, size)),
+          : readCollectionItemPayload(external, (id, after, size) =>
+              readContentChunkPage(connection, id, after, size, includeStaged),
+            ),
       canonicalDigest,
     });
     hasMore = integer(row, "has_more") === 1;

@@ -204,6 +204,9 @@ export interface AdapterCreateContext<Flags = ExperimentFlags, Roles extends str
   recordTrace<Event extends import("./adapter-execution-trace.ts").ExecutionTraceEvent>(
     input: import("./adapter-execution-trace.ts").ExecutionTraceInput<Event>,
   ): Promise<import("./adapter-execution-trace.ts").ExecutionTraceReceipt>;
+  recordTrace<Event extends import("./adapter-execution-trace.ts").ExecutionTraceEvent>(
+    input: import("./adapter-execution-trace.ts").ExecutionTraceStreamInput<Event>,
+  ): Promise<import("./adapter-execution-trace.ts").ExecutionTraceStreamReceipt>;
   /** 当前 Eval 的公开 ID。 */
   readonly evalId: string;
   /** 当前 Experiment 的公开 ID。 */

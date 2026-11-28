@@ -295,6 +295,7 @@ Evidence detail 返回该精确 JSON 值的规范 UTF-8 bytes，以 `base64` 编
 续读时保留全部筛选参数，绑定改变返回 `restart-required`。identity index 的遗漏不妨碍按已知稳定 ID 精确展开。
 
 可选 `fromEventId` 让第一页从该通用事件开始，按接纳顺序向后读，适合在几十万条事件的长轨迹中直接跳到目标附近。
+已发布定位集合通过 ordinal 二分找起点。历史 Attempt 无定位集合时按有界页线性扫描，结果带 `index: { state: "not-published", reason: "historical" }`。
 它必须与 `traceId` 同时给出且属于该 trace，并满足其余筛选；不满足时返回 `inspection-selection-missing`。
 continuation 同时绑定 `fromEventId`。CLI 写法是 `--trace <trace-id> --from <eventId>`。
 
@@ -331,7 +332,9 @@ type ExecutionKeyRow =
 
 每页最多 256 行且序列化后至多 64 KiB，每页至少一行。一个事件的 evidence 行可以跨页，下一页从未交付的行继续。
 有后续页时结果带 `continuation`，它绑定 locator、`traceId`、`keys`、publication cutoff 与当前 family，绑定改变返回 `restart-required`。
-查询经身份索引完成，成本与轨迹长度无关；它不读取事件 payload，也不读取 `archive` 指向的存档。
+有定位集合时查询无需扫描整条轨迹。ordinal 二分的 seek 次数随定位条目数对数增长，查询不读取事件 payload。
+历史 Attempt 无定位集合时按有界页线性扫描，结果带 `index: { state: "not-published", reason: "historical" }`。
+两种读取方式都不访问 `archive` 指向的存档。
 
 人读输出每行显示 key、`eventId` 与 evidence 映射，`Next` 给出续读命令，以及第一个命中事件的详情命令。
 

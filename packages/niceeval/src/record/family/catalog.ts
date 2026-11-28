@@ -13,7 +13,10 @@ import {
 } from "./artifacts/persistence.ts";
 import { assertionsRecordAttachmentPersistence } from "./assertions/persistence.ts";
 import { fileChangesRecordAttachmentPersistence } from "./file-changes/persistence.ts";
-import { executionTracesRecordAttachmentPersistence } from "./execution-traces/persistence.ts";
+import {
+  executionTraceIndexRecordAttachmentPersistence,
+  executionTracesRecordAttachmentPersistence,
+} from "./execution-traces/persistence.ts";
 import {
   attemptRunnerActivitiesRecordAttachmentPersistence,
   runRunnerActivitiesRecordAttachmentPersistence,
@@ -45,6 +48,7 @@ export const NiceEvalRecordAttachmentPersistences = Object.freeze([
   runRunnerDiagnosticsRecordAttachmentPersistence,
   fileChangesRecordAttachmentPersistence,
   executionTracesRecordAttachmentPersistence,
+  executionTraceIndexRecordAttachmentPersistence,
   identityManifestsRecordAttachmentPersistence,
   sourcesRecordAttachmentPersistence,
   attemptArtifactsRecordAttachmentPersistence,
@@ -76,6 +80,7 @@ export const NICE_EVAL_FAMILIES = Object.freeze([
   NiceEvalRecordAttachments.runnerDiagnostics.attempt.family,
   NiceEvalRecordAttachments.fileChanges.family,
   NiceEvalRecordAttachments.executionTraces.family,
+  NiceEvalRecordAttachments.executionTraceIndex.family,
   NiceEvalRecordAttachments.identityManifests.family,
   NiceEvalRecordAttachments.sources.family,
   NiceEvalRecordAttachments.artifacts.attempt.family,

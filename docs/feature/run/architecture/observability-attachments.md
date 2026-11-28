@@ -122,12 +122,14 @@ producer 的等待始终在事务外。超过行内阈值的单个值先作为 C
 - 条目、scope、事件与 evidence 的计数。
 
 key 与 scopeId 唯一性、跨批引用的解析、计数与截断前缀都通过这些行计算，内存只保存当前批次与当前条目。
-目标到达时删除对应的待解析引用。截断时最长有效前缀的终点是最早一条待解析引用的引用方序号，与流的终点二者取前。
+目标到达时解析对应引用，并保留来源与目标的序号。截断从最早一条待解析引用之前开始。
+若前缀内仍有引用指向边界之后的条目，继续把边界向前移到最早的此类引用之前，直到前缀闭合。
 
 流结束或截断后，Host 在有界批次中完成最终校验：待解析引用、`causes` 成环与 evidence 闭合。
 `causes` 环检查按索引逐批做拓扑排序，不把整张图载入内存；截断时只校验有效前缀。
 全部通过后，一个短事务把预留原子标为该 `traceId` 的接纳快照，并写入快照头：collection、计数与 `archive`。
 截断时只有有效前缀成为快照，其后的暂存行随预留删除。任一校验失败则整体删除预留，此前接纳的快照不变。
+流式 scope 逐项写入 collection，快照头保存 scope 计数，读取时可以分页。
 
 同 `traceId` 已有接纳快照时，Host 在流结束后比较两份快照的规范化 digest。digest 对接纳顺序的条目流式计算，与提交方式无关。
 相同则删除新预留并返回原快照的汇总，不同则删除新预留并按冲突拒绝。
@@ -137,16 +139,17 @@ Attempt 重试使用新的 `attemptId`，不继承预留；崩溃留下的预留
 
 ### 身份索引
 
-每个事件 item 携带通用 item key，值为 `traceId` 与事件 key 的规范编码，evidence 同样携带含 evidence key 的 item key。
-Host 按 owner Attempt、family 与 item key 建唯一索引，按 `eventId` 与 `evidenceId` 建身份索引，不解释 item key 的业务含义。
-Inspection 的 key 查询、`eventId` 详情与从指定事件开始的 outline 都经这些索引定位，读取成本与轨迹长度无关。
+execution-traces 为事件和 evidence 派生定位条目。同一 Attempt 的固定定位 collection 按规范键排序，
+支持通过 author traceId 与导入 key、`eventId` 或 `evidenceId` 查找事实，也可按接纳 ordinal 分页。
+定位条目按规范键写入有界页。查询用既有 ordinal 主键二分定位页，再查页内条目，seek 次数随页数对数增长。
 
-publication 与 hostile import 对 execution-traces 逐 item 核对 item key 与 item 内容一致且唯一，在有界批次中完成。
-item key 是从事件派生的定位数据，不是第二份事实；不一致按 publication closure 失败处理。
+新写入的 trace header 声明已发布定位集合。publication 与 hostile import 在有界批次中共用校验器，
+逐项核对定位集合的顺序、唯一性及与事实的双射。出现缺项、额外项、对应事实不符，或 header 声明存在定位集合却未找到时，闭合验证失败。
 
 ### 读取兼容
 
 新 family 缺席为 not-recorded；内建 Agent 投影可以同时存在，但不能遮盖损坏的新 family。
+历史 Attempt 的 trace header 没有定位集合声明时，keys 和从指定事件开始的查询可按有界页线性扫描，并标记历史索引未发布。
 兼容承诺是新 reader 读取当前支持格式的既有 Record，不要求旧 reader 接受新 family 或新的 Inspection 结果。
 历史附件中的 trace JSON 不会被静默转换为执行轨迹，也不回写历史评分。
 

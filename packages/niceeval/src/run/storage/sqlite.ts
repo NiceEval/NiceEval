@@ -26,7 +26,13 @@ import {
 } from "../../record/sqlite/state-repository.ts";
 import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
-import { readRunValue, RUN_VALUE_FAMILY, stageRunValue, sealRecoveredRun } from "../../record/sqlite/storage.ts";
+import {
+  readRunValue,
+  RUN_VALUE_FAMILY,
+  stageRunValue,
+  sealRecoveredRun,
+  verifyAttemptExecutionTraceIndex,
+} from "../../record/sqlite/storage.ts";
 import { RunStorageError } from "./errors.ts";
 import { createRunWriterGeneration, observeRunWriterTermination } from "./owner-identity.ts";
 import {
@@ -336,8 +342,14 @@ export function publishOriginAttemptOnConnection(
     input.closureDigest,
     input.deadlineEpochMs,
   );
+  const selectMutation = recordStatement(connection, "SELECT mutation_sequence FROM ne19_runs WHERE run_id=?");
+  const verifiedMutation = integer(requiredRecordRow(selectMutation.get(input.runId)), "mutation_sequence");
+  verifyAttemptExecutionTraceIndex(connection, input.runId, input.attemptId, input.deadlineEpochMs);
   return withImmediateTransaction(connection, input.deadlineEpochMs, "publish-origin-attempt", () => {
     requireActiveWriter(connection, input.runId, input.writerGeneration);
+    if (integer(requiredRecordRow(selectMutation.get(input.runId)), "mutation_sequence") !== verifiedMutation) {
+      throw new RunStorageError("run-storage-invalid", "Attempt changed during execution trace index validation");
+    }
     if (!slotExists(connection, input.runId, input.slotId)) {
       throw new RunStorageError("slot-not-found", `Run ${input.runId} does not expect slot ${input.slotId}`);
     }

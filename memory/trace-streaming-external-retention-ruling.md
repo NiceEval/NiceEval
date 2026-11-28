@@ -25,3 +25,5 @@ relations:
 
 **依据**。逐条证据见设计挑战报告（`~/WorkNote/Prompts/NiceEval/reports/challenge-external-evidence.md`），
 其中 Node 反例确认 async generator 在第二次 `next()` 挂起后 `return()` 无法在清理期限内返回。
+
+定位集合复用当前 Record 表及通用行身份公式，避免递增格式后拒绝下游已有 Record 并产生付费重跑成本。
