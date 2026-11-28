@@ -25,8 +25,11 @@ async function writeSandboxFixture(cwd: string) {
   await writeFile(join(cwd, "sandbox.ts"), await readFile(SANDBOX_FIXTURE, "utf8"));
 }
 
-async function runCli(cwd: string, argv: readonly string[]) {
+async function runCli(cwd: string, argv: readonly string[], terminalColumns?: number) {
   const stdout = new PassThrough();
+  if (terminalColumns !== undefined) {
+    Object.defineProperties(stdout, { isTTY: { value: true }, columns: { value: terminalColumns } });
+  }
   const stderr = new PassThrough();
   const outChunks: Buffer[] = [];
   const errChunks: Buffer[] = [];
@@ -653,6 +656,67 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
     expect(countRes.stdout).toMatch(/Summary\s+[^\n]*entries: 2/u);
     expect(countRes.stdout).not.toContain("entrys");
     expect(countRes.stdout).toContain(`Open: niceeval view ${populatedLocator}`);
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  // @issue docs/issues/show-assertion-rationale-hidden.md
+  test("full Judge detail shows saved rationale and omits a link to the same read", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.boolean(), async (explicitAspect) => {
+        const selection = [judgeQaLocator, ...(explicitAspect ? ["assertions"] : []), judgeQaEntryId, "--full"];
+        const human = await runCli(cwd, ["show", ...selection]);
+        expect(human.code, human.stderr).toBe(0);
+        expect(human.stdout).toContain("The answer names Paris.");
+        expect(human.stdout).not.toContain(`niceeval show ${judgeQaLocator} ${judgeQaEntryId} --full`);
+        expect(human.stdout).toContain(`\nNext\n  niceeval show ${judgeQaLocator}\n`);
+
+        const machine = await runCli(cwd, ["show", ...selection, "--json"]);
+        expect(machine.code, machine.stderr).toBe(0);
+        const [detail] = decodeNdjson(machine.stdout);
+        if (detail?.outcome !== "success" || detail.operation !== "attempt.assertion.detail") {
+          throw new Error("Expected Assertion detail");
+        }
+        expect(detail.links.map((link) => link.command)).not.toContain(
+          `niceeval show ${judgeQaLocator} ${judgeQaEntryId} --full`,
+        );
+      }),
+      { seed: 162, numRuns: 2, examples: [[false]] },
+    );
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  // @issue docs/issues/show-timing-identifiers-truncated.md
+  test("timing preserves published activity IDs, labels and phases in a pipe", async () => {
+    const selection = ["show", judgeCausesLocator, "timing"];
+    const machine = await runCli(cwd, [...selection, "--json"]);
+    expect(machine.code, machine.stderr).toBe(0);
+    const [detail] = decodeNdjson(machine.stdout);
+    if (detail?.outcome !== "success" || detail.operation !== "attempt.timing") throw new Error("Expected timing");
+    const piped = await runCli(cwd, selection);
+    expect(piped.code, piped.stderr).toBe(0);
+    for (const { activityId, label, phase, assertionLabel } of detail.timing.activities) {
+      expect(piped.stdout).toContain(activityId);
+      expect(piped.stdout).toContain(label);
+      expect(piped.stdout).toContain(phase);
+      if (assertionLabel !== undefined) expect(piped.stdout).toContain(assertionLabel);
+    }
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  // @issue docs/issues/show-timing-identifiers-truncated.md
+  test("timing identifies failed activities by name in a narrow terminal", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 36, max: 68 }), async (columns) => {
+        const terminal = await runCli(cwd, ["show", judgeCausesLocator, "timing"], columns);
+        expect(terminal.code, terminal.stderr).toBe(0);
+        const [, failures] = terminal.stdout.split("Failed activities");
+        expect(failures).toContain("judge.entry");
+        expect(failures).toContain("assertion.evaluate");
+        expect(failures?.replace(/\s+/gu, " ")).toContain("First required review");
+        expect(terminal.stdout).not.toMatch(/interval_[a-z0-9]+/u);
+      }),
+      { seed: 387, numRuns: 5, examples: [[36]] },
+    );
   });
 
   // @feature docs/feature/inspection/README.md#exact-read-and-comparison

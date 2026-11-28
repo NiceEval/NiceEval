@@ -12,6 +12,7 @@ import {
 import { projectJudgeUsage, projectTotalUsageCosts } from "../o11y/judge-usage-projection.ts";
 import { recordedCostGaps, type RecordedTotalUsageCosts } from "../o11y/cost-gaps.ts";
 import type { ModelRolesWire } from "../model-roles.ts";
+import { boundedErrorText } from "../shared/bounded-error-text.ts";
 
 import { Result, Schema } from "effect";
 
@@ -1819,7 +1820,13 @@ function projectDiagnostics(
     };
   }
   const items = diagnostics.value.segments.slice(0, MAX_DIAGNOSTICS).map((diagnostic) => {
-    const summary = boundedText(diagnostic.summary, MAX_DIAGNOSTIC_SUMMARY_BYTES);
+    const summary =
+      diagnostic.kind === "execution-error"
+        ? {
+            value: boundedErrorText(diagnostic.summary, MAX_DIAGNOSTIC_SUMMARY_BYTES),
+            truncated: utf8ByteLength(diagnostic.summary) > MAX_DIAGNOSTIC_SUMMARY_BYTES,
+          }
+        : boundedText(diagnostic.summary, MAX_DIAGNOSTIC_SUMMARY_BYTES);
     const causes = diagnostic.causes.slice(0, MAX_DIAGNOSTIC_CAUSES).map((cause) => {
       const causeSummary = boundedText(cause.summary, MAX_DIAGNOSTIC_CAUSE_BYTES);
       return {

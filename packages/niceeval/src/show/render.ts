@@ -37,6 +37,7 @@ import type {
   UsageView,
 } from "./model.ts";
 import { projectMetric } from "./model.ts";
+import { inspectionShellWord } from "../inspection/addressing.ts";
 import { decodeBase64Bytes } from "../inspection/bytes.ts";
 import { displayTextHasForbiddenCharacter } from "../record/family/execution-traces/schema.ts";
 import type { InspectionProjectResult } from "../inspection/project-result.ts";
@@ -1071,6 +1072,7 @@ export function renderAttempt(
     readonly context: import("../state/protocol.ts").AttemptState;
     readonly execution: import("../state/protocol.ts").StateExecution;
   },
+  record?: string,
 ): string {
   return terminal([
     {
@@ -1114,7 +1116,7 @@ export function renderAttempt(
             { key: "Score", value: score(value.score, value.verdict) },
           ],
         },
-        ...attemptDiagnosticBlocks(value),
+        ...attemptDiagnosticBlocks(value, record),
         {
           meta: undefined,
           attachNext: false,
@@ -1193,7 +1195,8 @@ export function renderAttempt(
   ]);
 }
 
-function attemptDiagnosticBlocks(value: AttemptView): TerminalPanelContentBlock[] {
+function attemptDiagnosticBlocks(value: AttemptView, record?: string): TerminalPanelContentBlock[] {
+  const executionCommand = diagnosticShowCommand(value.locator, "execution", record);
   const items = value.diagnostics?.items ?? [];
   const failures = items.filter((item) => item.kind !== "advisory");
   const advisories = items.filter((item) => item.kind === "advisory");
@@ -1204,22 +1207,26 @@ function attemptDiagnosticBlocks(value: AttemptView): TerminalPanelContentBlock[
   ] as const) {
     if (diagnostics.length === 0) continue;
     blocks.push({ meta: undefined, attachNext: false, kind: "divider", title });
-    for (const diagnostic of diagnostics)
-      blocks.push({
-        kind: "keyValue",
-        entries: [
-          { key: "Phase", value: diagnostic.phase },
-          { key: "Reason", value: factPhrase(diagnostic.code) },
-          { key: "Evidence", value: `niceeval show ${value.locator} ${diagnostic.evidenceId}` },
-          { key: "Error", value: diagnostic.summary },
-          ...(diagnostic.summaryTruncated
-            ? [{ key: "Summary", value: "partial; see --execution for recorded evidence" }]
-            : []),
-          ...(COMMAND_PHASES.has(diagnostic.phase)
-            ? [{ key: "Command output", value: `niceeval show ${value.locator} execution` }]
-            : []),
-        ],
-      });
+    for (const diagnostic of diagnostics) {
+      blocks.push(
+        {
+          kind: "keyValue",
+          entries: [
+            { key: "Phase", value: diagnostic.phase },
+            { key: "Reason", value: factPhrase(diagnostic.code) },
+            { key: "Error", value: diagnostic.summary },
+            ...(diagnostic.summaryTruncated
+              ? [{ key: "Summary", value: "partial; open the saved diagnostic for the full text" }]
+              : []),
+            ...(COMMAND_PHASES.has(diagnostic.phase) ? [{ key: "Command output", value: executionCommand }] : []),
+          ],
+        },
+        {
+          kind: "command",
+          command: diagnosticShowCommand(value.locator, diagnostic.evidenceId, record),
+        },
+      );
+    }
   }
   if (value.outcome === "errored" && failures.length === 0 && value.verdictCauses === undefined) {
     blocks.unshift(
@@ -1229,15 +1236,21 @@ function attemptDiagnosticBlocks(value: AttemptView): TerminalPanelContentBlock[
         entries: [
           {
             key: "Diagnostics",
-            value: `unavailable: no recorded failure diagnostic items (${value.diagnostics?.state ?? "not-read"}); see --execution and --timing for the closest recorded evidence`,
+            value: `unavailable: no recorded failure diagnostic items (${value.diagnostics?.state ?? "not-read"})`,
           },
         ],
       },
+      { kind: "command", command: executionCommand },
     );
   }
   if (value.diagnostics?.hasMore)
-    blocks.push({ kind: "keyValue", entries: [{ key: "More diagnostics", value: "see --execution" }] });
+    blocks.push({ kind: "keyValue", entries: [{ key: "More diagnostics", value: executionCommand }] });
   return blocks;
+}
+
+function diagnosticShowCommand(locator: string, target: string, record: string | undefined): string {
+  const recordArg = record === undefined ? "" : ` --record ${inspectionShellWord(record)}`;
+  return `niceeval show ${locator} ${target}${recordArg}`;
 }
 
 export function renderSources(value: SourcesView): string {
@@ -1438,7 +1451,7 @@ function captureLimitationSummary(value: TraceView["execution"]["limitations"][n
   }
 }
 
-export function renderTrace(value: TraceView): string {
+export function renderTrace(value: TraceView, record?: string): string {
   const blocks: TerminalBlock[] = [
     {
       meta: undefined,
@@ -1736,10 +1749,10 @@ export function renderTrace(value: TraceView): string {
       },
       ...value.diagnostics.items
         .filter((diagnostic) => diagnostic.code === "cache-degraded")
-        .map((diagnostic) => ({
-          kind: "keyValue" as const,
-          entries: [{ key: "Cache degradation", value: diagnostic.summary }],
-        })),
+        .flatMap((diagnostic): TerminalPanelContentBlock[] => [
+          { kind: "keyValue", entries: [{ key: "Cache degradation", value: diagnostic.summary }] },
+          { kind: "command", command: diagnosticShowCommand(value.locator, diagnostic.evidenceId, record) },
+        ]),
     ],
   });
   blocks.push(
@@ -2219,8 +2232,11 @@ function commandOutcome(value: CommandDetail["outcome"], checked: boolean | unde
   return `${factPhrase(value.kind)}; ${factPhrase(value.reason)}`;
 }
 
-export function renderTiming(value: TimingView): string {
-  const piped = process.stdout.isTTY !== true;
+export function renderTiming(
+  value: TimingView,
+  stdout: { readonly isTTY: boolean; readonly columns: number | undefined },
+): string {
+  const piped = !stdout.isTTY;
   const headers = piped
     ? [
         "Activity ID",
@@ -2256,7 +2272,6 @@ export function renderTiming(value: TimingView): string {
           [
             activity.label,
             activity.assertionLabel,
-            activity.entryId,
             activity.transmissionOrdinal === undefined ? undefined : `attempt ${activity.transmissionOrdinal}`,
           ]
             .filter(Boolean)
@@ -2270,7 +2285,8 @@ export function renderTiming(value: TimingView): string {
   );
   const width = piped
     ? Math.max(80, widths.reduce((sum, size) => sum + size, 0) + 2 * headers.length)
-    : process.stdout.columns || 80;
+    : stdout.columns || TERMINAL_OPTIONS.width;
+  const failedActivities = value.activities.filter((activity) => activity.outcome === "failed");
   return renderTerminal(
     [
       {
@@ -2309,22 +2325,20 @@ export function renderTiming(value: TimingView): string {
             rows,
             overflow: "wrap",
           },
-          ...(value.activities.some((activity) => activity.outcome === "failed")
+          ...(failedActivities.length > 0
             ? [
                 { meta: undefined, attachNext: false, kind: "divider" as const, title: "Failed activities" },
-                ...value.activities
-                  .filter((activity) => activity.outcome === "failed")
-                  .map((activity) => ({
-                    kind: "keyValue" as const,
-                    entries: [
-                      { key: "Label", value: activity.label },
-                      { key: "Phase", value: activity.phase },
-                      { key: "Activity ID", value: activity.activityId },
-                      { key: "Parent", value: activity.parentActivityId ?? "none" },
-                      { key: "Turn", value: activity.turnId ?? "none" },
-                      { key: "Duration", value: `${fmt(activity.durationMs)} ms` },
-                    ],
-                  })),
+                ...failedActivities.map((activity) => ({
+                  kind: "keyValue" as const,
+                  entries: [
+                    { key: "Activity", value: activity.label },
+                    { key: "Phase", value: activity.phase },
+                    ...(activity.assertionLabel === undefined
+                      ? []
+                      : [{ key: "Assertion", value: activity.assertionLabel }]),
+                    { key: "Duration", value: `${fmt(activity.durationMs)} ms` },
+                  ],
+                })),
               ]
             : []),
         ],

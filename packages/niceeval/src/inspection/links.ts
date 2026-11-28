@@ -18,6 +18,7 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
   if (locator !== undefined && operation.kind === "attempt.get") {
     for (const rel of ["execution", "diff", "source", "timing", "usage"] as const) add(rel, [locator, rel]);
   }
+  if (operation.kind === "attempt.assertion.detail") add("attempt", [operation.locator]);
   if (
     operation.kind === "attempt.assertions" &&
     document !== null &&
@@ -38,7 +39,15 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
         if (["runId", "originRunId", "sourceRunId"].includes(key)) add("run", [`run:${child}`]);
         if (key === "experimentId") add("experiment", [`exp:${child}`]);
         if (locator !== undefined) {
-          if (key === "entryId") add("assertion", [locator, child, "--full"]);
+          if (
+            key === "entryId" &&
+            !(
+              operation.kind === "attempt.assertion.detail" &&
+              operation.entryId === child &&
+              operation.projection !== "compact"
+            )
+          )
+            add("assertion", [locator, child, "--full"]);
           if (key === "changeId") add("file-change", [locator, child]);
           if (key === "artifactId" && child.startsWith("art_")) add("artifact", [locator, child]);
           if (

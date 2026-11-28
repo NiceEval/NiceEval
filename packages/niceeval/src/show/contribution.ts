@@ -965,7 +965,9 @@ function runShow(
             }),
           );
           const trace = yield* project("attempt.trace", () => projectTrace(outline, selectedLocator));
-          yield* writeText(renderTrace(trace));
+          yield* writeText(
+            renderTrace(trace, typeof parsed.values.record === "string" ? parsed.values.record : undefined),
+          );
           return 0;
         }
         if (timing) {
@@ -977,7 +979,10 @@ function runShow(
             }),
           );
           yield* writeText(
-            renderTiming(yield* project("attempt.timing", () => projectTiming(document, selectedLocator))),
+            renderTiming(
+              yield* project("attempt.timing", () => projectTiming(document, selectedLocator)),
+              facts.stdout,
+            ),
           );
           return 0;
         }
@@ -1026,6 +1031,7 @@ function runShow(
           renderAttempt(
             attemptView,
             context === null || stateExecution === undefined ? undefined : { context, execution: stateExecution },
+            typeof parsed.values.record === "string" ? parsed.values.record : undefined,
           ),
         );
         return 0;
