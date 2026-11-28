@@ -613,9 +613,11 @@ receipt 只保存白名单字段及完整响应的 SHA-256，不保存 Authoriza
 ### 响应映射
 
 映射只由显式 Provider 协议选择；读取 2xx 与非 2xx 的同层回执，早于 QA 内容解码。
-Chat 协议读取 usage.prompt_tokens、usage.completion_tokens、usage.prompt_tokens_details.cached_tokens。
+Chat 协议读取 `usage.prompt_tokens`、`usage.completion_tokens` 和 `usage.prompt_tokens_details.cached_tokens`。
 
-inputTotalTokens 为 prompt_tokens；cache-read 来自 cached_tokens，OpenRouter cache-write 来自 usage.prompt_tokens_details.cache_write_tokens。
+`inputTotalTokens` 来自 `prompt_tokens`，cache-read 来自 `cached_tokens`。
+OpenAI 与 OpenRouter Chat 的 cache-write 来自 `usage.prompt_tokens_details.cache_write_tokens`。
+分别验证读写字段，只接纳非负安全整数，包括显式零。旧回执仍按已保存字段读取。
 只有 read/write 两桶都有明确值且总和不大于 prompt 时，inputTokens 才为 prompt-read-write。
 
 任一 cache 桶缺失为 null，不能把 prompt-cached 当已知 fresh input；省略字段不代表零。
@@ -652,6 +654,11 @@ TypeSafe systemone 读取 usage.input_tokens 为 inputTotalTokens，usage.output
 
 计价使用已证明的互斥 token 桶和定点金额。缺桶或缺费率保留部分估价，已知小计不能用来通过预算判断。
 读取只消费已封存价证。目录内容和价证不进入 `executionIdentityDigest`。新增来源沿用现有 Record 格式。
+
+当输入分桶有缺项，但输入总数、输出费用和三个输入费率已知时，Inspection 可用封存价证给出估价区间。
+下界按全部输入使用缓存读费率，上界按全部输入使用普通输入与缓存写费率中的较高者。两端均加上已知输出费用。
+缓存读费率必须是最低输入费率，才能给出该区间。计算只发生在读取时。
+网关不透传缓存分桶时，只显示输出小计会系统性低估。区间保留这种不确定性，无需推断实际分桶。
 
 ### 容量与封存
 

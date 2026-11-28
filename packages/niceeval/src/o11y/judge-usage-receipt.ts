@@ -80,10 +80,10 @@ export function normalizeJudgeUsageResponse(
     transportProvider === "typesafe"
       ? null
       : scalar("usage.prompt_tokens_details.cached_tokens", NonNegativeSafeIntegerSchema);
-  let cacheWriteTokens =
-    transportProvider === "openrouter"
-      ? scalar("usage.prompt_tokens_details.cache_write_tokens", NonNegativeSafeIntegerSchema)
-      : null;
+  const readsCacheWrite = transportProvider === "openai" || transportProvider === "openrouter";
+  let cacheWriteTokens = readsCacheWrite
+    ? scalar("usage.prompt_tokens_details.cache_write_tokens", NonNegativeSafeIntegerSchema)
+    : null;
   let inputTokens: number | null = null;
   if (transportProvider !== "typesafe") {
     const details = read("usage.prompt_tokens_details.cached_tokens");
@@ -97,7 +97,7 @@ export function normalizeJudgeUsageResponse(
     const invalidCache =
       malformedDetails ||
       (details !== undefined && cacheReadTokens === null) ||
-      (transportProvider === "openrouter" && write !== undefined && cacheWriteTokens === null);
+      (readsCacheWrite && write !== undefined && cacheWriteTokens === null);
     const invalidZeroWrite = write !== undefined && (!Schema.is(NonNegativeSafeIntegerSchema)(write) || write !== 0);
     const knownSum = (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0);
     if (

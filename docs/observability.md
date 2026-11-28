@@ -157,11 +157,15 @@ secret 或任意 JSON。诊断是观测事实，不自动改变 assertion outcom
 provider observed cost 各自是一项 observation。provider cost 只承载上游如实带回的事实，不承载任何估算；
 amount 使用 canonical decimal，并同时保存 provider 与 currency。
 
+Inspection 从已封存的请求或 token 观测判断是否已经观测到应用用量。没有物理调用账本时，仍缺完整金额证据。
+已有 provider 金额进入已知小计。无请求或 token 观测时保留缺用量提示，合法完整空账本证明无应用收费调用。
+
 总 token、cache ratio、Runner `estimatedCostUSD`、FX、按币种小计、command success、owner-local observed timing window 与
 diagnostic 分组都是 Calculation。
 
 Runner 的预算 estimate 只供 `maxCost` 使用。Inspection 不读取该结果；它从 sealed Adapter Usage 选择每个物理调用的 effective cost。
 reported cost 包括零并始终优先。只有 reported 缺席时，显式 configured fixed pricing profile 才能形成与同一 call 绑定的 estimate proof。
+Judge 的输入 token 分桶缺失时，可在读取侧用封存费率与已知总量计算[费用区间](feature/judge/architecture.md#计价)。
 
 所有 Calculation 显式声明所需 source 与完整度策略，不能回写 Record。`niceeval.runner-activities` 的
 unknown outcome、partial source 或不完整 parent containment 不能单独证明 Attempt 总耗时或 critical path。

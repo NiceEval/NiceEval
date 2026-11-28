@@ -226,7 +226,9 @@ function validCall(call: JudgeUsageCall): boolean {
       (call.transportProvider === "typesafe"
         ? !["usage.input_tokens", "usage.output_tokens", "usage.total_tokens"].includes(field.path)
         : ["usage.input_tokens", "usage.output_tokens"].includes(field.path)) ||
-      (field.path === "usage.prompt_tokens_details.cache_write_tokens" && call.transportProvider !== "openrouter")
+      (field.path === "usage.prompt_tokens_details.cache_write_tokens" &&
+        call.transportProvider !== "openai" &&
+        call.transportProvider !== "openrouter")
     )
       return false;
   }

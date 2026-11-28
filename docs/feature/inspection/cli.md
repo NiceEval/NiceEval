@@ -1043,6 +1043,12 @@ CostTotals 沿用应用的费用字段：state、source、values、totalCalls；
 JudgePriceReceipt 的 kind 为 `judge-call-price-estimate`，包含 Judge 的请求模型及其[封存计价来源](../judge/architecture.md#计价)。
 
 ```ts
+type EstimatedCostRange = {
+  currency: "USD";
+  lower: string;
+  upper: string;
+};
+
 type JudgeUsage =
   | { state: "unavailable"; reason: "judge-usage-not-recorded" }
   | { state: "invalid"; reason: "judge-usage-source-invalid" }
@@ -1051,7 +1057,7 @@ type JudgeUsage =
       coverage: "physical-transmissions";
       builtinCatalogCalls?: number;
       collection: CollectionState;
-      calls: readonly JudgeUsageCall[];
+      calls: readonly (JudgeUsageCall & { estimatedRange?: EstimatedCostRange })[];
       callsTruncated: boolean;
       omittedCallCount: number;
       totals: {
@@ -1060,12 +1066,14 @@ type JudgeUsage =
         outputTokens: TokenTotal;
         totalTokens: TokenTotal;
         costs: CostTotals;
+        estimatedRange?: EstimatedCostRange;
       };
       priceReceipts: readonly JudgePriceReceipt[];
     };
 ```
 
 JudgeUsageCall 的穷尽形状见 [Judge 账本定义](../judge/architecture.md#持久形状)。公开调用预览最多 128 条，按 entryIndex、logicalOrdinal、transmissionOrdinal 排序。
+读回的调用在满足[区间条件](../judge/architecture.md#计价)时带 `estimatedRange`，包含 `currency`、`lower` 和 `upper`。
 priceReceipts 仅返回预览调用的证明，全部证明仍留在附件。totals 与 builtinCatalogCalls 从全账本计算。
 存在内置价证时，builtinCatalogCalls 返回有内置价证的调用数。
 
@@ -1097,6 +1105,7 @@ interface TotalCosts {
     value: string;
     source: "reported" | "estimated" | "mixed";
   }[];
+  estimatedRange?: EstimatedCostRange;
   missingSources: readonly ("application" | "judge" | "simulated-user")[];
   gaps: readonly CostGap[];
 }
@@ -1107,6 +1116,7 @@ interface CostGap {
     | "no-pricing-profile"          // 有 token，但没有匹配到该调用可使用的价格
     | "provider-cost-not-reported"  // adapter 没有交付逐次调用的费用或可计价的调用证据
     | "token-buckets-incomplete"    // 有价格，但缺计价所需的 token 分桶
+    | "observed-usage-cost-incomplete" // 有 Agent 请求或 token 观测，缺物理调用账本和完整金额
     | "usage-not-recorded";         // 没有用量记录
   models: readonly string[];        // reason 为 no-pricing-profile 时为本页缺价的 requestModel，否则为空
   totalModelCount: number;          // 该缺口的缺价模型总数，与分页无关
@@ -1119,19 +1129,27 @@ interface CostGap {
 `experiment.get` 的 `modelUsage.attempts[].usage` 是摘要，其 gaps 只交付首页与计数；读取某个 Attempt 的完整名单时，用它的 locator 调 `attempt.usage`。
 
 `costSummary.totalCosts` 的 gaps 随 `experiment.modelUsage.continuation` 每次推进一页；Attempt 或 costSummary 名单任一仍有剩余时 continuation 存在，续读页中已交付的 Attempt 不再重复出现。
-续读页中 totalCosts 的 state、values、missingSources 与各 gap 的 source、reason、totalModelCount 不变，只推进 models；已读完的 gap 在后续页 models 为空。超过页预算的单个模型名沿用超大单项规则，独占一页完整交付。
+续读页中 totalCosts 的 state、values、estimatedRange、missingSources 与各 gap 的 source、reason、totalModelCount 不变，只推进 models；已读完的 gap 在后续页 models 为空。超过页预算的单个模型名沿用超大单项规则，独占一页完整交付。
 
 missingSources 固定 application、judge、simulated-user 顺序，无重复。任一 owner 不完整就列入；没有缺口为 complete。
 每个 missingSources 成员在 gaps 里至少有一项说明原因；同一来源有多种原因时各占一项，按上面 reason 的顺序排列。
 有缺口且有已知金额为 partial，否则 unavailable。完整但无收费调用可 values=[]，不伪造某个币种的零。
 精确十进制按相同币种相加；不转换汇率。旧 application costUSD 和 totals.costs 不改为总成本。
 
-旧应用缺源仍未知；合法完整空应用账本可在 totalCosts 判断为无应用收费调用，不更改旧应用 totals 的展示语义。
+`reported-sends` 的 Agent 有请求或 token 观测时，缺口为 `observed-usage-cost-incomplete`，已报告的金额仍纳入已知小计。
+缺源或取消且无请求或 token 观测时，缺口为 `usage-not-recorded`。合法完整空应用账本证明无应用收费调用。
+
+Judge `totals.estimatedRange` 将可估区间逐次相加，其余调用只纳入已知 USD 金额。
+Attempt 的 `totalCosts.estimatedRange` 再加上应用与模拟用户的已知 USD 金额。
+Experiment 按唯一 origin Attempt 加总，有区间时使用该区间，其余 Attempt 使用已知 USD 金额。
+仅当范围内至少一个调用具备区间时返回该字段。上下界使用精确十进制且与已知小计并列。
+区间只覆盖有价格证据的金额，未覆盖的费用仍由 `gaps` 标明。缺口与费用完整度沿用原判定。
 
 ## 模型用途与成本
 
 默认 `show @<locator>`、`show @<locator> usage` 与实验单局详情首先显示同一 totalCosts。
 完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 与 Missing sources，不能把应用费用称为整局价格。
+有费用区间时，终端在 Known subtotal 旁显示 Estimated cost range (covered usage)。
 
 Missing sources 下写出来源与原因短语，同类原因聚合计数。reason 为 `no-pricing-profile` 时，同一行给出首页缺价的模型并用 totalModelCount 写明总数，`--json` 按 continuation 取全量；并给出
 `Pricing: add prices for <models> to defineConfig({ pricing })` 与定价文档链接；其它原因说明补不上的是哪类证据，不建议填价。

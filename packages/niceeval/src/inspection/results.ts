@@ -24,6 +24,7 @@ import {
   validateJudgeUsageAttachment,
 } from "../record/family/judge-usage/schema.ts";
 import { compareAdapterModelGroups, compareJudgeUsageCalls } from "../o11y/usage-contract.ts";
+import { compareCanonicalDecimal } from "../o11y/adapter-usage-projection.ts";
 import {
   INSPECTION_ATTEMPT_PAGE_SIZE,
   INSPECTION_USAGE_GROUP_PAGE_SIZE,
@@ -1203,6 +1204,7 @@ export const CostGapReasons = [
   "no-pricing-profile",
   "provider-cost-not-reported",
   "token-buckets-incomplete",
+  "observed-usage-cost-incomplete",
   "usage-not-recorded",
 ] as const;
 const CostGapSchema = Schema.Struct({
@@ -1218,6 +1220,7 @@ const CostGapSchema = Schema.Struct({
 }).check(
   Schema.makeFilter((gap) => {
     const { models, totalModelCount, omittedModelCount } = gap;
+    if (gap.reason === "observed-usage-cost-incomplete" && gap.source !== "application") return false;
     if (gap.reason !== "no-pricing-profile") {
       return models.length === 0 && totalModelCount === 0 && omittedModelCount === 0;
     }
@@ -1232,6 +1235,12 @@ const CostGapSchema = Schema.Struct({
   }),
 );
 export type CostGap = Schema.Schema.Type<typeof CostGapSchema>;
+const EstimatedCostRangeSchema = Schema.Struct({
+  currency: Schema.Literal("USD"),
+  lower: UsageDecimalSchema,
+  upper: UsageDecimalSchema,
+}).check(Schema.makeFilter(({ lower, upper }) => compareCanonicalDecimal(lower, upper) <= 0));
+export type EstimatedCostRange = Schema.Schema.Type<typeof EstimatedCostRangeSchema>;
 const TotalUsageCostsSchema = Schema.Struct({
   // Inspection JSON observes key presence and cannot encode an explicit undefined value.
   simulatedUser: Schema.optionalKey(SimulatedUserCostSummarySchema),
@@ -1243,6 +1252,7 @@ const TotalUsageCostsSchema = Schema.Struct({
       source: Schema.Literals(["reported", "estimated", "mixed"]),
     }),
   ),
+  estimatedRange: Schema.optionalKey(EstimatedCostRangeSchema),
   missingSources: Schema.Array(Schema.Literals(["application", "judge", "simulated-user"])).check(
     Schema.makeFilter(
       (sources) =>
@@ -1261,6 +1271,8 @@ const TotalUsageCostsSchema = Schema.Struct({
     (value) =>
       value.state ===
         (value.missingSources.length === 0 ? "complete" : value.values.length === 0 ? "unavailable" : "partial") &&
+      (value.estimatedRange === undefined ||
+        (value.state === "partial" && value.values.some(({ currency }) => currency === "USD"))) &&
       value.missingSources.every((source) => value.gaps.some((gap) => gap.source === source)) &&
       value.gaps.every(
         (gap, index) =>
@@ -1331,6 +1343,7 @@ const JudgeUsageSummaryFields = {
     outputTokens: ModelGroupTokenTotalSchema,
     totalTokens: ModelGroupTokenTotalSchema,
     costs: JudgeCostTotalsSchema,
+    estimatedRange: Schema.optionalKey(EstimatedCostRangeSchema),
   }),
 };
 const JudgeUsageAvailableSummarySchema = Schema.Struct(JudgeUsageSummaryFields).check(
@@ -1344,6 +1357,7 @@ const JudgeUsageAvailableSummarySchema = Schema.Struct(JudgeUsageSummaryFields).
       (usage.builtinCatalogCalls ?? 0) <=
         usage.totals.costs.values.reduce((count, value) => count + value.estimatedCalls, 0) &&
       (usage.state === "complete" || usage.totals.costs.state !== "complete") &&
+      (usage.totals.estimatedRange === undefined || usage.totals.costs.state === "partial") &&
       [usage.totals.inputTotalTokens, usage.totals.outputTokens, usage.totals.totalTokens].every(
         (total) =>
           total.observationCount <= requests.observationCount &&
@@ -1361,11 +1375,15 @@ const JudgeUsageAvailableSummarySchema = Schema.Struct(JudgeUsageSummaryFields).
 );
 const JudgeUsageSummarySchema = Schema.Union([JudgeUsageUnavailableSchema, JudgeUsageAvailableSummarySchema]);
 export type JudgeUsageSummary = Schema.Schema.Type<typeof JudgeUsageSummarySchema>;
+const InspectionJudgeUsageCallSchema = JudgeUsageCallSchema.mapFields(
+  (fields) => ({ ...fields, estimatedRange: Schema.optionalKey(EstimatedCostRangeSchema) }),
+  { unsafePreserveChecks: true },
+);
 const JudgeUsageSchema = Schema.Union([
   JudgeUsageUnavailableSchema,
   Schema.Struct({
     ...JudgeUsageSummaryFields,
-    calls: Schema.Array(JudgeUsageCallSchema),
+    calls: Schema.Array(InspectionJudgeUsageCallSchema),
     callsTruncated: Schema.Boolean,
     omittedCallCount: RecordedCallCountSchema,
     priceReceipts: Schema.Array(JudgePriceReceiptSchema),

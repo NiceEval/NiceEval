@@ -1,7 +1,12 @@
-import type { JudgeUsageAttachment } from "../record/family/judge-usage/schema.ts";
-import { addCanonicalDecimals, canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
-import { effectiveCostTotals, type EffectiveCallCost } from "./adapter-usage-projection.ts";
+import type { JudgePriceReceipt, JudgeUsageAttachment, JudgeUsageCall } from "../record/family/judge-usage/schema.ts";
+import {
+  addCanonicalDecimals,
+  canonicalDecimalFromNumber,
+  multiplyCanonicalDecimalPerMillion,
+} from "../record/family/adapter-usage/pricing.ts";
+import { compareCanonicalDecimal, effectiveCostTotals, type EffectiveCallCost } from "./adapter-usage-projection.ts";
 import type {
+  EstimatedCostRange,
   InspectionAttemptUsageResult,
   JudgeUsage,
   JudgeUsageSummary,
@@ -13,24 +18,70 @@ import { combineCostGaps, type RecordedTotalUsageCosts } from "./cost-gaps.ts";
 
 import { compareJudgeUsageCalls } from "./usage-contract.ts";
 
+function judgeCallEstimatedRange(
+  call: JudgeUsageCall,
+  receipt: JudgePriceReceipt | undefined,
+): EstimatedCostRange | undefined {
+  if (
+    receipt?.state !== "partial" ||
+    call.inputTotalTokens === null ||
+    !receipt.missing.some(({ bucket, reason }) => bucket !== "output" && reason === "tokens-unknown")
+  )
+    return undefined;
+  const output = receipt.charges.find(({ bucket }) => bucket === "output");
+  const { input, cacheRead, cacheWrite } = receipt.pricing.ratesPerMTok;
+  if (output === undefined || input === null || cacheRead === null || cacheWrite === null) return undefined;
+  if (compareCanonicalDecimal(cacheRead, input) > 0 || compareCanonicalDecimal(cacheRead, cacheWrite) > 0) {
+    return undefined;
+  }
+  const highRate = compareCanonicalDecimal(input, cacheWrite) >= 0 ? input : cacheWrite;
+  return {
+    currency: receipt.currency,
+    lower: addCanonicalDecimals([output.amount, multiplyCanonicalDecimalPerMillion(cacheRead, call.inputTotalTokens)]),
+    upper: addCanonicalDecimals([output.amount, multiplyCanonicalDecimalPerMillion(highRate, call.inputTotalTokens)]),
+  };
+}
+
+function sumEstimatedCostRange(
+  costs: readonly { amount?: string | undefined; estimatedRange?: EstimatedCostRange | undefined }[],
+): EstimatedCostRange | undefined {
+  if (!costs.some(({ estimatedRange }) => estimatedRange !== undefined)) return undefined;
+  let lower = "0";
+  let upper = "0";
+  for (const { amount, estimatedRange } of costs) {
+    lower = addCanonicalDecimals([lower, estimatedRange?.lower ?? amount ?? "0"]);
+    upper = addCanonicalDecimals([upper, estimatedRange?.upper ?? amount ?? "0"]);
+  }
+  return { currency: "USD", lower, upper };
+}
+
 /** The ledger is already validated; independent metrics retain their own coverage. */
 export function projectJudgeUsage(ledger: JudgeUsageAttachment, page = 0): JudgeUsage {
   const receipts = new Map(ledger.priceReceipts.map((receipt) => [receipt.callId, receipt]));
   const builtinCatalogCalls = ledger.priceReceipts.filter(
     ({ pricing }) => pricing.source.kind === "builtin-catalog",
   ).length;
-  const costCalls = ledger.calls.map((call): { readonly effectiveCost: EffectiveCallCost | undefined } => {
+  const costCalls = ledger.calls.map((call) => {
     const receipt = receipts.get(call.callId);
+    const estimatedRange = judgeCallEstimatedRange(call, receipt);
     function effectiveCost(): EffectiveCallCost | undefined {
       if (call.cost !== null) return { ...call.cost, state: "complete" };
       if (receipt === undefined) return undefined;
       return { amount: receipt.amount, currency: receipt.currency, source: receipt.source, state: receipt.state };
     }
     return {
+      call: estimatedRange === undefined ? call : { ...call, estimatedRange },
       effectiveCost: effectiveCost(),
+      estimatedRange,
     };
   });
   const costs = effectiveCostTotals(costCalls, ledger.collection.state);
+  const estimatedRange = sumEstimatedCostRange(
+    costCalls.map(({ effectiveCost, estimatedRange }) => ({
+      amount: effectiveCost?.currency === "USD" ? effectiveCost.amount : undefined,
+      estimatedRange,
+    })),
+  );
   const numeric = (metric: "inputTotalTokens" | "outputTokens" | "totalTokens") => {
     let value = 0;
     let observationCount = 0;
@@ -69,7 +120,7 @@ export function projectJudgeUsage(ledger: JudgeUsageAttachment, page = 0): Judge
     ...(builtinCatalogCalls === 0 ? {} : { builtinCatalogCalls }),
     collection: ledger.collection,
     ...callPage(
-      [...ledger.calls].sort(compareJudgeUsageCalls),
+      costCalls.map(({ call }) => call).sort(compareJudgeUsageCalls),
       ledger.priceReceipts,
       page,
       INSPECTION_USAGE_CALL_PAGE_SIZE,
@@ -86,6 +137,7 @@ export function projectJudgeUsage(ledger: JudgeUsageAttachment, page = 0): Judge
       totalTokens: numeric("totalTokens"),
       costs:
         ledger.collection.state === "complete" && ledger.calls.length === 0 ? { ...costs, state: "complete" } : costs,
+      ...(estimatedRange === undefined ? {} : { estimatedRange }),
     },
   };
 }
@@ -118,7 +170,8 @@ export function projectTotalUsageCosts(
           value,
           source: "reported" as const,
         }));
-  const judgeCosts = judge.state === "complete" || judge.state === "partial" ? judge.totals.costs : undefined;
+  const judgeTotals = judge.state === "complete" || judge.state === "partial" ? judge.totals : undefined;
+  const judgeCosts = judgeTotals?.costs;
   const completeApplication =
     applicationCollectionProven &&
     (applicationEmptyComplete ||
@@ -128,9 +181,8 @@ export function projectTotalUsageCosts(
   if (!completeApplication) missingSources.push("application");
   if (judgeCosts?.state !== "complete") missingSources.push("judge");
   if (simulatedUser !== undefined && simulatedUser.state !== "complete") missingSources.push("simulated-user");
-  const values = sumCostValues([
+  const nonJudgeValues = [
     ...applicationValues,
-    ...(judgeCosts?.values ?? []),
     ...(simulatedUser?.amountUSD == null
       ? []
       : [
@@ -140,10 +192,16 @@ export function projectTotalUsageCosts(
             source: simulatedUser.costBasis ?? "estimated",
           },
         ]),
+  ];
+  const values = sumCostValues([...nonJudgeValues, ...(judgeCosts?.values ?? [])]);
+  const estimatedRange = sumEstimatedCostRange([
+    { estimatedRange: judgeTotals?.estimatedRange },
+    ...nonJudgeValues.filter(({ currency }) => currency === "USD").map(({ value }) => ({ amount: value })),
   ]);
   return {
     state: totalCostState(missingSources.length, values.length),
     values,
+    ...(estimatedRange === undefined ? {} : { estimatedRange }),
     missingSources: missingSources,
     gaps: combineCostGaps(
       missingSources.flatMap((source) => {
@@ -176,6 +234,12 @@ export function combineTotalUsageCosts(
       (unresolved && source !== "simulated-user") || totals.some((total) => total.missingSources.includes(source)),
   );
   const values = sumCostValues(totals.flatMap((total) => total.values));
+  const estimatedRange = sumEstimatedCostRange(
+    totals.map((total) => ({
+      amount: total.values.find(({ currency }) => currency === "USD")?.value,
+      estimatedRange: total.estimatedRange,
+    })),
+  );
   const sources = totals.flatMap((total) => (total.simulatedUser === undefined ? [] : [total.simulatedUser]));
   const amounts = sources.flatMap((source) => (source.amountUSD === null ? [] : [source.amountUSD]));
   const builtinCatalogCalls = sources.reduce((sum, source) => sum + (source.builtinCatalogCalls ?? 0), 0);
@@ -202,6 +266,7 @@ export function combineTotalUsageCosts(
   return {
     state: totalCostState(missingSources.length, values.length),
     values,
+    ...(estimatedRange === undefined ? {} : { estimatedRange }),
     missingSources: missingSources,
     gaps: combineCostGaps([
       ...totals.flatMap((total) => total.gaps),

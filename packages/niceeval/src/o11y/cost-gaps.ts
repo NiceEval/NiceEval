@@ -9,6 +9,16 @@ type RecordedCostGap = Pick<CostGap, "source" | "reason" | "models">;
 
 export type RecordedTotalUsageCosts = Omit<TotalUsageCosts, "gaps"> & { readonly gaps: readonly RecordedCostGap[] };
 
+export function applicationCostGaps(
+  ledger: ReadableAdapterUsageAttachment | undefined,
+  hasTurnUsage: boolean,
+): readonly RecordedCostGap[] {
+  if (ledger === undefined && hasTurnUsage) {
+    return [{ source: "application", reason: "observed-usage-cost-incomplete", models: [] }];
+  }
+  return recordedCostGaps("application", ledger);
+}
+
 /** Read the full validated ledger, before any public preview is selected. */
 export function recordedCostGaps(
   source: "application" | "judge",

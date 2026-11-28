@@ -2509,12 +2509,17 @@ function usageTotalEntries(totals: UsageTotals): readonly { readonly key: string
   ];
 }
 
+function estimatedCostRangeEntry({ currency, lower, upper }: NonNullable<UsageView["totalCosts"]["estimatedRange"]>) {
+  return { key: "Estimated cost range (covered usage)", value: `${currency} ${lower}–${upper}` };
+}
+
 function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanelContentBlock[] {
   const complete = costs.state === "complete";
   const reasons = {
     "no-pricing-profile": "No applicable prices for recorded model token usage",
     "provider-cost-not-reported": "Provider cost or priceable call evidence was not reported",
     "token-buckets-incomplete": "Sealed prices lack required token buckets",
+    "observed-usage-cost-incomplete": "Application usage observed. Physical call ledger and complete cost are missing",
     "usage-not-recorded": "Usage was not recorded completely",
   };
   const models = [...new Set(costs.gaps.flatMap((gap) => gap.models))].sort();
@@ -2569,6 +2574,9 @@ function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanel
             overflow: "wrap" as const,
           },
         ]),
+    ...(costs.estimatedRange === undefined
+      ? []
+      : [{ kind: "keyValue" as const, entries: [estimatedCostRangeEntry(costs.estimatedRange)] }]),
     ...(models.length === 0
       ? []
       : [
@@ -2742,6 +2750,9 @@ function modelUsageBlocks(
                 key: cost.currency,
                 value: `${cost.value} (${cost.coveredCalls}/${value.judgeUsage.state === "complete" || value.judgeUsage.state === "partial" ? value.judgeUsage.totals.costs.totalCalls : "unknown"} covered; ${cost.source})`,
               })),
+              ...(value.judgeUsage.totals.estimatedRange === undefined
+                ? []
+                : [estimatedCostRangeEntry(value.judgeUsage.totals.estimatedRange)]),
             ]
           : [{ key: "State", value: `${value.judgeUsage.state}; ${factPhrase(value.judgeUsage.reason)}` }],
     },

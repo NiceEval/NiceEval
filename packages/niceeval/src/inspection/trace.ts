@@ -10,7 +10,7 @@ import {
   projectAdapterModelUsage,
 } from "../o11y/adapter-usage-projection.ts";
 import { projectJudgeUsage, projectTotalUsageCosts } from "../o11y/judge-usage-projection.ts";
-import { recordedCostGaps, type RecordedTotalUsageCosts } from "../o11y/cost-gaps.ts";
+import { applicationCostGaps, recordedCostGaps, type RecordedTotalUsageCosts } from "../o11y/cost-gaps.ts";
 import type { ModelRolesWire } from "../model-roles.ts";
 import { boundedErrorText } from "../shared/bounded-error-text.ts";
 import { MAX_DIAGNOSTIC_SUMMARY_BYTES } from "../record/family/source-receipt/limits.ts";
@@ -1235,6 +1235,10 @@ export function projectAttemptUsage(
   const cost = readCurrentAttachment(NiceEvalCurrentRecordAttachments.attemptCost, attachments.attemptCost);
   const simulatedUser = cost.state === "available" ? cost.value.simulatedUser : undefined;
   const judge = judgeUsage();
+  const hasTurnUsage =
+    usage.modelGroups.basis === "reported-sends" &&
+    turns.state === "available" &&
+    turns.value.segments.some(({ usage }) => usage.some(({ kind }) => kind === "request" || kind === "token-bucket"));
   return {
     ...usage,
     turnCacheRead: projectTurnCacheRead(turns),
@@ -1246,7 +1250,7 @@ export function projectAttemptUsage(
       application.state === "available" && application.value.collection.state === "complete",
       simulatedUser,
       [
-        ...recordedCostGaps("application", application.state === "available" ? application.value : undefined),
+        ...applicationCostGaps(application.state === "available" ? application.value : undefined, hasTurnUsage),
         ...recordedCostGaps("judge", read.state === "available" ? read.value : undefined),
       ],
     ),

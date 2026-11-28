@@ -109,6 +109,7 @@
     "usage.gap.no-pricing-profile": "已记录模型用量缺少配置价格",
     "usage.gap.provider-cost-not-reported": "Provider 未报告费用或可计价的调用证据",
     "usage.gap.token-buckets-incomplete": "已有价格，但缺少所需 token 分桶",
+    "usage.gap.observed-usage-cost-incomplete": "已观测到应用用量，缺少物理调用账本和完整金额",
     "usage.gap.usage-not-recorded": "用量未完整记录",
     "usage.gap.modelCount": "{{count}} 个模型",
     "usage.addPrices": "下一步：在 defineConfig({ pricing }) 中为 {{models}} 添加价格",
