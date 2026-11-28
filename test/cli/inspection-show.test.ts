@@ -299,7 +299,7 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
           join(cwd, "evals", "stopped.eval.ts"),
           `import { defineScoreEval } from "niceeval"; import { equals } from "niceeval/expect";
            export default defineScoreEval({ async test(t) {
-             t.score(1).label("earned");
+             t.check(false, equals(true)).score(1).label("zero points");
              await t.check(false, equals(true)).label("stop only").orStop();
            } });`,
         ),
@@ -658,6 +658,21 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
     expect(countRes.stdout).toContain(`Open: niceeval view ${populatedLocator}`);
   });
 
+  // @feature docs/feature/verdict/README.md#verdict-precedence
+  // @issue docs/issues/soft-score-pass-label.md
+  test("show labels a complete Score Eval scored while preserving a failed gate", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.boolean(), async (failedGate) => {
+        const locator = failedGate ? rolesLocator : stoppedLocator;
+        const result = await runCli(cwd, ["show", locator, "assertions"]);
+        expect(result.code, result.stderr).toBe(0);
+        expect(result.stdout).toContain(failedGate ? "Verdict failed · Score 1/4" : "Verdict scored · Score 0/1");
+        if (!failedGate) expect(result.stdout).toMatch(/SCORE\s+0\/1\s+.+zero points/u);
+      }),
+      { examples: [[false], [true]], numRuns: 2 },
+    );
+  });
+
   // @feature docs/feature/inspection/README.md#exact-read-and-comparison
   // @issue docs/issues/show-assertion-rationale-hidden.md
   test("full Judge detail shows saved rationale and omits a link to the same read", async () => {
@@ -863,6 +878,8 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
     const invalidCases: readonly (readonly string[])[] = [
       ["--all", "--json"],
       ["--all", "-o", "json"],
+      ["--reference", "runs"],
+      ["--reference", "--record", "record.sqlite"],
       ["-o", "csv"],
       ["--json", "-o", "text"],
       [populatedLocator, "source", "execution"],
@@ -884,7 +901,11 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
         expect(res.stdout, JSON.stringify(argv)).toBe("");
         expect(res.stderr.trim().length, JSON.stringify(argv)).toBeGreaterThan(0);
       }),
-      { numRuns: invalidCases.length, seed: 2050 },
+      {
+        numRuns: invalidCases.length,
+        seed: 2050,
+        examples: [[["--reference", "runs"]], [["--reference", "--record", "record.sqlite"]]],
+      },
     );
   });
 });
@@ -1123,13 +1144,13 @@ describe("CLI show current project and historical deltas", () => {
       ),
       writeFile(
         join(cwd, "evals", "pass.eval.ts"),
-        `import { defineEval } from "niceeval"; import { equals } from "niceeval/expect";
-         export default defineEval({ test(t) { t.check(true, equals(true)); } });`,
+        `import { defineScoreEval } from "niceeval";
+         export default defineScoreEval({ test(t) { t.score(7); } });`,
       ),
       writeFile(
         join(cwd, "evals", "fail.eval.ts"),
-        `import { defineEval } from "niceeval"; import { equals } from "niceeval/expect";
-         export default defineEval({ test(t) { t.check(false, equals(true)); } });`,
+        `import { defineScoreEval } from "niceeval"; import { equals } from "niceeval/expect";
+         export default defineScoreEval({ test(t) { t.check(false, equals(true)).gate().score(1); } });`,
       ),
       writeFile(
         join(cwd, "experiments", "group-a.ts"),
@@ -1164,6 +1185,29 @@ describe("CLI show current project and historical deltas", () => {
     expect(expView.code, expView.stderr).toBe(0);
     expect(expView.stdout).toMatch(/Changed\s+config:flags.added \(new; added\) · all 2 attempts/u);
     expect(expView.stdout).toContain("Previous result @");
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  // @use-case docs/feature/inspection/use-case/inspection-results-after-identity-change.md#overview
+  // @issue docs/issues/show-overview-hides-previous-results-on-identity-gap.md
+  test("show summarizes the same prior scores from the current overview and --reference", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.boolean(), async (focusReference) => {
+        const result = await runCli(cwd, focusReference ? ["show", "--reference"] : ["show"]);
+        expect(result.code, result.stderr).toBe(0);
+        const [current, earlier] = result.stdout.split("Earlier results for these");
+        expect(earlier).toMatch(/Previous attempts\s+2 of 2 needing a run/u);
+        expect(earlier).toMatch(/Verdicts\s+1 passed; 1 failed; 0 errored; 0 skipped/u);
+        expect(earlier).toMatch(/Score\s+7\/8/u);
+        if (focusReference) {
+          expect(current).toContain("Historical reference results");
+          expect(earlier).toMatch(/Previous result @\w+ \(passed, 7\/7\)/u);
+        } else {
+          expect(current).toMatch(/Up to date\s+0\/2/u);
+        }
+      }),
+      { examples: [[true], [false]], numRuns: 2 },
+    );
   });
 });
 

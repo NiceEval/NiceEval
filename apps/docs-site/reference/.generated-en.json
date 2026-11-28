@@ -94,6 +94,7 @@
   "cli-flags/invocation/--all": "Include status entries for completed Invocations.",
   "cli-flags/invocation/--json": "Write this command's machine document or event stream.",
   "cli-flags/show/--all": "Show Attempts hidden in the compact Results view.",
+  "cli-flags/show/--reference": "Show earlier results for current targets that need a run.",
   "cli-flags/show/--trace": "Select an execution trace by author or persisted ID.",
   "cli-flags/show/--from": "Start execution at a stable event ID within the selected trace.",
   "cli-flags/show/--key": "Find an exact imported event key. Repeat for more keys.",

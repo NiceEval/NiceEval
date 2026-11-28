@@ -90,6 +90,7 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
   explain: option({ type: "boolean", help: help("Explain the facts read by this selection.") }),
   record: option({ type: "string", help: help("Read an external Record.") }),
   all: option({ type: "boolean", help: help("Show Attempts hidden by the compact Results view.") }),
+  reference: option({ type: "boolean", help: help("Show earlier results for current targets that need a run.") }),
   continuation: option({ type: "string", help: help("Read the next page with the same selection and filters.") }),
   trace: option({ type: "string", help: help("Select an execution trace by author or persisted ID.") }),
   from: option({ type: "string", help: help("Start execution at a stable event ID within the selected trace.") }),
@@ -118,6 +119,7 @@ Usage:
   niceeval show [@<locator> | exp:<id>... | run:<id>... | runs] [<aspect>] [<ID>]
   niceeval show @<locator> ae_<id> image <image-id> --output <file>
   niceeval show [<address>] [--record <file>] [--json] [--explain]
+  niceeval show --reference
 
 Attempt aspects: assertions, source, execution, timing, usage, diff, artifacts.
 Stable IDs may replace the aspect: ae_, fc_, art_, and execution IDs.
@@ -249,7 +251,7 @@ function runShow(
     if (entryResult !== undefined && Result.isFailure(entryResult)) return yield* usage("Invalid Assertion ID.");
     const entryId = entryResult?.success;
     const full = parsed.values.full === true;
-    const reference = false;
+    const reference = parsed.values.reference === true;
     const artifactId = artifacts ? address.id : undefined;
     const imageId = address.imageId;
     const imageOutput = typeof parsed.values.output === "string" ? parsed.values.output : undefined;
@@ -313,6 +315,15 @@ function runShow(
       return yield* usage("--output requires an Assertion image address.");
     if (all && (explain || json || locator !== undefined || runIds.length > 0 || experimentIds.length > 0 || runs))
       return yield* usage("--all applies only to the text Results overview.");
+    if (
+      reference &&
+      (locator !== undefined ||
+        runIds.length > 0 ||
+        experimentIds.length > 0 ||
+        runs ||
+        parsed.values.record !== undefined)
+    )
+      return yield* usage("--reference requires the current project without a result address or --record.");
     const compare = comparison !== undefined;
     const leftRunIds = comparison?.leftRunIds ?? [];
     const rightRunIds = comparison?.rightRunIds ?? [];

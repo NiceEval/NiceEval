@@ -3253,13 +3253,15 @@ export function renderAssertions(
         ]
       : [],
   );
-  if (options.summary.kind === "available")
+  if (options.summary.kind === "available") {
+    const { verdict, score } = options.summary;
     blocks.push({
       meta: undefined,
       attachNext: false,
       kind: "divider",
-      title: assertionVerdictLine(options.summary.verdict, options.summary.score),
+      title: assertionVerdictLine(verdict === "passed" && score.state === "complete" ? "scored" : verdict, score),
     });
+  }
   const counts = assertionRoleCounts(roles);
   if (counts !== "") blocks.push({ meta: undefined, attachNext: false, kind: "divider", title: counts });
 
