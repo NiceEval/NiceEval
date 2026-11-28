@@ -1132,6 +1132,7 @@ export function renderAttempt(
           ],
         },
         ...attemptDiagnosticBlocks(value, record),
+        ...agentInstallBlocks(value.agentInstall),
         {
           meta: undefined,
           attachNext: false,
@@ -1208,6 +1209,30 @@ export function renderAttempt(
       ],
     },
   ]);
+}
+
+function agentInstallBlocks(install: AttemptView["agentInstall"]): TerminalPanelContentBlock[] {
+  if (install.state === "unavailable") {
+    return install.reason === "not-recorded"
+      ? []
+      : [{ kind: "keyValue", entries: [{ key: "Agent install", value: "unavailable (invalid attachment)" }] }];
+  }
+  return [
+    { meta: undefined, attachNext: false, kind: "divider", title: "Agent install" },
+    ...install.value.map((fact): TerminalPanelContentBlock => {
+      const { agent, version, revision } = fact.identity;
+      return {
+        kind: "keyValue",
+        entries: [
+          { key: `${agent}@${version}`, value: `${fact.outcome} (revision ${revision})` },
+          ...(fact.outcome === "hit" ? [] : [{ key: "Probe miss", value: fact.probeMissReason }]),
+          ...(fact.outcome === "installed" && fact.repairFailureReason !== undefined
+            ? [{ key: "Repair failure", value: fact.repairFailureReason }]
+            : []),
+        ],
+      };
+    }),
+  ];
 }
 
 function attemptDiagnosticBlocks(value: AttemptView, record?: string): TerminalPanelContentBlock[] {

@@ -153,6 +153,7 @@ export interface AttemptView {
   readonly diagnostics: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["diagnostics"] | undefined;
   readonly stoppedAt: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["stoppedAt"] | undefined;
   readonly notes: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["notes"];
+  readonly agentInstall: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["agentInstall"];
   readonly totalCosts: InspectionSuccessDocumentFor<"attempt.usage">["usage"]["totalCosts"] | undefined;
   readonly locator: string;
   readonly verdict: Verdict | undefined;
@@ -381,6 +382,7 @@ export function projectAttempt(
   return {
     locator: value.locator,
     notes: value.notes,
+    agentInstall: value.agentInstall,
     diagnostics: value.diagnostics,
     verdictCauses: value.verdictCauses,
     stoppedAt: value.stoppedAt,

@@ -101,6 +101,9 @@ niceeval show exp:baseline exp:candidate assertions --eval install/db-gpt
 这些 ID 可以省略方面词。方面与前缀冲突或前缀未知时会报错并列出可用方面。
 `--full` 只用于单条断言，`--eval` 只用于 Experiment 判据矩阵，`--actor` 和 `--type` 只用于 execution，`--reprice` 只用于 usage。
 
+`niceeval show @<locator>` 的 Agent install 区段显示 Agent 版本、安装结果，以及探测未命中或修复失败的原因。
+加上 `--json` 后，从 `attempt.agentInstall` 读取。Record 缺少安装事实时，该字段的 `reason` 为 `not-recorded`。
+
 有分页时沿 `next-page` link 继续读取。`--continuation` 绑定同一对象、筛选条件与可见范围；绑定变化时从第一页重新读取。
 断言图片命令把完整图片写入文件，不接受 `--json`。
 

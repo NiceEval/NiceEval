@@ -147,7 +147,7 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 1. 探测 用 `runCommand` 执行；存在 `progress.checking` 时先投影到 Human active 行。退出码零命中，非零是正常未命中，记下命中的安装事实；命中时投影可选的 `progress.ready`。
 2. 未命中时按 identity 精确匹配 `AgentInstaller`。安装层声明了 `repair` 时先就地修复，再复检同一个 探测：
    - 复检命中即结束，安装事实记为 `repaired`，不调用 `prepareArtifact()`，也不上传任何 payload。
-   - `repair` 抛错或复检仍未命中时继续下面的安装，修复失败的原因随安装 channel event 保存，不单独成为错误。
+   - `repair` 抛错或复检仍未命中时继续下面的安装。安装成功后，安装事实保留修复失败的原因。
    - `verify-only` 不修改文件系统，声明了 `repair` 也不执行。
 
    需要安装时，存在 `progress.installing` 就先投影到 Human active 行。
@@ -156,16 +156,14 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
    安装层在耗时步骤开始时自己更新 active 行，让上传与解压不停留在触发安装的未命中原因之下。
    内置 staged 安装层依次写 `uploading the <agent> <version> package into the Sandbox` 与 `unpacking <agent> <version> in the Sandbox`，复检前再投影 `progress.checking`。
 
-   安装事实（`hit`、`repaired` 或 `installed`）、探测未命中的原因与修复失败的原因出现在 Human active 行与 `invocation show` 的 Attempt detail 里。
-   它们不落盘：既有 runner diagnostics 的 context 是闭合形状，放不下这些字段，本契约不为此新增持久 family 或升级既有格式。
-   本页别处所说的“随安装 channel event 保存”以这一段为准，Attempt 结束后不能从 Record 读回安装事实。
+   安装事实、探测未命中原因与修复失败原因也出现在 Human active 行和 `invocation show` 的 Attempt detail 中。
 
 离线网络与内部镜像源走同样的两条出路:预装进 Prebuilt environment,或用 `installTool` 按内部渠道安装;install 循环只认 探测 的运行事实,不问安装出自哪条渠道。
 
 ### 探测未命中的原因
 
 探测以非零 exit code 正常结束时，Runner 取 stderr 的最后一条非空行作为未命中原因，先移除 ANSI escape 与控制字符，再截断到 200 Unicode code points。
-它出现在 Human active 行，并随安装 channel event 保存；没有可显示的原因时写 `probe exited <code> without a reason`。
+它出现在 Human active 行和已封存的安装事实中。没有可显示的原因时写 `probe exited <code> without a reason`。
 启动失败、timeout、signal 中断与取消沿用执行错误规则，不伪造 exit code 或正常未命中，不因此进入安装分支。
 内置 Adapter 的探测逐项检查，并在第一项不满足时写出它：
 
@@ -211,7 +209,7 @@ Codex CLI 0.171.0 ready
 ## Install 契约
 
 - **探测 检查精确身份。**
-  探测 至少检查可执行文件、精确版本与 Adapter 依赖的运行条件;命中或本次安装作为 Attempt stream 的安装 channel event 写入。
+  探测 至少检查可执行文件、精确版本与 Adapter 依赖的运行条件。每条成功的声明产生一项 Attempt 安装事实。
 - **不按 template 名短路。**
   官方 template 也必须 探测——template 名、tag 或出处不是运行事实,被错误替换的官方 template 不能因为名字受信绕过验证。
 - **已有的安装先修复，不重装。**
@@ -288,9 +286,17 @@ Agent install 静态身份进入 config identity；pair-owned ProviderPlan 进�
 改任务 Dockerfile 只重建 Sandbox、不动 Agent 配置;改 Agent 版本只改变 install identity 与 staged payload activity,不重建任务 BuildKey。
 两种变化都触发重跑,但不强制发布二者笛卡尔积的预构建输出——同一份任务构建输出可以被多个 Agent experiment 消费,每个 Agent 在主 Sandbox 内自行 探测 或安装。
 
-探测命中还是本次安装写入 Attempt-owned `niceeval.agent-install` event channel，用于核对声明身份是否兑现；运行事实不能反过来替代 eligibility identity。
+安装事实用于核对声明身份是否兑现。Runner 只用静态身份计算 `executionIdentityDigest`。
 没有精确版本的 `latest` 安装不参与可携带结果:内置安装层不提供这条模式,install 声明无法给出稳定 identity 时启动期报错。
 `defineSandboxAgent` 在模块加载时校验每条 install identity：`agent`、`version`、`revision` 缺失、不是字符串或为空时，一次点名全部缺失字段并抛出 `TypeError`，不留到 `agent.install` 相位才以未分类错误失败。
+
+## Attempt 安装事实 {#attempt-install-facts}
+
+下游需要知道安装是否命中缓存、是否经过修复，以及哪些原因触发了安装回退。缺少这些事实时，排障只能翻源码。
+Runner 按声明顺序收集每条成功的安装事实。后续声明或 Eval 失败时，只要 Attempt 成功封存，已有事实仍可读。失败的安装声明沿用 `agent.install` 诊断。
+发布时，Runner 用 Attempt 级可选 attachment family `niceeval.agent-install` 保存这些事实，复用现有 Record attachment 存储与格式标记。
+已知敏感值在原因截断前脱敏。没有完成任何安装声明的 Attempt 和采用同一格式但缺少该 family 的旧 Record 均读为 `not-recorded`。
+字段与读取方式见 [Inspection Library](../../inspection/library.md#attempt-install-facts) 与 [Show](../../inspection/cli.md)。
 
 ## 构建期与运行时的关系
 

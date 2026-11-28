@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto";
 import { beforeCacheFailureDetail, snapshotRestoreDiagnostic } from "../sandbox/remote-snapshot/failure.ts";
 import { pauseOnFailure } from "./pause-on-failure.ts";
 import { retainAttemptNotes } from "./attempt-notes.ts";
+import { retainAgentInstallFacts } from "./agent-install-facts.ts";
+import type { AgentInstallFact } from "../record/family/agent-install/schema.ts";
 import type { AttemptNotesCollector } from "../context/notes.ts";
 import { AttemptCancellationController } from "./attempt-cancellation.ts";
 import type { AttemptSignal } from "../shared/attempt-lifecycle.ts";
@@ -535,6 +537,7 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
       // been constructed. Scope finalization owns the interruption seal so an
       // aborted Attempt cannot leave declared entries unsealed.
       let liveNotes: AttemptNotesCollector | undefined;
+      const agentInstallFacts: AgentInstallFact[] = [];
       let liveAssertions: AssertionsRuntime<"pass" | "score"> | undefined;
       let liveAssertionState: AssertFirstContextState | undefined;
       let liveSkipState: Pick<AssertFirstCoreContextState, "skipReason"> | undefined;
@@ -1803,6 +1806,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       recordBeforeCacheDiagnostic: (input, causes) => recordDiagnostic(input, undefined, causes),
                       diagnostics,
                       commands,
+                      recordAgentInstallFact: (fact) => agentInstallFacts.push(fact),
                       sensitiveValues,
                       commandValues,
                       observabilityRuntime,
@@ -2161,6 +2165,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               retainRunnerAttemptFileChangesCapture(finalResult, capture);
             }
             retainAttemptNotes(finalResult, liveNotes?.snapshot() ?? []);
+            retainAgentInstallFacts(finalResult, agentInstallFacts);
             retainJudgeUsage(finalResult, judgeUsage.snapshot());
             retainSimulatedUserActivities(finalResult, simulatedUserActivities);
             if (adapterUsageSnapshot !== undefined) retainAdapterUsage(finalResult, adapterUsageSnapshot);
@@ -2777,6 +2782,7 @@ interface AttemptResources {
    * finally 挂到即将返回的结果上(见 diagnostics 的并入点)。
    */
   commands: CommandExitEvidence[];
+  recordAgentInstallFact: (fact: AgentInstallFact) => void;
   /** Attempt-local union of author and command registrations. */
   sensitiveValues: Set<string>;
   commandValues: Set<string>;
@@ -3869,6 +3875,8 @@ async function runAttemptBody(
           coordinator: Option.fromNullishOr(prepareCoordinator),
           targetPlatform: a.plan.providerPlan.target.platform,
           signal,
+          redactReason: createSensitiveTextRedactor(sensitiveValues),
+          recordFact: res.recordAgentInstallFact,
           progress: feedback.progress,
         });
         const installed = await assertFirst.requestEffect(Effect.result(installEffect));

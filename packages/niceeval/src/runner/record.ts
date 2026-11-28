@@ -1,5 +1,6 @@
 import { attemptObservabilityPublication } from "./record/observability-publication.ts";
 import { attemptNotesForResult } from "./attempt-notes.ts";
+import { agentInstallFactsForResult } from "./agent-install-facts.ts";
 import { judgeUsageForResult } from "./judge-usage.ts";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -852,6 +853,12 @@ export function openRunnerRecordCoordinator<E>(input: {
           if (judgeUsage !== undefined)
             yield* active.session.records.write(NiceEvalRecordAttachments.judgeUsage, judgeUsage);
           yield* active.session.records.write(NiceEvalRecordAttachments.attemptNotes, attemptNotesForResult(result));
+          const agentInstall = agentInstallFactsForResult(result);
+          if (agentInstall !== undefined) {
+            yield* observability.write(
+              active.session.records.write(NiceEvalRecordAttachments.agentInstall, agentInstall),
+            );
+          }
           const adapterUsage = adapterUsageForResult(result);
           const executionTraces = adapterExecutionTracesForResult(result);
           if (executionTraces?.storageFailure !== undefined) {

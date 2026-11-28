@@ -1354,9 +1354,15 @@ function traceAttachments(resolved: ResolvedInspectionAttempt): AttemptTraceAtta
   };
 }
 
+// @concord-code
+// @concord-implements docs/feature/inspection/library.md#attempt-install-facts
 function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptResult {
   const assertions = readInspectionAssertions(resolved);
   const terminal = attemptTerminal(resolved.attempt);
+  const agentInstall = readCurrentAttachment(
+    NiceEvalCurrentRecordAttachments.agentInstall,
+    attemptAttachment(resolved, NiceEvalRecordAttachments.agentInstall.family),
+  );
   const detail = {
     sandboxState: resolved.origin.source.readAttemptState?.(resolved.attempt.attemptId, resolved.origin.run.runId) ?? {
       status: "unavailable" as const,
@@ -1378,6 +1384,10 @@ function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptRe
             entryCount: 0 as const,
           },
     notes: readAttemptNotes(resolved),
+    agentInstall:
+      agentInstall.state === "available"
+        ? { state: "available" as const, value: agentInstall.value }
+        : { state: "unavailable" as const, reason: agentInstall.state },
     diagnostics: projectAttemptDiagnostics(
       attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family),
     ),

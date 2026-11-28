@@ -550,6 +550,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
   `attempt.get` 的 result 直接带 `diagnostics.items`：每项的 phase、code、有界 summary、是否截断与可展开的 Evidence ID。
   它回答“这个 Attempt 为什么是这个结果”，读者不必再调用 `attempt.trace`；文本视图的 Failure diagnostics 只渲染这个字段，`--json` 因此给出同一批诊断。
+  有封存事实时，Agent install 区段显示安装结果、身份和相应原因。加上 `--json` 时，从 `attempt.agentInstall` 读取安装事实和可用状态，字段见 [Inspection Library](library.md#attempt-install-facts)。
   `kind` 为 `advisory` 的诊断保留原 Verdict，不是结果的原因：文本视图把它们列在 `Advisories` 标题下，Failure diagnostics 只列其余诊断。
 
   显式 skip 的原因紧随 Verdict 显示，与 `Advisories` 分开。`Outcome` 分别显示 `explicit skip`、`cancelled` 或 `cancelled (historical)`。

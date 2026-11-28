@@ -19,6 +19,7 @@ import type {
   AgentInstaller,
   AgentStagedArtifact,
 } from "./types.ts";
+import type { AgentInstallFact } from "../record/family/agent-install/schema.ts";
 
 /** Run 级开放 activity key;落盘形状由 Record timing 线拥有。 */
 export const AGENT_ARTIFACT_PREPARE_ACTIVITY = "agent.artifact.prepare" as const;
@@ -41,6 +42,8 @@ export interface AgentInstallContext {
   /** ProviderPlan 已经确定的目标平台；实际 uname/ldd 只负责验证它，不反向决定制品。 */
   readonly targetPlatform: AgentArtifactPlatform;
   readonly signal: AbortSignal;
+  readonly redactReason?: (text: string) => string;
+  readonly recordFact?: (fact: AgentInstallFact) => void;
   progress(update: { message: string }): void;
 }
 
@@ -465,7 +468,7 @@ export function runAgentInstall(
       }
       const probe = yield* probeMatches(install, target, context, "probe");
       if (probe.hit) {
-        reportInstallFact(install, context, "hit");
+        reportInstallFact(install, context, { outcome: "hit", identity: install.identity });
         results.push({ outcome: "hit", identity: install.identity });
         continue;
       }
@@ -512,14 +515,19 @@ export function runAgentInstall(
                   progress: context.progress,
                 }),
               ),
-            catch: failureReason,
+            catch: (cause) => failureReason(cause, context.redactReason),
           }),
         );
         if (context.signal.aborted) return yield* Effect.interrupt;
         if (Result.isSuccess(repaired)) {
           const recheck = yield* probeMatches(install, target, context, "recheck");
           if (recheck.hit) {
-            reportInstallFact(install, context, "repaired", probeDetail);
+            reportInstallFact(
+              install,
+              context,
+              { outcome: "repaired", identity: install.identity, probeMissReason: probe.reason },
+              probeDetail,
+            );
             results.push({
               outcome: "repaired",
               identity: install.identity,
@@ -573,7 +581,6 @@ export function runAgentInstall(
         if (!(yield* probeMatches(install, target, context, "recheck")).hit) {
           return yield* recheckMissed(install.identity);
         }
-        reportInstallFact(install, context, "installed", detail);
         results.push({
           outcome: "installed",
           identity: install.identity,
@@ -596,7 +603,6 @@ export function runAgentInstall(
         if (!(yield* probeMatches(install, target, context, "recheck")).hit) {
           return yield* recheckMissed(install.identity);
         }
-        reportInstallFact(install, context, "installed", detail);
         results.push({
           outcome: "installed",
           identity: install.identity,
@@ -604,6 +610,17 @@ export function runAgentInstall(
           targetPlatform: platform,
         });
       }
+      reportInstallFact(
+        install,
+        context,
+        {
+          outcome: "installed",
+          identity: install.identity,
+          probeMissReason: probe.reason,
+          ...(repairFailure === undefined ? {} : { repairFailureReason: repairFailure }),
+        },
+        detail,
+      );
     }
     return results;
   });
@@ -613,10 +630,13 @@ function sameIdentity(a: AgentIdentity, b: AgentIdentity): boolean {
   return a.agent === b.agent && a.version === b.version && a.revision === b.revision;
 }
 
-function boundedReason(text: string): string {
-  const cleaned = stripVTControlCharacters(text).replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/gu, "");
+function boundedReason(text: string, redact?: (text: string) => string): string {
+  const cleaned = stripVTControlCharacters(redact?.(text) ?? text).replace(
+    /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/gu,
+    "",
+  );
   return Array.from(
-    cleaned
+    (redact?.(cleaned) ?? cleaned)
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
@@ -629,11 +649,13 @@ function boundedReason(text: string): string {
 function reportInstallFact(
   install: AgentInstall,
   context: AgentInstallContext,
-  outcome: "hit" | "repaired" | "installed",
+  fact: AgentInstallFact,
   detail?: string,
 ): void {
+  const { agent, version, revision } = fact.identity;
+  context.recordFact?.({ ...fact, identity: { agent, version, revision } });
   context.progress({
-    message: [install.progress?.ready, `agent.install ${outcome}`, detail].filter(Boolean).join("; "),
+    message: [install.progress?.ready, `agent.install ${fact.outcome}`, detail].filter(Boolean).join("; "),
   });
 }
 
@@ -664,7 +686,9 @@ function probeMatches(
       cause instanceof SandboxCommandExitError
         ? Effect.succeed({
             hit: false as const,
-            reason: boundedReason(cause.result.stderr) || `probe exited ${cause.result.exitCode} without a reason`,
+            reason:
+              boundedReason(cause.result.stderr, context.redactReason) ||
+              `probe exited ${cause.result.exitCode} without a reason`,
           })
         : Effect.fail(
             new AgentInstallError({
@@ -708,11 +732,11 @@ function recheckMissed(identity: AgentIdentity): AgentInstallError {
 }
 
 /** Bounded one-line reason; a command exit contributes its stderr tail, like a probe miss. */
-function failureReason(cause: unknown): string {
+function failureReason(cause: unknown, redact: AgentInstallContext["redactReason"]): string {
   if (cause instanceof SandboxCommandExitError) {
-    return boundedReason(cause.result.stderr) || `exited ${cause.result.exitCode} without a reason`;
+    return boundedReason(cause.result.stderr, redact) || `exited ${cause.result.exitCode} without a reason`;
   }
-  return boundedReason(errorMessage(cause));
+  return boundedReason(errorMessage(cause), redact);
 }
 
 function errorMessage(cause: unknown): string {

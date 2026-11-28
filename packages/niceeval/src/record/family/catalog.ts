@@ -4,6 +4,7 @@ import { judgeUsageRecordAttachmentPersistence } from "./judge-usage/persistence
 import { Result, Schema } from "effect";
 
 import { makeRecordAttachmentCatalog, type RecordAttachmentCatalog } from "../attachment/index.ts";
+import { agentInstallRecordAttachmentPersistence } from "./agent-install/persistence.ts";
 import { agentTurnsRecordAttachmentPersistence } from "./agent-turns/persistence.ts";
 import { adapterUsageRecordAttachmentPersistence } from "./adapter-usage/persistence.ts";
 import { attemptCostRecordAttachmentPersistence } from "./attempt-cost/persistence.ts";
@@ -39,6 +40,7 @@ export const NiceEvalRecordAttachmentPersistences = Object.freeze([
   judgeUsageRecordAttachmentPersistence,
   assertionsRecordAttachmentPersistence,
   attemptCostRecordAttachmentPersistence,
+  agentInstallRecordAttachmentPersistence,
   agentTurnsRecordAttachmentPersistence,
   turnContextsRecordAttachmentPersistence,
   sandboxCommandsRecordAttachmentPersistence,
@@ -73,6 +75,7 @@ export const NICE_EVAL_FAMILIES = Object.freeze([
   NiceEvalRecordAttachments.judgeUsage.family,
   NiceEvalRecordAttachments.assertions.family,
   NiceEvalRecordAttachments.attemptCost.family,
+  NiceEvalRecordAttachments.agentInstall.family,
   NiceEvalRecordAttachments.agentTurns.family,
   NiceEvalRecordAttachments.turnContexts.family,
   NiceEvalRecordAttachments.sandboxCommands.family,

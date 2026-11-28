@@ -81,6 +81,11 @@ adapters/
 
 观察探测和安装效果、工作环境和失败诊断。命中时不安装，缺失时安装后复查，profile 之间隔离且断网题网络不变。动作包括切换预装状态、环境、网络与复查结果。
 
+### Attempt 安装事实读回 {#attempt-install-readback}
+
+观察 `attempt.get` 的 Agent 安装事实。封存后的 Attempt 按声明顺序读回已经命中、修复或安装的身份与相应原因。
+动作包括切换预装状态、修复结果及复查结果，再从 Record 读取该 Attempt。缺少安装事实的 Record 返回 `not-recorded`。
+
 ### 真实兼容性 {#live-compatibility}
 
 观察官方 Adapter 的 Turn、会话、工具、计量、原生副作用和清理。各入口准确反映其协议所提供的能力。动作包括运行真实 CLI、SDK 或 HTTP 入口的有界回合，调用工具并续接会话。

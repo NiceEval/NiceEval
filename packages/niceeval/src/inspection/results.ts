@@ -2,6 +2,7 @@ import { RunPluginIdentitySchema } from "../record/model/run-context.ts";
 import { projectLifecyclePhase } from "./lifecycle.ts";
 import { RUN_ACTIVITY_PHASES } from "../record/family/protocol-values.ts";
 import { AttemptNotesSchema, AttemptNoteSchema } from "../record/family/attempt-note/schema.ts";
+import { AgentInstallFactsSchema } from "../record/family/agent-install/schema.ts";
 import { SimulatedUserCostSummarySchema } from "../record/family/attempt-cost/schema.ts";
 import { CacheReadReportSchema } from "../o11y/cache-read.ts";
 import * as Schema from "effect/Schema";
@@ -436,6 +437,10 @@ const VerdictCausesSchema = Schema.Struct({
 export const InspectionAttemptResultSchema = Schema.Struct({
   sandboxState: AttemptStateResultSchema,
   notes: AttemptNotesSchema,
+  agentInstall: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("available"), value: AgentInstallFactsSchema }),
+    Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literals(["not-recorded", "invalid"]) }),
+  ]),
   verdictCauses: Schema.optional(VerdictCausesSchema),
   terminal: Schema.optionalKey(
     Schema.Union([

@@ -1,6 +1,7 @@
 import { identityManifestsRecordAttachment } from "./identity-manifests/definition.ts";
 import { attemptNotesRecordAttachment } from "./attempt-note/definition.ts";
 import { judgeUsageRecordAttachment } from "./judge-usage/definition.ts";
+import { agentInstallRecordAttachment } from "./agent-install/definition.ts";
 import { agentTurnsRecordAttachment } from "./agent-turns/definition.ts";
 import { adapterUsageRecordAttachment } from "./adapter-usage/definition.ts";
 import { attemptCostRecordAttachment } from "./attempt-cost/definition.ts";
@@ -28,6 +29,7 @@ export const NiceEvalRecordAttachments = Object.freeze({
   judgeUsage: judgeUsageRecordAttachment,
   assertions: assertionsRecordAttachment,
   attemptCost: attemptCostRecordAttachment,
+  agentInstall: agentInstallRecordAttachment,
   agentTurns: agentTurnsRecordAttachment,
   turnContexts: turnContextsRecordAttachment,
   sandboxCommands: sandboxCommandsRecordAttachment,
@@ -59,6 +61,7 @@ export const NiceEvalCurrentRecordAttachments = Object.freeze({
   judgeUsage: current(judgeUsageRecordAttachment),
   assertions: current(assertionsRecordAttachment),
   attemptCost: current(attemptCostRecordAttachment),
+  agentInstall: current(agentInstallRecordAttachment),
   agentTurns: current(agentTurnsRecordAttachment),
   turnContexts: current(turnContextsRecordAttachment),
   sandboxCommands: current(sandboxCommandsRecordAttachment),
