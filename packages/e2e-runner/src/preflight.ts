@@ -2,7 +2,12 @@
 
 import { Data, Effect, Scope } from "effect";
 import type { Browser, E2ERepoManifest, HostCapability } from "./manifest.ts";
-import { hasConfirmedOwnedGroupCleanup, runOwnedProcess, type OwnedProcessResult } from "./owned-process.ts";
+import {
+  hasConfirmedOwnedGroupCleanup,
+  hasSuccessfulOwnedProcessResult as successful,
+  runOwnedProcess,
+  type OwnedProcessResult,
+} from "./owned-process.ts";
 import type { CapabilityCheck, CommandCapture } from "./receipt.ts";
 
 export interface CapabilityPreflightResult {
@@ -27,22 +32,14 @@ function capture(result: OwnedProcessResult): CommandCapture {
     ...(result.error === undefined ? {} : { error: result.error }),
     processGroupOwned: result.processGroupOwned,
     groupCleanup: result.groupCleanup,
+    ...(result.resourceCleanup === undefined ? {} : { resourceCleanup: result.resourceCleanup }),
   };
 }
-function successful(result: OwnedProcessResult): boolean {
-  return (
-    result.exitCode === 0 &&
-    result.signal === null &&
-    !result.timedOut &&
-    !result.cancelled &&
-    result.error === undefined &&
-    hasConfirmedOwnedGroupCleanup(result)
-  );
-}
 function category(result: OwnedProcessResult): "configuration" | "infra" {
-  return hasConfirmedOwnedGroupCleanup(result) ? "configuration" : "infra";
+  return hasConfirmedOwnedGroupCleanup(result) && result.resourceCleanup?.ok !== false ? "configuration" : "infra";
 }
 function unavailable(result: OwnedProcessResult): string {
+  if (result.resourceCleanup?.ok === false) return result.resourceCleanup.residual.join("; ");
   return !hasConfirmedOwnedGroupCleanup(result)
     ? result.groupCleanup.detail
     : result.timedOut

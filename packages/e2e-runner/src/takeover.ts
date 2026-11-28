@@ -18,6 +18,7 @@ import { readCandidateTarball, type CandidateTarball } from "./injection.ts";
 import {
   hasConfirmedOwnedGroupCleanup,
   hasSuccessfulOwnedProcessResult,
+  isStoppingOwnedProcesses,
   OwnedProcess,
   runOwnedProcess,
 } from "./owned-process.ts";
@@ -82,6 +83,7 @@ export interface TakeoverRunRecord {
   readonly invocationIds: readonly string[];
   readonly testAttemptInvocationIds: readonly { readonly attempt: number; readonly invocationId: string }[];
   readonly cleanupOk: boolean;
+  readonly resourceCleanup?: StageReceipt["resourceCleanup"];
 }
 
 export interface TakeoverSummary {
@@ -93,7 +95,7 @@ export interface TakeoverSummary {
   readonly noRetry: true;
   readonly runs: readonly TakeoverRunRecord[];
   readonly matrixValidation: { readonly ok: boolean; readonly complete: boolean; readonly issues: readonly string[] };
-  readonly category: RepoRunResult["category"];
+  readonly category: RepoRunResult["category"] | "baseline";
   readonly detail: string;
   readonly sourceSnapshotCleanup: { readonly ok: boolean; readonly detail: string };
   readonly certificate?: TakeoverCertificateV2;
@@ -331,18 +333,63 @@ export const validateTakeoverMatrix = (
   return { ok: issues.length === 0, complete: !cancelled && complete, issues };
 };
 
-const categoryFor = (results: readonly RepoRunResult[], cancelled: boolean): RepoRunResult["category"] =>
-  cancelled || results.some((result) => result.category === "cancelled")
-    ? "cancelled"
-    : results.some((result) => result.category === "regression")
-      ? "regression"
-      : results.some((result) => result.category === "infra")
-        ? "infra"
-        : results.some((result) => result.category === "configuration")
-          ? "configuration"
-          : results.length > 0
-            ? "pass"
-            : "infra";
+function forcedSerialFlag(args: readonly string[]): string | undefined {
+  let workers: string | undefined;
+  let fileParallelism: string | undefined;
+  for (const [index, arg] of args.entries()) {
+    const [name, value] = arg.split("=", 2);
+    if (name === "--workers" || name === "-j" || name === "--maxWorkers" || name === "--max-workers")
+      workers = (value ?? args[index + 1]) === "1" ? arg : undefined;
+    if (name === "--fileParallelism" || name === "--file-parallelism")
+      fileParallelism = (value ?? args[index + 1]) === "false" ? arg : undefined;
+    if (name === "--no-fileParallelism" || name === "--no-file-parallelism") fileParallelism = arg;
+  }
+  return workers ?? fileParallelism;
+}
+
+function categoryFor(results: readonly RepoRunResult[], cancelled: boolean): TakeoverSummary["category"] {
+  if (cancelled) return "cancelled";
+  const defaultRun = results.find((result) => result.receipt.runLabel === "takeover/repo-default-parallel");
+  const targets = results.filter((result) => result !== defaultRun);
+  if (targets.some((result) => result.category === "regression")) return "regression";
+  if (results.some((result) => result.category === "infra")) return "infra";
+  if (results.some((result) => result.category === "configuration")) return "configuration";
+  if (defaultRun?.category === "regression") {
+    const failed = testStages(defaultRun.receipt.stages)[0];
+    const capture = failed?.capture;
+    const native = failed?.native;
+    if (
+      capture === undefined ||
+      capture.exitCode === null ||
+      capture.exitCode === 0 ||
+      capture.signal !== null ||
+      capture.timedOut ||
+      capture.cancelled ||
+      capture.error !== undefined ||
+      native === undefined ||
+      native.failed === 0 ||
+      native.items === undefined ||
+      native.items.length === 0
+    )
+      return "infra";
+    if (native.items.some((entry) => entry.outcome === "failed")) return "regression";
+    if (
+      native.retries !== 0 ||
+      native.skipped !== 0 ||
+      native.caseCount !== native.passed + native.failed ||
+      native.passed < native.items.length
+    )
+      return "infra";
+    const targetEvidenceIsGreen =
+      targets.length === REQUIRED_TAKEOVER_RUNS.length - 1 &&
+      targets.every(
+        (result) =>
+          result.category === "pass" && testStages(result.receipt.stages).every((stage) => stage.native?.failed === 0),
+      );
+    return targetEvidenceIsGreen ? "baseline" : "infra";
+  }
+  return results.length > 0 ? "pass" : "infra";
+}
 
 const toRunRecord = (result: RepoRunResult): TakeoverRunRecord => {
   const label = result.receipt.runLabel ?? "takeover/unknown";
@@ -373,6 +420,7 @@ const toRunRecord = (result: RepoRunResult): TakeoverRunRecord => {
         : [],
     ),
     cleanupOk: cleanup?.ok === true,
+    ...(cleanup?.resourceCleanup === undefined ? {} : { resourceCleanup: cleanup.resourceCleanup }),
   };
 };
 
@@ -417,6 +465,16 @@ export const runTakeover = (
         return yield* Effect.fail(
           operationError("discovery", `takeover requested unknown repo ${JSON.stringify(options.repoId)}`),
         );
+      const exactSelector = yield* Effect.try({
+        try: () => parseExactSelector(options.selector),
+        catch: (cause) => operationError("evidence", cause),
+      });
+      const serial = forcedSerialFlag([...repo.manifest.command, ...options.nativeArgs]);
+      if (serial !== undefined)
+        return yield* operationError(
+          "evidence",
+          `TakeoverEvidencePreflight: default-parallel observation requires parallel capacity of at least two; ${serial} requests serial execution`,
+        );
       const candidate = yield* readCandidateTarball(options.candidatePath).pipe(
         Effect.mapError((cause) => operationError("candidate", cause)),
       );
@@ -425,6 +483,7 @@ export const runTakeover = (
         yield* gitText(repoRootDir(), ["rev-parse", "HEAD"]),
         undefined,
         candidate,
+        { caseId: exactSelector.caseId, nativeArgs: options.nativeArgs },
       ).pipe(Effect.mapError((cause) => operationError("evidence", cause)));
       const inventories = collection.repos
         .flatMap((entry) => entry.receipts)
@@ -434,11 +493,7 @@ export const runTakeover = (
           operationError("evidence", "Fresh collection must contain exactly one receipt for the selected case"),
         );
       const inventory = inventories[0]!;
-      const selectorPath = yield* Effect.try({
-        try: () => parseExactSelector(options.selector).path,
-        catch: (cause) => operationError("evidence", cause),
-      });
-      const suite = yield* governanceSuiteForFile(repoRootDir(), selectorPath).pipe(
+      const suite = yield* governanceSuiteForFile(repoRootDir(), exactSelector.path).pipe(
         Effect.mapError((cause) => operationError("evidence", cause)),
       );
       if (suite.root !== `e2e/${repo.manifest.id}`)
@@ -452,7 +507,6 @@ export const runTakeover = (
         try: () => selectInventoryCase(inventory, options.selector, suite.id),
         catch: (cause) => operationError("evidence", cause),
       });
-      const exactSelector = parseExactSelector(options.selector);
       const repoPrefix = "e2e/" + options.repoId + "/";
       const nativePath = selectedCase.nativePath ?? selectedCase.path;
       const runnerCasePath = nativePath.startsWith(repoPrefix) ? nativePath.slice(repoPrefix.length) : nativePath;
@@ -532,6 +586,7 @@ export const runTakeover = (
           );
         const allSecretNames = new Set(discovered.repos.flatMap((entry) => entry.manifest.secrets));
         for (const required of REQUIRED_TAKEOVER_RUNS) {
+          if (yield* isStoppingOwnedProcesses) return;
           const result = yield* runRepoEffect(
             repo,
             materializedCandidate,
@@ -563,6 +618,7 @@ export const runTakeover = (
           ).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
           results.push(result);
         }
+        if (yield* isStoppingOwnedProcesses) return;
         const after = yield* resolveRepositorySourceIdentity(root, options.selector).pipe(
           Effect.mapError((cause) => operationError("evidence", cause)),
         );
@@ -589,7 +645,7 @@ export const runTakeover = (
           }),
         ),
       );
-      const cancelled = results.some((result) => result.category === "cancelled");
+      const cancelled = (yield* isStoppingOwnedProcesses) || results.some((result) => result.category === "cancelled");
       const matrixValidation = validateTakeoverMatrix(
         results,
         repo,
@@ -749,7 +805,11 @@ export const runTakeover = (
             ? `takeover matrix validation failed: ${matrixValidation.issues.join("; ")}`
             : category === "pass"
               ? "all required takeover observations passed"
-              : "one or more takeover observations did not pass"),
+              : category === "baseline"
+                ? "default suite failed outside the selected case; all selected-case observations passed"
+                : category === "cancelled"
+                  ? "takeover cancelled after settling started observations"
+                  : "one or more takeover observations did not pass"),
         sourceSnapshotCleanup,
         ...(certificate === undefined || certificatePath === undefined ? {} : { certificate, certificatePath }),
       };

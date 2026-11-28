@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { procIdentity } from "./pty-process.js";
 import { createConnection } from "node:net";
+import { registerProcess, spawnTestkitProcess } from "./resource-registration.js";
 
 type ControlMessage =
   | {
@@ -113,6 +114,7 @@ async function main(): Promise<void> {
       throw configured.error ?? new Error(`stty exited ${configured.status}`);
     }
     const helper = procIdentity(process.pid);
+    if (helper.processGroupId === process.pid) registerProcess(process.pid, true);
     await send(socket, {
       type: "status",
       phase: "configured",
@@ -124,10 +126,9 @@ async function main(): Promise<void> {
     });
 
     const argv = await receiveInit(socket);
-    const candidate = spawn(argv[0], argv.slice(1), {
-      detached: true,
-      stdio: "inherit",
-    });
+    const candidate = spawnTestkitProcess(argv, process.env, true, ([file, ...args]) =>
+      spawn(file, args, { detached: true, stdio: "inherit" }),
+    );
     await new Promise<void>((resolve, reject) => {
       candidate.once("spawn", resolve);
       candidate.once("error", reject);

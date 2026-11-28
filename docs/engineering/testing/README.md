@@ -84,3 +84,19 @@ NiceEval 的正确性用**性质**描述：在用户能触达的所有状态和�
 ## 不再使用的机制
 
 场景 Repo 的整套复制与候选形态（source、built、tarball）、根 E2E runner、Testkit、证据证书、Portfolio 登记、takeover 门禁、单元测试层，都不属于本体系。迁移期间旧测试继续在 CI 运行，按产品域逐个改写为性质后删除。
+
+### 场景运行取消 {#scenario-run-cancellation}
+
+收到 SIGINT 或 SIGTERM 后，场景 E2E runner 停止启动后续命令。它在收尾预算内回收自己启动的命令和 Testkit 登记的资源，再写入已开始的场景收据。SIGINT 退出码为 130，SIGTERM 为 143。
+
+Testkit 在启动时按 PID 或进程组登记进程，包含 `processGroup: true` 和 PTY 另开的组。通过 Testkit 直接发起的 `docker run` 和 `docker create` 可提前以唯一标签登记容器。无法登记的已知资源留给场景回收，收据列明其归属。产品或场景自行启动的其它容器也由场景负责。
+
+收尾收据在 `resourceCleanup.residual` 列出仍存活或无法确认终止的已登记资源，并标记收尾失败。`resourceCleanup.scenarioOwned` 列出仍由场景管理的资源。取消后的 takeover 摘要保留已产出的场景收据，不颁发可靠性证书。
+
+### Takeover 默认并行观察 {#takeover-default-parallel}
+
+`pnpm e2e takeover --candidate <tgz> --repo <id> --selector <path>#<caseId>` 在启动测试正文前收集实际选中的默认用例。若预检能确定并行观察不足两个可执行用例，或参数将并行度限制为 1，命令退出 1，并报告具体缺少的门槛。运行后仍核对实际执行证据。
+
+所有目标单独运行均通过、目标在默认并行运行中也通过，且原生报告确认其它用例失败时，摘要归类为 `baseline`。目标用例本身失败仍归类为 `regression`。超时、信号和证据缺失不能充当默认用例失败的证据。
+
+`baseline` 保留默认运行和目标各次运行的原始收据，命令退出 1。完整可靠性证书仍要求默认并行观察通过。

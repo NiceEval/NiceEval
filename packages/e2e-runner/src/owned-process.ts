@@ -4,8 +4,10 @@
 // inject their outer Concord group: nested commands never detach or signal it.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { Context, Data, Deferred, Effect, Layer, Option, Scope } from "effect";
+import type { ResourceCleanup } from "./contracts.ts";
+import { createTestkitRegistry, reclaimTestkitResources, type TestkitRegistry } from "./testkit-resources.ts";
 
 export type OwnedProcessOutput = "capture" | "inherit";
 export type OwnedTermination = "timeout" | "cancelled";
@@ -44,6 +46,7 @@ export interface OwnedProcessResult {
   readonly error?: string;
   readonly processGroupOwned: boolean;
   readonly groupCleanup: OwnedProcessGroupCleanup;
+  readonly resourceCleanup?: ResourceCleanup;
 }
 
 export class OwnedProcessError extends Data.TaggedError("OwnedProcessError")<{
@@ -65,6 +68,7 @@ export interface OwnedProcessService {
   readonly forceKill: Effect.Effect<void>;
   readonly activeCount: Effect.Effect<number>;
   readonly awaitIdle: Effect.Effect<void>;
+  readonly stopping: Effect.Effect<boolean>;
 }
 
 export class OwnedProcess extends Context.Service<OwnedProcess, OwnedProcessService>()("niceeval/e2e/OwnedProcess") {}
@@ -77,6 +81,7 @@ export const stopOwnedProcesses = (signal: NodeJS.Signals) =>
   Effect.flatMap(OwnedProcess, (service) => service.stop(signal));
 export const forceKillOwnedProcesses = Effect.flatMap(OwnedProcess, (service) => service.forceKill);
 export const observeOwnedProcessActivity = Effect.flatMap(OwnedProcess, (service) => service.activeCount);
+export const isStoppingOwnedProcesses = Effect.flatMap(OwnedProcess, (service) => service.stopping);
 
 function noOwnedGroupCleanup(detail: string): OwnedProcessGroupCleanup {
   return { owned: false, checked: false, aliveAfterLeaderClose: null, signalsSent: [], gone: null, detail };
@@ -91,7 +96,14 @@ export function hasConfirmedOwnedGroupCleanup(
 export function hasSuccessfulOwnedProcessResult(
   result: Pick<
     OwnedProcessResult,
-    "exitCode" | "signal" | "timedOut" | "cancelled" | "error" | "processGroupOwned" | "groupCleanup"
+    | "exitCode"
+    | "signal"
+    | "timedOut"
+    | "cancelled"
+    | "error"
+    | "processGroupOwned"
+    | "groupCleanup"
+    | "resourceCleanup"
   >,
 ): boolean {
   return (
@@ -100,7 +112,8 @@ export function hasSuccessfulOwnedProcessResult(
     !result.timedOut &&
     !result.cancelled &&
     result.error === undefined &&
-    hasConfirmedOwnedGroupCleanup(result)
+    hasConfirmedOwnedGroupCleanup(result) &&
+    result.resourceCleanup?.ok !== false
   );
 }
 
@@ -137,6 +150,8 @@ function groupPresence(groupId: number): GroupPresence {
 interface Active {
   readonly child: ChildProcess;
   readonly command: readonly string[];
+  readonly cwd: string;
+  readonly registry: TestkitRegistry;
   readonly groupId?: number;
   readonly groupOwned: boolean;
   readonly inheritedGroup?: number;
@@ -147,6 +162,7 @@ interface Active {
   termination?: OwnedTermination;
   terminationDeadline?: number;
   closed?: readonly [number | null, NodeJS.Signals | null];
+  resourceCleanup?: Promise<ResourceCleanup | undefined>;
   readonly closeListeners: Set<(result: readonly [number | null, NodeJS.Signals | null]) => void>;
   readonly shutdownResult: Deferred.Deferred<OwnedProcessResult>;
 }
@@ -271,18 +287,27 @@ function acquireActive(
       try: () => {
         if (command[0] === undefined) throw new Error("owned process command must contain an executable");
         const groupOwned = inheritedGroup === undefined && process.platform !== "win32";
-        const child = spawn(command[0], command.slice(1), {
-          cwd: options.cwd,
-          env: options.env,
-          detached: groupOwned,
-          stdio:
-            options.output === "capture"
-              ? [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"]
-              : "inherit",
-        });
+        const registry = createTestkitRegistry(options.env);
+        let child: ChildProcess;
+        try {
+          child = spawn(command[0], command.slice(1), {
+            cwd: options.cwd,
+            env: registry.env,
+            detached: groupOwned,
+            stdio:
+              options.output === "capture"
+                ? [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"]
+                : "inherit",
+          });
+        } catch (error) {
+          rmSync(registry.directory, { recursive: true, force: true });
+          throw error;
+        }
         const entry: Active = {
           child,
           command,
+          cwd: options.cwd,
+          registry,
           groupOwned,
           ...(inheritedGroup === undefined ? {} : { inheritedGroup }),
           ...(groupOwned && child.pid !== undefined && child.pid !== process.pid ? { groupId: child.pid } : {}),
@@ -380,33 +405,32 @@ function acquireActive(
 }
 
 function complete(active: Active, graceMs: number): Effect.Effect<OwnedProcessResult> {
-  return waitForClose(active).pipe(
-    Effect.flatMap(([exitCode, exitSignal]) =>
-      cleanupGroup(active, graceMs).pipe(
-        Effect.map((groupCleanup) => ({
-          command: active.command,
-          exitCode,
-          signal: exitSignal,
-          timedOut: active.termination === "timeout",
-          cancelled: active.termination === "cancelled",
-          stdout: active.stdout,
-          stderr: active.stderr,
-          ...(active.error === undefined ? {} : { error: active.error }),
-          processGroupOwned: active.groupOwned,
-          groupCleanup,
-        })),
-      ),
-    ),
-  );
+  return waitForClose(active).pipe(Effect.flatMap((close) => finish(active, close, graceMs)));
 }
 
-function resultFromClose(
+function finish(
   active: Active,
   close: readonly [number | null, NodeJS.Signals | null],
   graceMs: number,
 ): Effect.Effect<OwnedProcessResult> {
-  return cleanupGroup(active, graceMs).pipe(
-    Effect.map((groupCleanup) => ({
+  return Effect.gen(function* () {
+    const completed = yield* Deferred.poll(active.shutdownResult);
+    if (Option.isSome(completed)) return yield* completed.value;
+    const [groupCleanup, resourceCleanup] = yield* Effect.all(
+      [
+        cleanupGroup(active, graceMs),
+        Effect.promise(() => {
+          active.resourceCleanup ??= reclaimTestkitResources(active.registry, active.cwd, graceMs, (pid) => {
+            const state = groupPresence(pid);
+            if (state === "unknown") throw new Error("process group status is unknown");
+            return state === "alive";
+          });
+          return active.resourceCleanup;
+        }),
+      ],
+      { concurrency: 2 },
+    );
+    yield* Deferred.succeed(active.shutdownResult, {
       command: active.command,
       exitCode: close[0],
       signal: close[1],
@@ -417,8 +441,10 @@ function resultFromClose(
       ...(active.error === undefined ? {} : { error: active.error }),
       processGroupOwned: active.groupOwned,
       groupCleanup,
-    })),
-  );
+      ...(resourceCleanup === undefined ? {} : { resourceCleanup }),
+    });
+    return yield* Deferred.await(active.shutdownResult);
+  }).pipe(Effect.uninterruptible);
 }
 
 /** TERM and close race against one bounded grace. A TERM-ignoring leader is KILLed before close is awaited. */
@@ -433,18 +459,19 @@ function shutdownRaw(
     Effect.andThen(waitForClose(active).pipe(Effect.timeoutOption(graceMs))),
     Effect.flatMap((close) =>
       Option.isSome(close)
-        ? resultFromClose(active, close.value, graceMs)
+        ? finish(active, close.value, graceMs)
         : Effect.sync(() => signal(active, "SIGKILL")).pipe(
             Effect.andThen(
               active.inheritedGroup === undefined
-                ? waitForClose(active)
-                : Effect.sync(() => {
-                    active.child.stdout?.destroy();
-                    active.child.stderr?.destroy();
-                    return active.closed ?? ([null, "SIGKILL"] as const);
-                  }),
+                ? waitForClose(active).pipe(Effect.timeoutOption(graceMs))
+                : Effect.succeed(Option.none()),
             ),
-            Effect.flatMap((afterKill) => resultFromClose(active, afterKill, graceMs)),
+            Effect.flatMap((afterKill) => {
+              if (Option.isSome(afterKill)) return finish(active, afterKill.value, graceMs);
+              active.child.stdout?.destroy();
+              active.child.stderr?.destroy();
+              return finish(active, active.closed ?? [active.child.exitCode, active.child.signalCode], graceMs);
+            }),
           ),
     ),
   );
@@ -460,9 +487,7 @@ function shutdown(
   return Effect.gen(function* () {
     const completed = yield* Deferred.poll(active.shutdownResult);
     if (Option.isSome(completed)) return yield* completed.value;
-    const result = yield* shutdownRaw(active, graceMs, reason, firstSignal);
-    yield* Deferred.succeed(active.shutdownResult, result);
-    return yield* Deferred.await(active.shutdownResult);
+    return yield* shutdownRaw(active, graceMs, reason, firstSignal);
   }).pipe(Effect.uninterruptible);
 }
 
@@ -475,6 +500,7 @@ export function ownedProcessLayer(
     Effect.gen(function* () {
       const active = new Set<Active>();
       let stoppingSignal: NodeJS.Signals | undefined;
+      let stopRequested = false;
       yield* Effect.addFinalizer(() =>
         Effect.forEach(active, (entry) => shutdown(entry, graceMs, "cancelled").pipe(Effect.asVoid), {
           discard: true,
@@ -483,6 +509,7 @@ export function ownedProcessLayer(
       );
       const requestStop = (name: NodeJS.Signals) =>
         Effect.sync(() => {
+          stopRequested = true;
           stoppingSignal ??= name;
           for (const entry of active) signal(entry, name, "cancelled");
         });
@@ -534,7 +561,7 @@ export function ownedProcessLayer(
                           Effect.andThen(shutdown(entry, graceMs, "timeout")),
                         ),
                       );
-                return timed.pipe(
+                return Effect.raceFirst(timed, Deferred.await(entry.shutdownResult)).pipe(
                   Effect.tap((result) =>
                     Effect.sync(() => {
                       active.delete(entry);
@@ -567,6 +594,7 @@ export function ownedProcessLayer(
           Effect.forEach(active, (entry) => Effect.sync(() => signal(entry, "SIGKILL")), { discard: true }),
         ),
         activeCount: Effect.sync(() => active.size),
+        stopping: Effect.sync(() => stopRequested),
         awaitIdle: Effect.suspend(() =>
           active.size === 0
             ? Effect.void

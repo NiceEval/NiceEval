@@ -26,6 +26,7 @@ import { buildTestkitPackage, injectTestkitDirectory, type TestkitPackage } from
 export interface WorkspaceCollectionSpec {
   readonly checkout: string;
   readonly files?: readonly string[];
+  readonly takeoverDefault?: { readonly caseId: string; readonly nativeArgs: readonly string[] };
 }
 
 interface CollectedSubject {
@@ -242,6 +243,44 @@ const prepareRepo = Effect.fn("prepareWorkspaceInventoryRepo")(function* (
       ),
     { concurrency: "unbounded" },
   );
+  const takeover = spec.takeoverDefault;
+  if (takeover !== undefined) {
+    const owner = receipts.find((receipt) => receipt.cases.some((entry) => entry.caseId === takeover.caseId));
+    if (owner !== undefined) {
+      const expected = "default-parallel observation requires at least two executable native cases";
+      const selected =
+        takeover.nativeArgs.length === 0
+          ? owner
+          : yield* collectCaseInventory({
+              executor: owner.executor.name,
+              repo: repo.manifest.id,
+              suiteId: suite.id,
+              cwd: copy,
+              checkout: spec.checkout,
+              nativeArgs: takeover.nativeArgs,
+            }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new WorkspaceInventoryError({
+                    detail: `${expected}; native preflight could not confirm the selection: ${cause.detail}`,
+                  }),
+              ),
+            );
+      const count = selected.cases.reduce((sum, entry) => sum + (entry.members?.length ?? 1), 0);
+      if (count < 2)
+        return yield* new WorkspaceInventoryError({
+          detail: `TakeoverEvidencePreflight: ${expected}; collected ${count}`,
+        });
+      if (!selected.cases.some((entry) => entry.caseId === takeover.caseId))
+        return yield* new WorkspaceInventoryError({
+          detail: `TakeoverEvidencePreflight: default-parallel selection excluded target ${takeover.caseId}`,
+        });
+      if (selected.unassignedCases.length !== 0)
+        return yield* new WorkspaceInventoryError({
+          detail: `TakeoverEvidencePreflight: default-parallel selection has ${selected.unassignedCases.length} unassigned native cases`,
+        });
+    }
+  }
   const prefix = `e2e/${repo.manifest.id}`;
   const subjects = receipts.flatMap((receipt) =>
     receipt.cases
@@ -335,9 +374,14 @@ const finishInventory = Effect.fn("finishWorkspaceCaseInventory")(function* (
   repoId?: string,
   requestedFiles?: readonly string[],
   candidate?: CandidateTarball,
+  takeoverDefault?: WorkspaceCollectionSpec["takeoverDefault"],
 ) {
   const prepared = yield* collectWorkspacePrepared(
-    { checkout, ...(requestedFiles === undefined ? {} : { files: requestedFiles }) },
+    {
+      checkout,
+      ...(requestedFiles === undefined ? {} : { files: requestedFiles }),
+      ...(takeoverDefault === undefined ? {} : { takeoverDefault }),
+    },
     repoId,
     candidate,
   );
@@ -373,6 +417,7 @@ export const collectRepoCaseInventory = Effect.fn("collectRepoCaseInventory")(fu
   checkout: string,
   files?: readonly string[],
   candidate?: CandidateTarball,
+  takeoverDefault?: WorkspaceCollectionSpec["takeoverDefault"],
 ) {
-  return yield* finishInventory(checkout, repoId, files, candidate);
+  return yield* finishInventory(checkout, repoId, files, candidate, takeoverDefault);
 });

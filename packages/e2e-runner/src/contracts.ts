@@ -272,6 +272,12 @@ const OwnedProcessGroupCleanupSchema = Schema.Struct({
   gone: Schema.NullOr(Schema.Boolean),
   detail: Schema.String,
 });
+const ResourceCleanupSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  residual: StringListSchema,
+  scenarioOwned: StringListSchema,
+});
+export type ResourceCleanup = (typeof ResourceCleanupSchema)["Type"];
 export const CommandCaptureSchema = Schema.Struct({
   exitCode: Schema.NullOr(Schema.Number),
   signal: Schema.NullOr(Schema.String),
@@ -282,6 +288,7 @@ export const CommandCaptureSchema = Schema.Struct({
   error: Schema.optional(Schema.String),
   processGroupOwned: Schema.Boolean,
   groupCleanup: OwnedProcessGroupCleanupSchema,
+  resourceCleanup: Schema.optional(ResourceCleanupSchema),
 });
 export const CapabilityCheckSchema = Schema.Struct({
   kind: Schema.Literals(["platform", "runtime", "docker", "browser", "secret", "externalNetwork", "hostCapability"]),
@@ -307,6 +314,7 @@ export const StageReceiptSchema = Schema.Struct({
   assets: Schema.optional(UniqueHarnessAssetListSchema),
   collected: Schema.optional(Schema.Array(RepoIdSchema)),
   path: Schema.optional(Schema.String),
+  resourceCleanup: Schema.optional(ResourceCleanupSchema),
   native: Schema.optional(
     Schema.Struct({
       items: Schema.optional(

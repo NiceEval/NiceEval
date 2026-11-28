@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { spawnTestkitProcess } from "./resource-registration.js";
 import { Result, Schema } from "effect";
 import {
   decodeInspectionDocument,
@@ -600,11 +601,10 @@ export async function runProcess(argv: Argv, options: RunProcessOptions = {}): P
   const startedAt = Date.now();
   const stdoutChunks: Buffer[] = [];
   const stderrChunks: Buffer[] = [];
-  const child = spawn(argv[0], argv.slice(1), {
-    cwd,
-    env: mergedEnv(options.env),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const env = mergedEnv(options.env);
+  const child = spawnTestkitProcess(argv, env, false, ([file, ...args]) =>
+    spawn(file, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] }),
+  );
   child.stdout?.on("data", (chunk: Buffer) => {
     stdoutChunks.push(chunk);
   });

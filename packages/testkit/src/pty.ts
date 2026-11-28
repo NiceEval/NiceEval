@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { readdirSync, readFileSync } from "node:fs";
 import type { Argv } from "./process.js";
 import { procIdentity, darwinProcessGroupState } from "./pty-process.js";
+import { spawnTestkitProcess } from "./resource-registration.js";
 
 const DEFAULT_COLUMNS = 120;
 const DEFAULT_ROWS = 40;
@@ -398,12 +399,10 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
         process.platform === "darwin"
           ? ["-q", "-F", "/dev/null", process.execPath, helperPath(), socketPath, String(columns), String(rows)]
           : ["-q", "-e", "-f", "-O", "/dev/null", "--command", launcherCommand];
-      return spawn("script", launcherArgs, {
-        cwd,
-        env: options.env === undefined ? process.env : { ...process.env, ...options.env },
-        detached: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      const env = options.env === undefined ? process.env : { ...process.env, ...options.env };
+      return spawnTestkitProcess(["script", ...launcherArgs], env, true, ([file, ...args]) =>
+        spawn(file, args, { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] }),
+      );
     } catch (error) {
       await closeControlAndScratch();
       throw new Error("failed to start PTY launcher", { cause: error });

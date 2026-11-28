@@ -7,6 +7,7 @@ import type { Dirent } from "node:fs";
 import { PassThrough } from "node:stream";
 import { ProcessReceipt, ProcessStartError } from "./process.js";
 import type { Argv } from "./process.js";
+import { spawnTestkitProcess } from "./resource-registration.js";
 
 export const DEFAULT_GRACE_MS = 2000;
 
@@ -331,17 +332,21 @@ export function startProcess(argv: Argv, options: StartOptions = {}): ProcessHan
   if (options.processGroup === true && process.platform === "win32") {
     throw new Error("processGroup: true requires POSIX process-group signals and is unsupported on win32");
   }
-  const child = spawn(argv[0], argv.slice(1), {
-    cwd: options.cwd ?? process.cwd(),
-    env:
-      options.envMode === "replace"
-        ? (options.env ?? {})
-        : options.env === undefined
-          ? process.env
-          : { ...process.env, ...options.env },
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: options.processGroup === true,
-  });
+  const env =
+    options.envMode === "replace"
+      ? (options.env ?? {})
+      : options.env === undefined
+        ? process.env
+        : { ...process.env, ...options.env };
+  const group = options.processGroup === true;
+  const child = spawnTestkitProcess(argv, env, group, ([file, ...args]) =>
+    spawn(file, args, {
+      cwd: options.cwd ?? process.cwd(),
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: group,
+    }),
+  );
   return new ProcessHandle(argv, options, child);
 }
 

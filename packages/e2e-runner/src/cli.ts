@@ -16,7 +16,7 @@ const decodeNativeArgs = Schema.decodeUnknownSync(Schema.Array(Schema.String));
 import { decodePlanDocument, LANES, type SelectionReceipt } from "./contracts.ts";
 import { runDiagnostic, type DiagnosticMode } from "./diagnose.ts";
 import { repoRootDir } from "./discovery.ts";
-import { forceKillOwnedProcesses, OwnedProcessLive, requestStopOwnedProcesses } from "./owned-process.ts";
+import { forceKillOwnedProcesses, OwnedProcessLive, stopOwnedProcesses } from "./owned-process.ts";
 import { packCandidate } from "./pack.ts";
 import { formatResolvedPlan, invalidPlanOutput, resolvePlan, type PlanCli, type ResolvedPlan } from "./plan.ts";
 import { runEffect, type RunSummary } from "./run.ts";
@@ -443,8 +443,10 @@ const withSignalLifecycle = <A, E, R>(program: Effect.Effect<A, E, R>) =>
         const escalationWatcher = yield* Effect.forkChild(
           Queue.take(signals).pipe(Effect.andThen(forceKillOwnedProcesses), Effect.interruptible),
         );
-        yield* requestStopOwnedProcesses(outcome.signal);
-        yield* Fiber.interrupt(programFiber).pipe(Effect.ensuring(Fiber.interrupt(escalationWatcher)));
+        yield* stopOwnedProcesses(outcome.signal);
+        const drained = yield* Fiber.await(programFiber).pipe(Effect.timeoutOption(5_000));
+        if (Option.isNone(drained)) yield* Fiber.interrupt(programFiber);
+        yield* Fiber.interrupt(escalationWatcher);
         return yield* Effect.interrupt;
       });
     }),

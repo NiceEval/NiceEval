@@ -31,7 +31,12 @@ import {
   writeContainedUtf8File,
 } from "./durable-path.ts";
 import { preflightBrowsers, preflightHostCapabilities } from "./preflight.ts";
-import { runOwnedProcess, type OwnedProcess, type OwnedProcessResult } from "./owned-process.ts";
+import {
+  isStoppingOwnedProcesses,
+  runOwnedProcess,
+  type OwnedProcess,
+  type OwnedProcessResult,
+} from "./owned-process.ts";
 import { buildChildEnv, redactSecretCapture, redactSecretStrings, sensitiveEnvValues } from "./secrets.ts";
 import {
   checkTestkitSourceClean,
@@ -205,6 +210,7 @@ export const captureOwnedProcess = (result: OwnedProcessResult): CommandCapture 
   ...(result.error === undefined ? {} : { error: result.error }),
   processGroupOwned: result.processGroupOwned,
   groupCleanup: result.groupCleanup,
+  ...(result.resourceCleanup === undefined ? {} : { resourceCleanup: result.resourceCleanup }),
 });
 export const runCommand = (
   command: readonly string[],
@@ -284,7 +290,8 @@ export const commandCaptureOk = (value: CommandCapture): boolean =>
   !value.timedOut &&
   !value.cancelled &&
   value.error === undefined &&
-  !hasUnconfirmedOwnedGroup(value);
+  !hasUnconfirmedOwnedGroup(value) &&
+  value.resourceCleanup?.ok !== false;
 export const withInvocation = (
   env: NodeJS.ProcessEnv,
   id: string,
@@ -635,6 +642,7 @@ export const runRepoEffect = (
               attempt > runs || !browser.ok
                 ? Effect.void
                 : Effect.gen(function* () {
+                    if (yield* isStoppingOwnedProcesses) return;
                     if (sourceSnapshotDigest !== undefined)
                       yield* verifyExecutionProjection(
                         id,
@@ -645,14 +653,18 @@ export const runRepoEffect = (
                       );
                     if (options.caseSelection !== undefined) {
                       const expected = options.caseSelection;
-                      const inventory = yield* collectCaseInventory({
+                      const collection = yield* collectCaseInventory({
                         executor: expected.executor,
                         repo: id,
                         suiteId: expected.suiteId,
                         cwd: copy,
                         checkout: expected.checkout,
                         nativeArgs: options.caseCollectionNativeArgs ?? nativeArgs,
-                      }).pipe(Effect.mapError((cause) => problem(id, "run", `CaseSelectionInvalid: ${cause.detail}`)));
+                      }).pipe(Effect.result);
+                      if (yield* isStoppingOwnedProcesses) return;
+                      if (Result.isFailure(collection))
+                        return yield* problem(id, "run", `CaseSelectionInvalid: ${collection.failure.detail}`);
+                      const inventory = collection.success;
                       if (
                         inventory.cases.filter((entry) => entry.caseId === expected.caseId).length !== 1 ||
                         (expected.only && inventory.cases.length !== 1) ||
@@ -704,7 +716,7 @@ export const runRepoEffect = (
                       options.logPrefix,
                       options.retainNativeReport ? 8 * 1024 * 1024 : undefined,
                     );
-                    if (sourceSnapshotDigest !== undefined)
+                    if (sourceSnapshotDigest !== undefined && !result.cancelled)
                       yield* verifyExecutionProjection(
                         id,
                         copy,
@@ -715,7 +727,7 @@ export const runRepoEffect = (
                     exitCode = result.exitCode;
                     const ok = commandCaptureOk(result);
                     const native =
-                      options.caseSelection === undefined
+                      options.caseSelection === undefined || result.cancelled
                         ? undefined
                         : Result.try({
                             try: () =>
@@ -755,7 +767,9 @@ export const runRepoEffect = (
         }
       }
     }
-    const cancelled = stages.some((entry) => entry.cancelled === true || entry.capture?.cancelled === true);
+    const cancelled =
+      (yield* isStoppingOwnedProcesses) ||
+      stages.some((entry) => entry.cancelled === true || entry.capture?.cancelled === true);
     const copied = yield* fs(id, "run", (service) => service.exists(copy));
     if (cancelled && copied && !stages.some((entry) => entry.stage === "collect")) {
       yield* collectStage(copy, artifactDir, repo.manifest.artifacts, stages, "after cancellation: ");
@@ -766,7 +780,25 @@ export const runRepoEffect = (
       : options.keepWorkdir === true
         ? `retained ${copy} because keep-workdir was requested`
         : `removed ${copy}`;
-    let cleanupOk = true;
+    const captures = stages.flatMap((entry) => [
+      ...(entry.capture === undefined ? [] : [entry.capture]),
+      ...(entry.checks ?? []).flatMap((check) => (check.capture === undefined ? [] : [check.capture])),
+    ]);
+    const residual = captures.flatMap((capture) => [
+      ...(hasUnconfirmedOwnedGroup(capture) ? [capture.groupCleanup.detail] : []),
+      ...(capture.resourceCleanup?.residual ?? []),
+    ]);
+    const scenarioOwned = [
+      ...new Set([
+        ...captures.flatMap((capture) => capture.resourceCleanup?.scenarioOwned ?? []),
+        ...(repo.manifest.requires?.docker === true &&
+        stages.some((entry) => entry.stage === "test" && entry.capture !== undefined)
+          ? ["Docker containers launched outside Testkit registration belong to the scenario"]
+          : []),
+      ]),
+    ];
+    let cleanupOk = residual.length === 0;
+    if (!cleanupOk) cleanupDetail += `; resource cleanup unconfirmed: ${residual.join("; ")}`;
     if (options.keepWorkdir !== true && copied) {
       const outcome = yield* Effect.exit(
         fs(id, "run", (service) => service.remove(copy, { recursive: true, force: true })),
@@ -786,6 +818,10 @@ export const runRepoEffect = (
     stage(stages, {
       stage: "cleanup",
       ok: cleanupOk,
+      ...(cancelled ? { cancelled: true } : {}),
+      ...(residual.length === 0 && scenarioOwned.length === 0 && !captures.some((capture) => capture.resourceCleanup)
+        ? {}
+        : { resourceCleanup: { ok: residual.length === 0, residual, scenarioOwned } }),
       path: copy,
       detail: cleanupDetail,
     });

@@ -40,7 +40,8 @@ export function commandFailedCapture(capture: CommandCapture): boolean {
     capture.timedOut ||
     capture.exitCode === null ||
     capture.exitCode !== 0 ||
-    (capture.processGroupOwned && capture.groupCleanup.gone !== true)
+    (capture.processGroupOwned && capture.groupCleanup.gone !== true) ||
+    capture.resourceCleanup?.ok === false
   );
 }
 
