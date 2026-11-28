@@ -4,7 +4,6 @@ import { dirname, join } from "node:path";
 import { expect, test } from "vitest";
 
 // @feature docs/engineering/agent-docs/README.md
-// @issue docs/issues/bundled-docs-main-links.md
 test.concurrent("安装包的文档与示例不会跳到仓库 main 的另一个版本", async () => {
   const require = createRequire(import.meta.url);
   let root = dirname(require.resolve("niceeval"));
